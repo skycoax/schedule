@@ -2,16 +2,25 @@
 // (время, предмет, кабинет и группы). Данные — /api/teacher, собранные сервером из того
 // же расписания, что видят студенты. Оболочка (шапка, вкладки, футер) — как у студента.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { getTeachers, getTeacher, type TeacherRow, type TeacherSchedule, type TeacherItem } from '../api';
+import {
+  getTeachers, getTeacher, getReviews, getSummary,
+  type TeacherRow, type TeacherSchedule, type TeacherItem, type ReviewsData, type Summary,
+} from '../api';
+import type { Group } from '../types';
 import type { ThemeMode } from '../hooks/useTheme';
 import { store } from '../lib/store';
 import { trackVisit } from '../lib/track';
 import { minutesOf, hhmm, plural, DAYS, FULL, MONTHS } from '../lib/format';
 import { Header } from './Header';
 import { TopBar } from './TopBar';
+import { Hero } from './Hero';
 import { TeacherPicker } from './TeacherPicker';
 import { DocSheet } from './DocSheet';
 import { SiteFooter } from './SiteFooter';
+import { ReviewsBlock } from './ReviewsBlock';
+import { StatsBlock } from './StatsBlock';
+import { ReviewsModal } from './ReviewsModal';
+import { StatsModal } from './StatsModal';
 import { UniversityMenu, type MenuAnchor } from './UniversityMenu';
 
 type Tab = 'today' | 'week';
@@ -86,6 +95,11 @@ export function TeacherApp({ mode, cycle, onSwitchRole }: {
   const [docOpen, setDocOpen] = useState(false);
   const [uniAnchor, setUniAnchor] = useState<MenuAnchor | null>(null);
   const [err, setErr] = useState('');
+  const [reviews, setReviews] = useState<ReviewsData | null>(null);
+  const [summary, setSummary] = useState<Summary | null>(null);
+  const [statsOpen, setStatsOpen] = useState(false);
+  const [reviewsOpen, setReviewsOpen] = useState(false);
+  const [rateInit, setRateInit] = useState(0);
   const [, setTick] = useState(0);
   const t0 = useRef(Date.now());
 
@@ -117,6 +131,36 @@ export function TeacherApp({ mode, cycle, onSwitchRole }: {
   }, []);
 
   const colorOf = useColors(sched);
+
+  // Отзывы и краткая статистика вуза — те же, что у студента (данные общие, обезличенные).
+  const loadReviews = useCallback(() => { getReviews().then(setReviews).catch(() => {}); }, []);
+  const loadSummary = useCallback(() => { getSummary().then(setSummary).catch(() => {}); }, []);
+  useEffect(() => { loadReviews(); loadSummary(); }, [loadReviews, loadSummary]);
+
+  // Group-совместимый объект из расписания преподавателя — чтобы переиспользовать Hero
+  // (таймер до текущей/следующей пары). Ячейка в формате «предмет · ауд. кабинет · группы».
+  const timerGroup = useMemo<Group>(() => {
+    const days = sched?.days || [];
+    const times = [...new Set(days.flatMap((d) => d.items.map((it) => it.time)).filter(Boolean))]
+      .sort((a, b) => ((minutesOf(a) || { a: 1e9 }).a) - ((minutesOf(b) || { a: 1e9 }).a));
+    const idx = new Map(times.map((t, i) => [t, i]));
+    const gdays = days.map((d) => {
+      const pairs: string[] = new Array(times.length).fill('');
+      d.items.forEach((it) => {
+        const i = idx.get(it.time);
+        if (i == null || pairs[i]) return;
+        const parts = [it.subj];
+        if (it.room) parts.push('ауд. ' + it.room);
+        if (it.groups.length) parts.push(it.groups.join(', '));
+        pairs[i] = parts.join(' · ');
+      });
+      return { day: d.day, pairs };
+    });
+    return { key: '', sheet: '', course: '', name: '', link: '', times, days: gdays };
+  }, [sched]);
+
+  const openReviews = (rating = 0) => { setRateInit(rating); setReviewsOpen(true); };
+  const closeReviews = () => { setReviewsOpen(false); loadReviews(); };
 
   const pick = (key: string) => {
     setSel(key); store('teacher', key);
@@ -157,7 +201,7 @@ export function TeacherApp({ mode, cycle, onSwitchRole }: {
       for (let o = 1; o <= 7; o++) { const c = at(o); if (c !== 'Вс' && has(c)) { nextDay = c; nextNote = 'ближайшие занятия'; break; } }
     }
     cards.push(<DayCard key="n" day={nextDay} items={byDay[nextDay] || []} note={nextNote} nowDay={now.day} nowMin={nowMin} colorOf={colorOf} />);
-    return <div id="days">{cards}</div>;
+    return <><Hero group={timerGroup} nowMin={nowMin} nowDay={now.day} /><div id="days">{cards}</div></>;
   };
 
   const week = () => {
@@ -190,12 +234,22 @@ export function TeacherApp({ mode, cycle, onSwitchRole }: {
 
         {!sched ? <><div className="skel" /><div className="skel" /></> : (tab === 'today' ? today() : week())}
 
+        {sched && (
+          <div className="extras">
+            <ReviewsBlock data={reviews} myRating={Number(store('myRating') || 0)}
+              onOpen={() => openReviews()} onRate={openReviews} />
+            <StatsBlock data={summary} onOpen={() => setStatsOpen(true)} />
+          </div>
+        )}
+
         <SiteFooter onOpenDoc={() => setDocOpen(true)} />
       </div>
 
       <TeacherPicker teachers={teachers || []} selected={sel} open={picker.open} first={picker.first}
         onPick={pick} onClose={() => setPicker({ open: false, first: false })} onStudent={onSwitchRole} />
       <DocSheet open={docOpen} onClose={() => setDocOpen(false)} />
+      <StatsModal open={statsOpen} onClose={() => setStatsOpen(false)} />
+      <ReviewsModal open={reviewsOpen} initialRating={rateInit} onClose={closeReviews} />
       <UniversityMenu anchor={uniAnchor} onClose={() => setUniAnchor(null)} />
     </>
   );
