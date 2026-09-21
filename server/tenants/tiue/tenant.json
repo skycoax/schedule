@@ -1,0 +1,24 @@
+{
+  "hosts": ["tiue.skycoax.uz"],
+  "source": {
+    "type": "edupage",
+    "host": "tiue.edupage.org"
+  },
+  "pollMinutes": 30,
+  "snapshotKeep": 6,
+  "site": {
+    "name": "Расписание TIUE",
+    "title": "Расписание TIUE · Ташкент",
+    "description": "Пары своей группы, обратный отсчёт до начала и правки расписания — сразу на телефоне.",
+    "appDescription": "Расписание пар международного университета Tashkent International University of Education"
+  },
+  "brand": {
+    "label": "Расписание TIUE · Ташкент",
+    "university": "Tashkent International University of Education",
+    "logoCredit": "Эмблема TIUE в шапке взята с официального сайта Tashkent International University of Education (условия лицензии не указаны) и показана только чтобы было понятно, чьё это расписание.",
+    "about": "Неофициальный просмотрщик расписания Tashkent International University of Education (TIUE). Приложение читает открытое расписание вуза в EduPage и показывает его удобнее. К вузу отношения не имеет и его позицию не выражает.",
+    "source": "Расписание принадлежит вузу и публикуется им в EduPage. Приложение только отображает его и ничего в нём не меняет.",
+    "sourceShort": "Расписание берётся из открытого расписания вуза в EduPage и может отставать — перед важным решением сверяйся с оригиналом.",
+    "searchHint": "MUA-25-01, MUT-25-02, MRM-25-01…"
+  }
+}

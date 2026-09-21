@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <link rel="manifest" href="/manifest.json" />
+  <!-- Иконка на главном экране — логотип вуза, контрастный к фону: белый знак на
+       чёрном в тёмной теме телефона, чёрный на белом — в светлой. iPhone берёт
+       иконку в момент добавления. Картинки /brand/* сервер отдаёт из папки вуза. -->
+  <link rel="apple-touch-icon" href="/brand/apple-touch-icon-dark.png" />
+  <link rel="apple-touch-icon" href="/brand/apple-touch-icon-light.png" media="(prefers-color-scheme: light)" />
+  <link rel="apple-touch-icon" href="/brand/apple-touch-icon-dark.png" media="(prefers-color-scheme: dark)" />
+  <link rel="canonical" href="{{URL}}/" />
+
+  <!-- Карточка ссылки в Telegram и соцсетях. {{…}} подставляет сервер (server/src/site.js)
+       из tenant.json вуза, на чей адрес пришли. -->
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="{{SITE_NAME}}" />
+  <meta property="og:title" content="{{TITLE}}" />
+  <meta property="og:description" content="{{DESCRIPTION}}" />
+  <meta property="og:url" content="{{URL}}/" />
+  <meta property="og:image" content="{{OG_IMAGE}}" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="{{TITLE}}" />
+  <meta name="twitter:description" content="{{DESCRIPTION}}" />
+  <meta name="twitter:image" content="{{OG_IMAGE}}" />
+
+  <!-- С 2024 года Chrome прячет модель Android-устройства в обычном User-Agent
+       (пишет заглушку "K") — настоящую отдаёт только через Client Hints, и только
+       если сайт явно попросил. Эта строка — просьба; заголовок Sec-CH-UA-Model
+       после неё начинает приходить на все запросы с этой страницы, включая /api/hit. -->
+  <meta http-equiv="Accept-CH" content="Sec-CH-UA-Model, Sec-CH-UA-Platform-Version" />
+  <title>{{TITLE}}</title>
+
+  <!-- Бренд вуза для интерфейса (см. src/brand.ts). -->
+  <script id="brand" type="application/json">{{BRAND_JSON}}</script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/main.tsx"></script>
+</body>
+</html>

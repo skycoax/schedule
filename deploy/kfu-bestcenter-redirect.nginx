@@ -1,0 +1,19 @@
+# kfu.bestcenter.uz — старый адрес расписания КФУ. Приложение живёт на kfu.skycoax.uz,
+# старый сервер (kfu-api) выключен — переадресуем, чтобы старые ссылки не ломались.
+server {
+    listen 80;
+    server_name kfu.bestcenter.uz;
+    return 301 https://kfu.skycoax.uz$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name kfu.bestcenter.uz;
+
+    ssl_certificate /etc/letsencrypt/live/kfu.bestcenter.uz/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/kfu.bestcenter.uz/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    return 301 https://kfu.skycoax.uz$request_uri;
+}

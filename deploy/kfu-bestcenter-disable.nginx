@@ -1,0 +1,21 @@
+# kfu.bestcenter.uz отключён — приложение переехало на kfu.skycoax.uz.
+# Отдаём 410 Gone (сертификат оставляем, чтобы не было ошибок TLS).
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name kfu.bestcenter.uz;
+
+    ssl_certificate /etc/letsencrypt/live/kfu.bestcenter.uz/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/kfu.bestcenter.uz/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    return 410;
+}
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name kfu.bestcenter.uz;
+    return 410;
+}

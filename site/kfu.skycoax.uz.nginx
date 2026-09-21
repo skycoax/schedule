@@ -1,0 +1,48 @@
+# Расписание КФУ — статический сайт на kfu.skycoax.uz
+#
+# Тот же /var/www/kfu, что и у kfu.bestcenter.uz — содержимое одно и то же,
+# меняется только домен и логи. Второй раз файлы копировать не нужно.
+#
+# Положить как /etc/nginx/sites-available/kfu.skycoax.uz и включить:
+#   sudo ln -s /etc/nginx/sites-available/kfu.skycoax.uz /etc/nginx/sites-enabled/
+#   sudo nginx -t && sudo systemctl reload nginx
+#   sudo certbot --nginx -d kfu.skycoax.uz
+#
+# Строки ssl_* certbot допишет сам — до него блок слушает только 80.
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name kfu.skycoax.uz;
+
+    root /var/www/kfu;
+    index index.html;
+
+    charset utf-8;
+
+    # Те же заголовки, что у остальных сайтов на этом сервере (см. info.bestcenter.uz).
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Страница меняется при каждой правке — пусть браузер её перепроверяет.
+    location = /index.html {
+        add_header Cache-Control "no-cache";
+    }
+
+    # Иконки и манифест не меняются, их можно держать в кэше долго.
+    location ~* \.(png|webmanifest)$ {
+        add_header Cache-Control "public, max-age=2592000";
+    }
+
+    location = /manifest.json {
+        add_header Cache-Control "public, max-age=86400";
+    }
+
+    access_log /var/log/nginx/kfu-skycoax.access.log;
+    error_log  /var/log/nginx/kfu-skycoax.error.log;
+}

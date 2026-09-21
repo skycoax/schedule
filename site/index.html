@@ -1,0 +1,1854 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#ffffff">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<title>Расписание</title>
+<style>
+/* Светлая тема, одна и единственная.
+   Фон ровно #fff — чтобы полосы страницы-обёртки Apps Script сверху и снизу
+   слились с приложением и перестали читаться как чужие.
+   Палитра — системные цвета iOS в светлом режиме. */
+:root{
+  --bg:#ffffff;
+  --ink-100:#1c1c1e;
+  --ink-60:rgba(60,60,67,.62);
+  --ink-30:rgba(60,60,67,.32);
+  --sep:rgba(60,60,67,.14);
+  --glass:rgba(118,118,128,.06);
+  --glass-edge:rgba(60,60,67,.10);
+  --green:#34C759;
+  --green-dim:rgba(52,199,89,.14);
+  --green-ink:#248A3D;
+  --red:#FF3B30;
+  --red-dim:rgba(255,59,48,.12);
+  --red-ink:#D70015;
+  --r-card:26px;
+  --font:-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',system-ui,sans-serif;
+  --dur:150ms; --ease:cubic-bezier(.4,0,.2,1);
+  /* Цвет предмета. Жёлтый выброшен — на белом он не читается. */
+  --c1:#007AFF; --c2:#FF9500; --c3:#34C759; --c4:#FF2D55;
+  --c5:#32ADE6; --c6:#AF52DE; --c7:#5856D6; --c8:#00A99D;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+/* Свои display перебивают атрибут hidden — возвращаем ему силу. */
+[hidden]{display:none !important}
+html{-webkit-text-size-adjust:100%;overscroll-behavior-y:contain;background:var(--bg)}
+body{
+  background:var(--bg); color:var(--ink-100);
+  font:400 15px/1.45 var(--font);
+  -webkit-tap-highlight-color:transparent;
+  font-variant-numeric:tabular-nums;
+  -webkit-font-smoothing:antialiased;
+  min-height:100vh;
+}
+/* Ambient: мягкое свечение сверху. Зелёное — всё по расписанию,
+   красное — расписание правили, и ты ещё не смотрел что. */
+body::before, body::after{
+  content:''; position:fixed; inset:0; z-index:-1; pointer-events:none;
+  transition:opacity .9s ease;
+}
+body::before{
+  background:radial-gradient(120% 60% at 50% -18%,
+    rgba(52,199,89,.13), rgba(52,199,89,.04) 45%, transparent 72%);
+  opacity:1;
+}
+body::after{
+  background:radial-gradient(120% 60% at 50% -18%,
+    rgba(255,59,48,.14), rgba(255,59,48,.04) 45%, transparent 72%);
+  opacity:0;
+}
+html.is-changed body::before{opacity:0}
+html.is-changed body::after{opacity:1}
+
+.wrap{
+  max-width:640px; margin:0 auto;
+  padding:24px 16px 32px;
+  padding-top:max(24px, env(safe-area-inset-top));
+  padding-bottom:max(32px, calc(env(safe-area-inset-bottom) + 16px));
+  padding-left:max(16px, env(safe-area-inset-left));
+  padding-right:max(16px, env(safe-area-inset-right));
+  animation:page-in var(--dur) var(--ease);
+}
+@keyframes page-in{from{opacity:0}to{opacity:1}}
+.wrap.is-snap{transition:transform 250ms var(--ease)}
+
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;touch-action:manipulation}
+a{color:inherit;text-decoration:none}
+svg{display:block}
+
+/* ─── Pull-to-refresh ─── */
+.ptr{position:fixed;top:0;left:0;right:0;z-index:20;display:flex;justify-content:center;
+  pointer-events:none;padding-top:calc(env(safe-area-inset-top) + 10px)}
+.ptr__spin{opacity:0}
+.ptr.is-snap .ptr__spin{transition:transform 250ms var(--ease), opacity 200ms var(--ease)}
+.ptr__orb{width:64px;height:64px;display:block}
+.ptr.has-orb .sig{display:none}
+.ptr .sig{width:22px;height:22px;color:var(--ink-60);display:block}
+.sig{position:relative;display:inline-block;flex:none;width:16px;height:16px;color:var(--green-ink)}
+.sig::before{content:'';position:absolute;inset:0;border:1px solid currentColor;border-radius:50%;opacity:.25}
+.sig i{position:absolute;inset:0;animation:orbit 2s linear infinite}
+.sig i::after{content:'';position:absolute;top:-1px;left:50%;width:3px;height:3px;
+  margin-left:-1.5px;border-radius:50%;background:currentColor}
+.sig i:nth-child(2){animation-delay:-.667s;opacity:.55}
+.sig i:nth-child(3){animation-delay:-1.333s;opacity:.3}
+@keyframes orbit{to{transform:rotate(360deg)}}
+.ptr.is-loading .sig{animation:ptr-spin .9s linear infinite}
+@keyframes ptr-spin{to{transform:rotate(360deg)}}
+
+/* ─── Шапка ─── */
+.hdr{display:flex;align-items:center;gap:12px;margin-bottom:16px}
+.hdr__txt{flex:1;min-width:0}
+.eyebrow{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-30)}
+h1{font-size:22px;font-weight:600;letter-spacing:-.018em;margin-top:2px;
+  overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.hdr__btn{flex:none;height:34px;padding:0 14px;border-radius:99px;
+  background:var(--glass);box-shadow:inset 0 0 0 1px var(--glass-edge);
+  font-size:13px;font-weight:600;transition:background-color var(--dur) var(--ease)}
+.hdr__btn:active{background:rgba(118,118,128,.16)}
+.hdr__btn:focus-visible{outline:2px solid var(--c1);outline-offset:2px}
+
+/* ─── Карточки ─── */
+.hero,.card,.alert{
+  background:#fff;
+  border-radius:var(--r-card);
+  box-shadow:inset 0 0 0 1px var(--glass-edge);
+}
+
+/* ─── Герой ─── */
+.hero{padding:18px 16px 16px;margin-bottom:16px}
+.hero__lbl{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--green-ink);margin-bottom:6px}
+.hero__lbl.is-idle{color:var(--ink-30)}
+.hero__lbl.is-bad{color:var(--red-ink)}
+/* Остаток времени — главное на экране. */
+/* Флип-часы во всю ширину карточки: каждая цифра — створка табло. Верх и низ
+   показывают разные половины глифа, а при смене две панели доигрывают переворот.
+   Размеры в долях: створки тянутся под ширину экрана, ничего не считаем в пикселях. */
+.clk{margin:8px 0 2px}
+.clk__d{display:flex;align-items:center;gap:5px;max-width:400px}
+.clk__sep{flex:none;width:16px;text-align:center;font-size:34px;font-weight:500;
+  color:var(--ink-30);animation:blink 1s steps(1,end) infinite}
+@keyframes blink{0%,55%{opacity:1}56%,100%{opacity:.25}}
+.clk__lbls{display:flex;gap:5px;margin-top:10px;max-width:400px}
+.clk__lbls span{flex:2;text-align:center;font-size:10px;font-weight:600;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--ink-30)}
+.clk__lbls .sp{flex:none;width:16px}
+
+.fl{position:relative;flex:1;min-width:0;aspect-ratio:5/6;perspective:280px;
+  font-size:clamp(42px, 17vw, 72px);font-weight:500;letter-spacing:-.03em}
+.fl::after{content:'';position:absolute;left:0;right:0;top:50%;height:1px;
+  background:rgba(60,60,67,.09);z-index:4;transform:translateY(-.5px)}
+.fl b{position:absolute;left:0;right:0;height:50%;overflow:hidden;display:block;
+  background:#F2F2F7;backface-visibility:hidden;-webkit-backface-visibility:hidden}
+.fl b i{position:absolute;left:0;right:0;height:200%;display:flex;
+  align-items:center;justify-content:center;font-style:normal;color:var(--ink-100)}
+.fl b.u{top:0;border-radius:13px 13px 0 0}
+.fl b.u i{top:0}
+.fl b.l{bottom:0;border-radius:0 0 13px 13px}
+.fl b.l i{top:-100%}
+@supports not (aspect-ratio: 5/6){ .fl{height:21vw;max-height:104px} }
+.fl b.f{z-index:3}
+.fl b.u.f{transform-origin:50% 100%;animation:flipU .26s cubic-bezier(.45,0,.75,1) forwards}
+.fl b.l.f{transform-origin:50% 0;transform:rotateX(90deg);
+  animation:flipL .26s .26s cubic-bezier(.25,0,.55,1) forwards}
+@keyframes flipU{to{transform:rotateX(-90deg)}}
+@keyframes flipL{to{transform:rotateX(0deg)}}
+.hero__cap{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ink-30);margin-top:12px}
+.hero__bar{height:3px;border-radius:99px;background:rgba(118,118,128,.14);
+  margin:12px 0 14px;overflow:hidden}
+.hero__bar i{display:block;height:100%;width:0;border-radius:99px;background:var(--green);
+  transition:width 1s linear}
+.hero__title{font-size:17px;font-weight:600;line-height:1.3}
+.hero__meta{font-size:13px;color:var(--ink-60);margin-top:4px;line-height:1.5}
+
+.dot{display:inline-block;flex:none;width:8px;height:8px;border-radius:99px;background:var(--ink-30)}
+.dot--sub{background:var(--c,var(--ink-30))}
+.dot--ok{background:var(--green);box-shadow:0 0 0 3px rgba(52,199,89,.18)}
+.dot--bad{background:var(--red);box-shadow:0 0 0 3px rgba(255,59,48,.16)}
+.dot--live{background:var(--c,var(--green));box-shadow:0 0 0 3px rgba(52,199,89,.18)}
+
+/* ─── Переключатель ─── */
+.seg{display:flex;gap:4px;background:rgba(118,118,128,.10);padding:3px;border-radius:16px;
+  margin-bottom:12px}
+.seg button{flex:1;height:34px;border-radius:13px;font-size:13px;font-weight:600;color:var(--ink-60);
+  transition:background-color var(--dur) var(--ease)}
+.seg button[aria-selected="true"]{background:#fff;color:var(--ink-100)}
+.seg button:focus-visible{outline:2px solid var(--c1);outline-offset:-2px}
+
+/* ─── Карточка дня ─── */
+.card{margin-bottom:16px;overflow:hidden}
+.card__hdr{display:flex;align-items:center;justify-content:space-between;gap:8px;
+  padding:14px 16px;position:relative}
+.card__hdr::after{content:'';position:absolute;left:16px;right:0;bottom:0;height:1px;background:var(--sep)}
+.card__title{font-size:16px;font-weight:600}
+.card__title span{color:var(--ink-30);font-weight:400}
+.card__count{font-size:12px;font-weight:600;color:var(--ink-60);flex:none;
+  background:rgba(118,118,128,.12);padding:3px 9px;border-radius:99px}
+.card__count.is-now{color:var(--green-ink);background:var(--green-dim)}
+
+/* Полоса дня: шесть пар, цвет — предмета. */
+.strip{display:grid;grid-template-columns:repeat(6,1fr);gap:4px;padding:12px 16px}
+.strip i{height:14px;border-radius:3px;background:rgba(118,118,128,.12)}
+/* Текущая пара — самый насыщенный сегмент. Кольцо не рисуем: на белом оно
+   читалось как лишняя рамка. */
+.strip i.busy{background:var(--c);opacity:.55}
+.strip i.past{background:var(--c);opacity:.18}
+.strip i.live{background:var(--c);opacity:1}
+
+/* ─── Пара ─── */
+.row{padding:12px 16px;position:relative}
+.row + .row::before{content:'';position:absolute;left:16px;right:0;top:0;height:1px;background:var(--sep)}
+.row__top{display:flex;align-items:center;gap:8px;min-height:20px}
+.row__name{flex:1;min-width:0;font-size:15px;font-weight:500;line-height:1.3}
+.row__ms{font-size:13px;color:var(--ink-60);flex:none}
+.row__line2{display:flex;align-items:baseline;gap:8px;margin-top:6px;flex-wrap:wrap}
+.room{font-size:12px;font-weight:600;color:var(--ink-100);flex:none;
+  background:rgba(118,118,128,.14);padding:2px 8px;border-radius:99px}
+.who{font-size:13px;color:var(--ink-60);min-width:0;line-height:1.4}
+.row.is-past{opacity:.45}
+.row.is-live .row__name{color:var(--c)}
+.row.is-live .row__ms{color:var(--c)}
+.row__was{margin:8px 0 0;padding:8px 12px;background:var(--red-dim);
+  border-radius:12px;font-size:13px;color:var(--red-ink);line-height:1.5}
+.free{padding:10px 16px;font-size:13px;color:var(--ink-30);position:relative}
+.free + .row::before{content:none}
+.empty{padding:16px;font-size:14px;color:var(--ink-30)}
+
+/* ─── Матрица недели: дни × пары ─── */
+.matrix{padding:14px 16px 6px}
+.matrix table{width:100%;border-collapse:separate;border-spacing:4px}
+.matrix th{font-size:11px;font-weight:600;color:var(--ink-30);letter-spacing:.06em;
+  text-transform:uppercase;padding-bottom:2px}
+.matrix th.today{color:var(--green-ink)}
+.matrix td.n{font-size:11px;color:var(--ink-30);width:14px;text-align:center}
+.matrix td.cell{height:24px;border-radius:6px;background:rgba(118,118,128,.10)}
+.matrix td.cell.on{background:var(--c);opacity:.62}
+.matrix td.cell.on.live{opacity:1}
+
+.stats{display:grid;grid-template-columns:repeat(3,1fr);
+  margin-top:8px;border-top:1px solid var(--sep);border-bottom:1px solid var(--sep)}
+.stat{padding:14px 12px;text-align:center}
+.stat + .stat{border-left:1px solid var(--sep)}
+.stat b{display:block;font-size:19px;font-weight:600;letter-spacing:-.02em}
+.stat span{display:block;font-size:11px;color:var(--ink-30);margin-top:3px;
+  letter-spacing:.05em;text-transform:uppercase}
+
+.legend{padding:6px 16px 16px}
+.leg{display:flex;align-items:center;gap:10px;padding:8px 0;position:relative}
+.leg + .leg::before{content:'';position:absolute;left:18px;right:0;top:0;height:1px;background:var(--sep)}
+.leg__name{flex:1;min-width:0;font-size:14px;line-height:1.3}
+.leg__bar{flex:none;width:64px;height:6px;border-radius:99px;background:rgba(118,118,128,.14);overflow:hidden}
+.leg__bar i{display:block;height:100%;border-radius:99px;background:var(--c)}
+.leg__n{flex:none;width:26px;text-align:right;font-size:13px;color:var(--ink-60)}
+
+/* ─── Журнал правок ─── */
+.ent{padding:14px 16px;position:relative}
+.ent + .ent::before{content:'';position:absolute;left:16px;right:0;top:0;height:1px;background:var(--sep)}
+.ent__when{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ink-30);margin-bottom:10px}
+.ch{margin-bottom:12px}
+.ch:last-child{margin-bottom:0}
+.ch__slot{font-size:13px;color:var(--ink-60);margin-bottom:4px}
+.ch__from{font-size:14px;color:var(--ink-30);text-decoration:line-through}
+.ch__to{font-size:15px;font-weight:500;margin-top:4px;display:flex;align-items:center;gap:8px}
+
+/* ─── Выбор группы ─── */
+/* Модальное окно согласия. Поднимается снизу, как лист в iOS. */
+.modal{position:fixed;inset:0;z-index:70;display:none;align-items:flex-end;justify-content:center;
+  background:rgba(0,0,0,.3);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);
+  padding:16px;padding-bottom:max(16px, calc(env(safe-area-inset-bottom) + 16px))}
+.modal.open{display:flex}
+.modal__c{width:100%;max-width:460px;background:#fff;border-radius:24px;
+  padding:22px 20px 18px;box-shadow:inset 0 0 0 1px var(--glass-edge);
+  animation:sheet-up .32s cubic-bezier(.2,.85,.3,1)}
+@keyframes sheet-up{from{transform:translateY(28px);opacity:0}to{transform:none;opacity:1}}
+.modal__h{font-size:22px;font-weight:600;letter-spacing:-.018em;margin-top:5px}
+.modal__l{margin:14px 0 0 18px;padding:0}
+.modal__l li{font-size:14px;line-height:1.5;color:var(--ink-60);margin-bottom:10px}
+.modal__l b{color:var(--ink-100);font-weight:600}
+.modal__doc{display:block;width:100%;text-align:center;font-size:13.5px;color:var(--c1);
+  padding:12px 0 4px}
+.modal__sub{font-size:14px;color:var(--ink-60);line-height:1.5;margin-top:8px}
+/* Наглядные шаги установки: иконка — стрелка — иконка. */
+.steps{display:flex;align-items:flex-start;justify-content:center;gap:6px;margin:18px 0 16px}
+.step{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:9px}
+.step__i{width:56px;height:56px;border-radius:99px;display:grid;place-items:center;
+  background:rgba(118,118,128,.12);color:var(--ink-100)}
+.step__i svg{width:26px;height:26px}
+.step__t{font-size:12.5px;font-weight:600;line-height:1.3;text-align:center;color:var(--ink-100)}
+.step__a{flex:none;color:var(--ink-30);font-size:22px;line-height:56px}
+#homeUrl{margin-top:10px}
+.modal__ok{display:block;width:100%;height:50px;border-radius:15px;margin-top:8px;
+  background:var(--c1);color:#fff;font-size:16px;font-weight:600}
+.modal__ok:active{opacity:.82}
+
+/* Полный текст условий открывается поверх согласия */
+#doc{z-index:90}
+.sheet{position:fixed;inset:0;z-index:60;background:rgba(255,255,255,.94);
+  -webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);display:none;flex-direction:column}
+.sheet.open{display:flex;animation:page-in var(--dur) var(--ease)}
+.sheet{padding-top:env(safe-area-inset-top)}
+.sheet__bar{display:flex;gap:10px;align-items:center;padding:16px}
+.sheet__hello{padding:22px 20px 0}
+.sheet__h{font-size:22px;font-weight:600;letter-spacing:-.018em;margin-top:6px}
+.sheet__p{font-size:14px;color:var(--ink-60);margin-top:6px;line-height:1.45}
+.sheet input{flex:1;min-width:0;height:40px;padding:0 14px;border-radius:14px;
+  background:rgba(118,118,128,.10);border:0;font:400 15px var(--font);color:var(--ink-100)}
+.sheet input::placeholder{color:var(--ink-30)}
+.sheet__list{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;
+  padding:0 16px max(40px, calc(env(safe-area-inset-bottom) + 24px))}
+.sheet__head{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ink-30);padding:18px 4px 8px}
+.opt{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:12px 14px;
+  background:#fff;box-shadow:inset 0 0 0 1px var(--glass-edge);
+  border-radius:16px;margin-bottom:6px;transition:background-color var(--dur) var(--ease)}
+.opt:active{background:rgba(118,118,128,.10)}
+.opt__ico{width:34px;height:34px;border-radius:10px;flex:none;display:grid;place-items:center;
+  background:color-mix(in srgb, var(--c, var(--c1)) 14%, transparent);color:var(--c, var(--c1))}
+@supports not (background: color-mix(in srgb, red 10%, transparent)){
+  .opt__ico{background:rgba(118,118,128,.10);color:var(--ink-100)}
+}
+.opt__ico svg{width:19px;height:19px}
+.opt__txt{flex:1;min-width:0}
+.opt__name{font-size:15px;font-weight:500;display:block}
+.opt__code{font-size:12px;color:var(--ink-30);margin-top:1px;display:block}
+.opt.is-sel{background:var(--green-dim);box-shadow:inset 0 0 0 1px rgba(52,199,89,.35)}
+.opt.is-sel .opt__name{color:var(--green-ink);font-weight:600}
+.opt.is-sel .opt__ico{background:rgba(52,199,89,.20);color:var(--green-ink)}
+
+/* ─── Служебное ─── */
+.alert{display:none;align-items:center;gap:12px;background:var(--red-dim);
+  box-shadow:inset 0 0 0 1px rgba(255,59,48,.25);
+  padding:14px 16px;margin-bottom:16px}
+.alert.is-on{display:flex}
+.alert__text{flex:1;min-width:0;font-size:15px}
+.alert__text b{font-weight:600;display:block}
+.alert__text span{color:var(--ink-60);font-size:13px}
+.btn{flex:none;height:44px;padding:0 18px;font:600 15px var(--font);color:#fff;
+  background:var(--red);border-radius:14px;
+  transition:opacity var(--dur) var(--ease)}
+.btn:active{opacity:.75}
+
+.skel{border-radius:var(--r-card);background:rgba(118,118,128,.10);height:96px;margin-bottom:16px;
+  animation:skel 1.2s ease-in-out infinite}
+@keyframes skel{0%,100%{opacity:1}50%{opacity:.45}}
+/* Подписка на календарь */
+.cal{padding:16px}
+.cal__h{font-size:16px;font-weight:600}
+.cal__p{font-size:13.5px;color:var(--ink-60);margin-top:6px;line-height:1.5}
+.cal__go{display:block;margin-top:14px;height:46px;line-height:46px;text-align:center;
+  border-radius:14px;background:var(--c1);color:#fff;font-size:15px;font-weight:600}
+.cal__go:active{opacity:.8}
+.cal__or{font-size:12px;color:var(--ink-30);margin-top:12px;line-height:1.45}
+.cal__u{width:100%;margin-top:8px;height:38px;padding:0 12px;border:0;border-radius:12px;
+  background:rgba(118,118,128,.10);color:var(--ink-60);font:400 12px var(--font);
+  text-overflow:ellipsis}
+
+/* Подпись автора */
+.made{margin-top:26px;text-align:center;padding-bottom:8px}
+.made__t{font-size:13px;color:var(--ink-30)}
+.made__t b{font-weight:600;color:var(--ink-60)}
+.made__l{display:flex;justify-content:center;gap:10px;margin-top:12px}
+.made__l a{width:38px;height:38px;border-radius:99px;display:grid;place-items:center;
+  background:rgba(118,118,128,.10);color:var(--ink-60);
+  transition:background-color var(--dur) var(--ease)}
+.made__l a:active{background:rgba(118,118,128,.2)}
+.made__l svg{width:19px;height:19px}
+.made__doc{margin-top:14px;font-size:12px;color:var(--ink-30);
+  border-bottom:1px solid var(--sep);padding:4px 2px}
+
+/* Правовая страница */
+.doc{font-size:15px;line-height:1.55;color:var(--ink-100)}
+.doc h3{font-size:14px;font-weight:600;margin:22px 0 6px}
+.doc p{color:var(--ink-60);margin-bottom:8px}
+.doc ul{margin:0 0 8px 18px;color:var(--ink-60)}
+.doc li{margin-bottom:4px}
+.doc b{color:var(--ink-100);font-weight:600}
+.doc a{color:var(--c1)}
+.doc__upd{font-size:12px;color:var(--ink-30);margin-top:4px}
+.sheet__p--fine{font-size:12.5px;color:var(--ink-30);margin-top:10px}
+
+.ftr{margin-top:20px;text-align:center;font-size:13px;color:var(--ink-30);line-height:1.9}
+.ftr__btn{font:inherit;color:var(--ink-60);border-bottom:1px solid var(--sep);
+  padding:6px 2px;line-height:1.2}
+.ftr__btn.is-on{color:var(--green-ink);border-bottom-color:rgba(52,199,89,.4)}
+.ftr__btn:active{opacity:.6}
+.ftr .warn{color:var(--red-ink)}
+
+@media (min-width:900px){
+  .wrap{max-width:1080px}
+  #days{columns:2;column-gap:16px}
+  #days .card{break-inside:avoid}
+}
+@media (prefers-reduced-motion: reduce){
+  .wrap{animation:none}
+  .skel{animation:none}
+  .sig i{animation:none}
+  .sig i:nth-child(2){transform:rotate(120deg)}
+  .sig i:nth-child(3){transform:rotate(240deg)}
+  .ptr.is-loading .sig{animation:none}
+  .clk__sep{animation:none}
+  .fl b.f{animation:none;display:none}
+  *{transition:none !important}
+}
+</style>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="canonical" href="https://kfu.skycoax.uz/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Расписание КФУ">
+<meta property="og:title" content="Расписание КФУ · Джизак">
+<meta property="og:description" content="Пары своей группы, обратный отсчёт до начала и правки расписания — сразу на телефоне.">
+<meta property="og:url" content="https://kfu.skycoax.uz/">
+<meta property="og:image" content="https://kfu.skycoax.uz/icon-512.png">
+<meta name="twitter:card" content="summary">
+<script>
+/* Адрес JSON-API и токен на запись. Без токена страница работает в режиме
+   чтения: расписание видно, но выбор группы и уведомления не сохраняются
+   на сервере (только в этом браузере). */
+window.RASPISANIE_API = 'https://script.google.com/macros/s/AKfycbw3Q_91thWAajWY1YVjOSrBrDA4tzjfmCYN7W3x4NSV_cGo-u4VF-Z5dvjjUXJFiRGg/exec';
+window.RASPISANIE_TOKEN = '';
+</script>
+</head>
+<body>
+
+<div id="ptr" class="ptr" aria-hidden="true">
+  <span class="ptr__spin">
+    <canvas id="ptr-orb" class="ptr__orb" width="64" height="64" hidden></canvas>
+    <span class="sig"><i></i><i></i><i></i></span>
+  </span>
+</div>
+
+<div class="wrap">
+  <div class="hdr">
+    <div class="hdr__txt">
+      <div class="eyebrow" id="course">Расписание</div>
+      <h1 id="gname">Загрузка</h1>
+    </div>
+    <button class="hdr__btn" onclick="openPicker()">Сменить</button>
+  </div>
+
+  <div class="alert" id="alert">
+    <span class="dot dot--bad"></span>
+    <div class="alert__text"><b>Не удалось прочитать таблицу</b><span id="alertMsg"></span></div>
+    <button class="btn" onclick="location.reload()">Ещё раз</button>
+  </div>
+
+  <div class="seg" role="tablist">
+    <button id="t-today" role="tab" aria-selected="true" onclick="setTab('today')">Сегодня</button>
+    <button id="t-week" role="tab" aria-selected="false" onclick="setTab('week')">Неделя</button>
+    <button id="t-changes" role="tab" aria-selected="false" onclick="setTab('changes')">Правки</button>
+  </div>
+
+  <main id="main"><div class="skel"></div><div class="skel"></div></main>
+  <div class="ftr" id="ftr"></div>
+
+  <div class="made">
+    <div class="made__t">Сделал <b>@skycoax</b></div>
+    <div class="made__l">
+      <a href="https://t.me/skycoax" target="_blank" rel="noopener" aria-label="Telegram"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21.7 4.1 2.8 11.2c-.8.3-.8 1.5.1 1.7l4.8 1.4 1.5 4.8c.3.8 1.4 1 1.9.2l2-3.1 4.7 3.4c.6.4 1.5.1 1.7-.6l3-13.5c.2-.8-.6-1.5-1.3-1.2Z"/><path d="M8 14.3 19 6.2"/></svg></a>
+      <a href="https://www.instagram.com/skycoax" target="_blank" rel="noopener" aria-label="Instagram"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="5.2"/><circle cx="12" cy="12" r="4"/><circle cx="17.3" cy="6.7" r="1.15" fill="currentColor" stroke="none"/></svg></a>
+      <a href="https://github.com/skycoax" target="_blank" rel="noopener" aria-label="GitHub"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 .5C5.37.5 0 5.87 0 12.5c0 5.3 3.44 9.8 8.2 11.39.6.11.82-.26.82-.58v-2.03c-3.34.73-4.04-1.61-4.04-1.61-.55-1.39-1.34-1.76-1.34-1.76-1.09-.75.08-.73.08-.73 1.21.09 1.84 1.24 1.84 1.24 1.07 1.84 2.81 1.31 3.5 1 .11-.78.42-1.31.76-1.61-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.13-.3-.54-1.52.11-3.18 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 0 1 6 0c2.29-1.55 3.3-1.23 3.3-1.23.65 1.66.24 2.88.12 3.18.77.84 1.23 1.91 1.23 3.22 0 4.61-2.8 5.63-5.48 5.92.43.37.81 1.1.81 2.22v3.29c0 .32.22.7.83.58A12.01 12.01 0 0 0 24 12.5C24 5.87 18.63.5 12 .5Z"/></svg></a>
+      <a href="tel:+998905391575" aria-label="Телефон"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6.6 3h3l1.5 4-2 1.4a12.2 12.2 0 0 0 5.5 5.5l1.4-2 4 1.5v3a2 2 0 0 1-2.2 2A16.6 16.6 0 0 1 3.6 5.2 2 2 0 0 1 5.6 3Z"/></svg></a>
+    </div>
+    <button class="made__doc" onclick="openHome()">Добавить на главный экран</button>
+    <button class="made__doc" onclick="openDoc()">Условия и данные</button>
+  </div>
+</div>
+
+<div class="modal" id="home">
+  <div class="modal__c">
+    <div class="eyebrow">Чтобы открывалось в один тап</div>
+    <div class="modal__h">Добавь на главный экран</div>
+    <div class="modal__sub">Ссылка уже содержит твою группу — расписание откроется
+      настроенным, даже если браузер почистит хранилище.</div>
+
+    <button class="modal__ok" id="homeInstall" hidden onclick="doInstall()">Установить приложение</button>
+
+    <div class="steps" id="stepsIos" hidden>
+      <div class="step">
+        <span class="step__i"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v13"/><path d="m8 7 4-4 4 4"/><path d="M6 12H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-1"/></svg></span>
+        <span class="step__t">Нажми<br>«Поделиться»</span>
+      </div>
+      <span class="step__a">›</span>
+      <div class="step">
+        <span class="step__i"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="17" height="17" rx="4.5"/><path d="M12 8.5v7M8.5 12h7"/></svg></span>
+        <span class="step__t">На экран<br>«Домой»</span>
+      </div>
+      <span class="step__a">›</span>
+      <div class="step">
+        <span class="step__i"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg></span>
+        <span class="step__t">Готово</span>
+      </div>
+    </div>
+
+    <div class="steps" id="stepsAndroid" hidden>
+      <div class="step">
+        <span class="step__i"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="12" cy="5" r="1.9"/><circle cx="12" cy="12" r="1.9"/><circle cx="12" cy="19" r="1.9"/></svg></span>
+        <span class="step__t">Меню<br>в Chrome</span>
+      </div>
+      <span class="step__a">›</span>
+      <div class="step">
+        <span class="step__i"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5v11"/><path d="m8 10.5 4 4 4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg></span>
+        <span class="step__t">Установить<br>приложение</span>
+      </div>
+      <span class="step__a">›</span>
+      <div class="step">
+        <span class="step__i"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg></span>
+        <span class="step__t">Готово</span>
+      </div>
+    </div>
+
+    <button class="modal__ok" id="homeCopy" onclick="copyMyUrl()">Скопировать ссылку</button>
+    <input class="cal__u" id="homeUrl" readonly onclick="this.select()">
+    <button class="modal__doc" onclick="closeHome()">Закрыть</button>
+  </div>
+</div>
+
+<div class="modal" id="consent">
+  <div class="modal__c">
+    <div class="eyebrow">Расписание КФУ · Джизак</div>
+    <div class="modal__h">Перед началом</div>
+    <ul class="modal__l">
+      <li>Приложение <b>неофициальное</b>. Расписание берётся из открытой таблицы вуза
+        и может отставать — перед важным решением сверяйся с оригиналом.</li>
+      <li>Ведётся <b>обезличенная статистика</b>: время захода, по какой ссылке пришёл,
+        выбранная группа, тип устройства и язык браузера. <b>Ни имени, ни телефона,
+        ни почты, ни местоположения.</b></li>
+      <li>В браузере (в куке и локальном хранилище) остаются <b>только настройки</b>:
+        выбранная группа, метка последней правки, это согласие и случайный номер для
+        подсчёта. Рекламных кук нет, третьим лицам ничего не передаётся.</li>
+      <li>Автор не отвечает за пропущенные пары и опоздания.</li>
+    </ul>
+    <button class="modal__doc" onclick="openDoc()">Полный текст условий</button>
+    <button class="modal__ok" onclick="acceptConsent()">Принимаю, продолжить</button>
+  </div>
+</div>
+
+<div class="sheet" id="doc">
+  <div class="sheet__bar">
+    <div class="sheet__h" style="flex:1">Условия и данные</div>
+    <button class="hdr__btn" onclick="closeDoc()">Закрыть</button>
+  </div>
+  <div class="sheet__list doc">
+    <p class="doc__upd">Обновлено 8 сентября 2026</p>
+
+    <h3>Что это</h3>
+    <p>Неофициальный просмотрщик расписания филиала КФУ в г. Джизаке. Приложение
+    читает открытую Google-таблицу вуза и показывает её удобнее. К вузу отношения
+    не имеет и его позицию не выражает.</p>
+
+    <h3>Откуда данные</h3>
+    <p>Расписание принадлежит вузу. Приложение только отображает его и ничего в нём
+    не меняет. Если таблица недоступна или в ней опечатка — здесь будет то же самое.</p>
+
+    <h3>Без гарантий</h3>
+    <p>Расписание может отставать, содержать ошибки вуза или не учитывать устные
+    изменения. Перед важным решением сверяйся с официальной таблицей и деканатом.
+    Автор не отвечает за пропущенные пары, опоздания и любые последствия
+    использования приложения.</p>
+
+    <h3>Что хранится в твоём телефоне</h3>
+    <p>Четыре записи — в куке и в локальном хранилище браузера сразу, чтобы настройки
+    не слетали при перезапуске:</p>
+    <ul>
+      <li><b>group</b> — выбранная группа, чтобы не выбирать её каждый раз;</li>
+      <li><b>seenTs</b> — метка последней просмотренной правки, чтобы не показывать её снова;</li>
+      <li><b>agreed</b> — что ты принял эти условия;</li>
+      <li><b>cid</b> — случайный номер для подсчёта заходов, ни с чем не связанный.</li>
+    </ul>
+    <p>Это технические куки для работы приложения: они хранят только твои настройки.
+    Рекламных и отслеживающих кук нет, третьим лицам данные не передаются.</p>
+    <p>Удалить всё — очистить данные сайта в настройках браузера. После этого ты
+    станешь для статистики новым посетителем.</p>
+    <p>Если открыть расписание по личной ссылке с главного экрана, выбранная группа
+    и номер <b>cid</b> едут прямо в адресе — так настройки переживают очистку
+    хранилища, а заход не считается новым каждый раз.</p>
+
+    <h3>Какая статистика собирается</h3>
+    <p>При открытии приложение записывает одну строку в таблицу автора:</p>
+    <ul>
+      <li>время захода;</li>
+      <li>случайный номер <b>cid</b> и признак «новый или вернулся»;</li>
+      <li>источник перехода — метка в ссылке (например, из Telegram) и адрес страницы,
+        с которой пришёл;</li>
+      <li>выбранная группа;</li>
+      <li>тип устройства (iPhone, Android, Windows, Mac), размер экрана, язык браузера.</li>
+    </ul>
+    <p><b>Не собирается:</b> имя, фамилия, телефон, почта, точное местоположение,
+    содержимое других сайтов и вкладок. Приложение не использует рекламные трекеры
+    и не передаёт данные третьим лицам — статистика лежит на Google-Диске автора.</p>
+    <p>Статистика нужна автору, чтобы понимать, сколько людей пользуется расписанием
+    и откуда они приходят. Заход записывается только <b>после того, как ты принял
+    эти условия</b>.</p>
+
+    <h3>Что происходит на сервере</h3>
+    <p>Раз в час скрипт читает таблицу и хранит её копию и список правок на
+    Google-Диске автора — чтобы показывать, что и когда изменилось. Данные
+    посетителей туда не попадают. Сами запросы к странице обрабатывает Google
+    по своим правилам.</p>
+
+    <h3>Уведомления</h3>
+    <p>Сообщения об изменениях приходят только автору, в его собственного
+    телеграм-бота. Приложение никого ни на что не подписывает.</p>
+
+    <h3>Календарь</h3>
+    <p>Если подключить подписку, телефон будет сам обращаться к ссылке с расписанием.
+    Никакие твои данные при этом не передаются.</p>
+
+    <h3>Персональные данные</h3>
+    <p>Приложение не собирает и не обрабатывает персональные данные — по смыслу
+    Закона Республики Узбекистан «О персональных данных» обработки здесь нет.</p>
+
+    <h3>Изменения</h3>
+    <p>Условия могут меняться, дата обновления указана вверху.</p>
+
+    <h3>Связь</h3>
+    <p><a href="https://t.me/skycoax" target="_blank" rel="noopener">@skycoax</a> в Telegram.</p>
+  </div>
+</div>
+
+<div class="sheet" id="picker">
+  <div class="sheet__hello" id="pickHello" hidden>
+    <div class="eyebrow">Расписание КФУ · Джизак</div>
+    <div class="sheet__h">Выбери свою группу</div>
+    <div class="sheet__p">Один раз — дальше приложение будет открываться сразу на ней.</div>
+  </div>
+  <div class="sheet__bar">
+    <input id="q" placeholder="Геология, 2 курс, лечебное…" oninput="renderList()" autocomplete="off">
+    <button class="hdr__btn" id="pickClose" onclick="closePicker()">Закрыть</button>
+  </div>
+  <div class="sheet__list" id="list"></div>
+</div>
+
+<script>
+/* thinking-orbs — рисующее ядро из orbs.js (info.bestcenter.uz).
+   React-обёртка ThinkingOrb вырезана: нужны только MODE_DRAWS и resolvePreset. */
+function F(e, n) {
+  const s = Math.sin(e * 12.9898 + n * 78.233) * 43758.5453;
+  return s - Math.floor(s);
+}
+function st(e, n) {
+  const s = Math.PI * (3 - Math.sqrt(5)), r = 1 - 2 * (e + 0.5) / n, t = Math.sqrt(1 - r * r), o = e * s;
+  return [t * Math.cos(o), r, t * Math.sin(o)];
+}
+function ot(e, n) {
+  return Math.atan2(Math.sin(e - n), Math.cos(e - n));
+}
+function q(e, n, s, r, t) {
+  const o = Math.sin(n), c = Math.cos(n), a = Math.sin(e), i = Math.cos(e);
+  return (m, g, M) => {
+    const u = m * i + M * a, h = -m * a + M * i, b = g * c - h * o, x = g * o + h * c;
+    return [s + u * t, r - b * t, x];
+  };
+}
+function _(e, n, s, r = 0.3) {
+  n.sort((t, o) => t.z - o.z);
+  for (const t of n) {
+    const o = t.a ?? 1;
+    if (o < 0.02) continue;
+    const c = Math.min(1, Math.max(0, t.white)), a = Math.round((s ? 1 - c : c) * 255);
+    e.fillStyle = `rgba(${a},${a},${a},${o})`, e.beginPath(), e.arc(t.x, t.y, Math.max(r, t.r), 0, Math.PI * 2), e.fill();
+  }
+}
+function $(e, n) {
+  return (e / 300) ** n;
+}
+function et(e, n, s, r) {
+  const t = 2 * n * s + r, o = e % t, c = new Array(n).fill(0);
+  let a = -1;
+  if (o < 2 * n * s) {
+    const i = Math.floor(o / s), m = (o - i * s) / s, M = 1 - (1 - Math.min(1, m / 0.7)) ** 3;
+    if (i < n) {
+      for (let u = 0; u < i; u++) c[u] = 1;
+      c[i] = M, a = i;
+    } else {
+      const u = 2 * n - 1 - i;
+      for (let h = 0; h < u; h++) c[h] = 1;
+      c[u] = 1 - M, a = u;
+    }
+  }
+  return { amount: c, active: a };
+}
+function ct(e, n, s) {
+  let [r, t, o] = e, c = !1;
+  for (let a = 0; a < n.length; a++) {
+    if (s.amount[a] <= 0) continue;
+    const i = n[a], m = i.axis === 0 ? r : i.axis === 1 ? t : o;
+    if (m < i.lo || m >= i.hi) continue;
+    a === s.active && (c = !0);
+    const g = i.ang * s.amount[a], M = Math.cos(g), u = Math.sin(g);
+    if (i.axis === 0) {
+      const h = t * M - o * u;
+      o = t * u + o * M, t = h;
+    } else if (i.axis === 1) {
+      const h = r * M + o * u;
+      o = -r * u + o * M, r = h;
+    } else {
+      const h = r * M - t * u;
+      t = r * u + t * M, r = h;
+    }
+  }
+  return [r, t, o, c];
+}
+function at(e) {
+  const n = [];
+  for (let s = 0; s < e; s++) {
+    const r = Math.min(2, Math.floor(F(s, 2.3) * 3)), t = -1 + 0.5 * Math.min(3, Math.floor(F(s, 5.9) * 4)), o = F(s, 7.7) < 0.5 ? 1 : -1;
+    n.push({ axis: r, lo: t, hi: t + 0.5, ang: o * Math.PI / 2 });
+  }
+  return n;
+}
+const rt = (e, n, s, r, t) => {
+  const c = n / 2, a = n / 2, i = n / 2 * 0.82, m = 0.4 + 0.06 * Math.sin(s * 0.35), g = q(s * 0.5, m, c, a, i), M = s * (0.5 + (1.7 - 0.5) * (t.scanMul ?? 1)), u = $(n, t.rsPow ?? 0.6), h = t.dimBase ?? 1, b = [], x = t.latRings ?? 17, I = t.lonDensity ?? 44;
+  for (let P = 0; P <= x; P++) {
+    const y = -Math.PI / 2 + P / x * Math.PI, D = Math.cos(y), w = Math.sin(y), k = Math.max(1, Math.round(Math.abs(D) * I));
+    for (let v = 0; v < k; v++) {
+      const R = v / k * 2 * Math.PI, [p, d, l] = g(D * Math.cos(R), w, D * Math.sin(R)), f = (l + 1) / 2, S = ot(R + s * 0.5, M), L = Math.exp(-(S * S) / 0.18) * Math.max(0, l);
+      b.push({
+        x: p,
+        y: d,
+        z: l,
+        r: ((t.rBase ?? 0.6) + (t.rDepth ?? 1.7) * f + (t.rBoost ?? 1) * L) * u,
+        white: (t.inkFar ?? 0.62) - (t.inkSpan ?? 0.54) * f,
+        // dimBase < 1 fades un-scanned dots so the meridian reads clearly
+        a: h + (1 - h) * Math.min(1, L)
+      });
+    }
+  }
+  _(e, b, r, t.rMin);
+}, it = (e, n, s, r, t) => {
+  const o = n / 2, c = n / 2, a = n / 2 * 0.82, i = q(s * 0.55, 0.35 + 0.1 * Math.sin(s * 0.9), o, c, a), m = $(n, t.rsPow ?? 0.6), g = t.moveCount ?? 14, M = at(g), u = et(s, g, 0.42, 1.2), h = [], b = t.latRings ?? 15, x = t.lonDensity ?? 40;
+  for (let I = 0; I <= b; I++) {
+    const P = -Math.PI / 2 + I / b * Math.PI, y = Math.cos(P), D = Math.sin(P), w = Math.max(1, Math.round(Math.abs(y) * x));
+    for (let k = 0; k < w; k++) {
+      const v = k / w * 2 * Math.PI, [R, p, d, l] = ct([y * Math.cos(v), D, y * Math.sin(v)], M, u), [f, S, L] = i(R, p, d), A = (L + 1) / 2;
+      h.push({
+        x: f,
+        y: S,
+        z: L,
+        r: ((t.rBase ?? 0.6) + (t.rDepth ?? 1.7) * A + (l ? t.rActive ?? 0.3 : 0)) * m,
+        white: (t.inkFar ?? 0.62) - (t.inkSpan ?? 0.54) * A - (l ? 0.14 : 0)
+      });
+    }
+  }
+  _(e, h, r, t.rMin);
+}, ht = (e, n, s, r, t) => {
+  const o = n / 2, c = n / 2, a = n / 2 * 0.874, i = q(s * 0.18, 0.38, o, c, 1), m = $(n, t.rsPow ?? 0.6), g = [], M = t.rings ?? 15, u = t.lonDensity ?? 40;
+  for (let h = 0; h <= M; h++) {
+    const b = -Math.PI / 2 + h / M * Math.PI, x = Math.cos(b), I = Math.sin(b), P = 0.62 * Math.sin(s * 2.1 - h * 0.52) + 0.38 * Math.sin(s * 1.27 + h * 0.83), y = a * (0.88 + 0.105 * P), D = Math.max(1, Math.round(Math.abs(x) * u));
+    for (let w = 0; w < D; w++) {
+      const k = w / D * 2 * Math.PI, [v, R, p] = i(x * Math.cos(k) * y, I * y, x * Math.sin(k) * y), d = (p / a + 1) / 2, l = Math.max(0, P);
+      g.push({
+        x: v,
+        y: R,
+        z: p,
+        r: ((t.rBase ?? 0.6) + (t.rDepth ?? 1.7) * d) * (1 + 0.4 * l) * m,
+        white: 0.66 - 0.56 * d - 0.1 * l
+      });
+    }
+  }
+  _(e, g, r, t.rMin);
+};
+function lt(e) {
+  return e * e * (3 - 2 * e);
+}
+function Q(e) {
+  const n = e.length, s = [];
+  let r = 0;
+  for (let t = 0; t < n; t++) {
+    const o = e[t], c = e[(t + 1) % n], a = Math.hypot(c[0] - o[0], c[1] - o[1]);
+    s.push(a), r += a;
+  }
+  return (t) => {
+    let o = t * r, c = 0;
+    for (; o > s[c] && c < n - 1; )
+      o -= s[c], c++;
+    const a = e[c], i = e[(c + 1) % n], m = s[c] ? Math.min(1, o / s[c]) : 0;
+    return [a[0] + (i[0] - a[0]) * m, a[1] + (i[1] - a[1]) * m];
+  };
+}
+const ut = (e) => {
+  const n = -Math.PI / 2 + e * 2 * Math.PI;
+  return [Math.cos(n) * 0.24, Math.sin(n) * 0.24];
+}, Mt = Q([
+  [0, -0.26],
+  [0.24, 0.16],
+  [-0.24, 0.16]
+]), pt = Q([
+  [0, -0.2],
+  [0.2, -0.2],
+  [0.2, 0.2],
+  [-0.2, 0.2],
+  [-0.2, -0.2]
+]), Y = [ut, Mt, pt];
+function dt(e) {
+  return Math.max(6, Math.round(34 * e));
+}
+const U = 1.4, J = 0.9, K = U + J, ft = (e, n, s, r, t) => {
+  const o = Y.length, c = s % (K * o), a = Math.floor(c / K), i = c - a * K, m = i > U ? lt((i - U) / J) : 0, g = t.spread ?? 1, M = Y[a], u = Y[(a + 1) % o], h = 160, b = [];
+  for (let p = 0; p < h; p++) {
+    const d = p / h, l = M(d), f = u(d);
+    b.push([(l[0] + (f[0] - l[0]) * m) * g, (l[1] + (f[1] - l[1]) * m) * g]);
+  }
+  const x = [];
+  let I = 0;
+  for (let p = 0; p < h; p++) {
+    const d = b[p], l = b[(p + 1) % h], f = Math.hypot(l[0] - d[0], l[1] - d[1]);
+    x.push(f), I += f;
+  }
+  const P = dt(t.iconD ?? 1), y = (t.rDot ?? 0.021) * 1.35 * g, D = 1 + 0.02 * Math.sin(i * 3.1), w = [], k = n / 2;
+  let v = 0, R = 0;
+  for (let p = 0; p < P; p++) {
+    const d = p / P * I;
+    for (; R + x[v] < d && v < h - 1; )
+      R += x[v], v++;
+    const l = b[v], f = b[(v + 1) % h], S = x[v] ? Math.min(1, (d - R) / x[v]) : 0, L = (l[0] + (f[0] - l[0]) * S) * D, A = (l[1] + (f[1] - l[1]) * S) * D;
+    w.push({
+      x: k + L * n,
+      y: k + A * n,
+      z: 0,
+      r: Math.max(0.35, y * n),
+      white: 0.1
+    });
+  }
+  _(e, w, r, t.rMin);
+}, mt = (e, n, s, r, t) => {
+  const o = n / 2, c = n / 2, a = n / 2 * 0.82, i = q(s * 0.12, 0.3, o, c, 1), m = $(n, t.rsPow ?? 0.6), g = [], M = t.orbitN ?? 12, u = t.ghostN ?? 40, h = t.particles ?? 3;
+  for (let b = 0; b < M; b++) {
+    const x = F(b, 1.7), I = F(b, 5.2), P = F(b, 8.9), y = a * (0.45 + 0.52 * x), D = x * 2 * Math.PI, w = Math.acos(2 * I - 1), k = Math.sin(w) * Math.cos(D), v = Math.cos(w), R = Math.sin(w) * Math.sin(D);
+    let p = -v, d = k;
+    const l = 0, f = Math.max(1e-6, Math.sqrt(p * p + d * d));
+    p /= f, d /= f;
+    const S = v * l - R * d, L = R * p - k * l, A = k * d - v * p, B = (0.25 + 0.55 * P) * (P > 0.5 ? 1 : -1);
+    for (let C = 0; C < u; C++) {
+      const E = C / u * 2 * Math.PI, [T, z, N] = i(
+        (p * Math.cos(E) + S * Math.sin(E)) * y,
+        (d * Math.cos(E) + L * Math.sin(E)) * y,
+        (l * Math.cos(E) + A * Math.sin(E)) * y
+      ), O = (N / y + 1) / 2;
+      g.push({
+        x: T,
+        y: z,
+        z: N,
+        r: (t.ghostR ?? 0.9) * m,
+        white: 0.72,
+        a: (t.ghostA ?? 0.5) * (0.4 + 0.6 * O)
+      });
+    }
+    for (let C = 0; C < h; C++) {
+      const E = s * B + C / h * 2 * Math.PI + I * 6, [T, z, N] = i(
+        (p * Math.cos(E) + S * Math.sin(E)) * y,
+        (d * Math.cos(E) + L * Math.sin(E)) * y,
+        (l * Math.cos(E) + A * Math.sin(E)) * y
+      ), O = (N / y + 1) / 2;
+      g.push({
+        x: T,
+        y: z,
+        z: N,
+        r: ((t.partR ?? 1.2) + (t.partRDepth ?? 1.6) * O) * m,
+        white: 0.3 - 0.22 * O
+      });
+    }
+  }
+  _(e, g, r, t.rMin);
+}, gt = (e, n, s, r, t) => {
+  const o = n / 2, c = n / 2, a = n / 2 * 0.78, i = t.spin ?? 1, m = q(s * 0.1 * i, 0.3, o, c, 1), g = $(n, t.rsPow ?? 0.6), M = [], u = t.ghostN ?? 150;
+  for (let f = 0; f < u; f++) {
+    const S = st(f, u), [L, A, B] = m(S[0] * a, S[1] * a, S[2] * a), C = (B / a + 1) / 2;
+    M.push({ x: L, y: A, z: B, r: 0.8 * g, white: 0.78, a: 0.1 + 0.22 * C });
+  }
+  const h = s * 0.24 * i, b = 0.55 + 0.3 * Math.sin(s * 0.18) * i, x = Math.cos(h), I = 0, P = Math.sin(h), y = -P * Math.sin(b), D = Math.cos(b), w = x * Math.sin(b), k = I * w - P * D, v = P * y - x * w, R = x * D - I * y, p = t.lanes ?? 5, d = t.segs ?? 88, l = Math.max(1, Math.round(p * (t.bandMul ?? 1)));
+  for (let f = 0; f < l; f++) {
+    const S = (f - (l - 1) / 2) * 0.075, L = Math.abs(f - (l - 1) / 2) / Math.max(1, (l - 1) / 2);
+    for (let A = 0; A < d; A++) {
+      const B = A / d * 2 * Math.PI, C = (0.16 * Math.sin(B * 3 - s * 1.7 + f * 0.22) + 0.07 * Math.sin(B * 5 + s * 1.1)) * (t.wobMul ?? 1), E = S + C, T = x * Math.cos(B) + y * Math.sin(B) + k * E, z = I * Math.cos(B) + D * Math.sin(B) + v * E, N = P * Math.cos(B) + w * Math.sin(B) + R * E, O = Math.sqrt(T * T + z * z + N * N), [X, Z, W] = m(T / O * a, z / O * a, N / O * a), j = (W / a + 1) / 2;
+      M.push({
+        x: X,
+        y: Z,
+        z: W,
+        r: ((t.rBase ?? 1.1) + (t.rDepth ?? 1.7) * j) * (1 - 0.25 * L) * g,
+        white: 0.52 - 0.44 * j + 0.18 * L,
+        a: 0.4 + 0.6 * j
+      });
+    }
+  }
+  _(e, M, r, t.rMin);
+}, bt = {
+  orbits: mt,
+  globe: rt,
+  rubik: it,
+  wave: ht,
+  ribbon: gt,
+  morph: ft
+}, yt = [
+  ["latRings", "lonDensity"],
+  ["rings", "lonDensity"],
+  ["lanes", "segs"]
+], xt = ["orbitN", "ghostN"], vt = ["iconD"], wt = ["rBase", "rDepth", "rActive", "rDot", "ghostR", "partR", "partRDepth"];
+function kt(e, n) {
+  const s = { ...e }, r = /* @__PURE__ */ new Set(), t = Math.sqrt(n);
+  for (const [o, c] of yt) {
+    const a = s[o], i = s[c];
+    a != null && i != null && !r.has(o) && !r.has(c) && (s[o] = Math.max(2, Math.round(a * t)), s[c] = Math.max(2, Math.round(i * t)), r.add(o), r.add(c));
+  }
+  for (const o of xt) {
+    const c = s[o];
+    c != null && !r.has(o) && (s[o] = Math.max(1, Math.round(c * n)));
+  }
+  for (const o of vt) {
+    const c = s[o];
+    c != null && (s[o] = Math.max(0.02, c * n));
+  }
+  return s;
+}
+function Pt(e, n) {
+  const s = { ...e };
+  for (const r of wt) {
+    const t = s[r];
+    t != null && (s[r] = t * n);
+  }
+  return s.rSizeMul = (s.rSizeMul ?? 1) * n, s;
+}
+const Dt = {
+  globe: {
+    latRings: 17,
+    lonDensity: 44,
+    rBase: 0.6,
+    rDepth: 1.7,
+    rBoost: 1,
+    inkFar: 0.62,
+    inkSpan: 0.54,
+    rsPow: 0.6,
+    rMin: 0.3
+  },
+  orbits: {
+    orbitN: 12,
+    ghostN: 40,
+    ghostR: 0.9,
+    ghostA: 0.5,
+    particles: 3,
+    partR: 1.2,
+    partRDepth: 1.6,
+    rsPow: 0.6,
+    rMin: 0.3
+  },
+  rubik: {
+    latRings: 15,
+    lonDensity: 40,
+    moveCount: 14,
+    rBase: 0.6,
+    rDepth: 1.7,
+    rActive: 0.3,
+    inkFar: 0.62,
+    inkSpan: 0.54,
+    rsPow: 0.6,
+    rMin: 0.3
+  },
+  wave: {
+    rings: 15,
+    lonDensity: 40,
+    rBase: 0.6,
+    rDepth: 1.7,
+    rsPow: 0.6,
+    rMin: 0.3
+  },
+  ribbon: {
+    lanes: 5,
+    segs: 88,
+    ghostN: 150,
+    rBase: 1.1,
+    rDepth: 1.7,
+    rsPow: 0.6,
+    rMin: 0.3
+  },
+  morph: {
+    rDot: 0.021,
+    iconD: 1,
+    rMin: 0.25
+  }
+}, Rt = {
+  working: "orbits",
+  searching: "globe",
+  solving: "rubik",
+  listening: "wave",
+  composing: "ribbon",
+  shaping: "morph"
+}, St = {
+  orbits: {
+    64: { speed: 1.885, count: 1, size: 1 },
+    20: { speed: 3.9, count: 0.238, size: 2.4 }
+  },
+  globe: {
+    64: { speed: 2.015, count: 0.42, size: 1.15, extra: { scanMul: 4.08, dimBase: 0.45 } },
+    20: { speed: 2.665, count: 0.105, size: 1.75, extra: { scanMul: 4.335, dimBase: 0.45 } }
+  },
+  rubik: {
+    64: { speed: 1.82, count: 0.35, size: 1.05 },
+    20: { speed: 1.95, count: 0.088, size: 1.9 }
+  },
+  wave: {
+    64: { speed: 4.388, count: 0.341, size: 1 },
+    20: { speed: 3.998, count: 0.105, size: 1.6 }
+  },
+  ribbon: {
+    64: { speed: 2.34, count: 0.25, size: 0.85, extra: { spin: 0, bandMul: 3.9, wobMul: 1 } },
+    20: { speed: 3.12, count: 0.051, size: 1.073, extra: { spin: 0, bandMul: 4.94, wobMul: 1 } }
+  },
+  morph: {
+    64: { speed: 2.405, count: 0.54, size: 0.395, extra: { spread: 1.45 } },
+    20: { speed: 2.08, count: 0.53, size: 1.011, extra: { spread: 1.45 } }
+  }
+}, H = /* @__PURE__ */ new Map();
+function It(e, n) {
+  const s = `${e}-${n}`, r = H.get(s);
+  if (r) return r;
+  const t = Rt[e], o = St[t][n];
+  let c = { ...Dt[t] };
+  o.count !== 1 && (c = kt(c, o.count)), o.size !== 1 && (c = Pt(c, o.size)), o.extra && (c = { ...c, ...o.extra });
+  const a = { mode: t, speed: o.speed, opts: c };
+  return H.set(s, a), a;
+}
+function Et(e) {
+  let n = e;
+  for (; n; ) {
+    const s = n.getAttribute("data-theme");
+    if (s === "dark") return !0;
+    if (s === "light") return !1;
+    if (n.classList.contains("dark")) return !0;
+    if (n.classList.contains("light")) return !1;
+    n = n.parentElement;
+  }
+  return null;
+}
+function Lt() {
+  return typeof matchMedia > "u" || matchMedia("(prefers-color-scheme: dark)").matches;
+}
+window.__ORBS = { MODE_DRAWS: bt, resolvePreset: It };
+</script>
+
+<script>
+var DATA=null, TAB='today', SEL=null, LOADED=false, BUSY=false;
+var FROM=(location.search.match(/[?&]from=([\w-]+)/) || [])[1] || '';
+var URL_GRP=decodeURIComponent((location.search.match(/[?&]group=([^&]*)/) || [])[1] || '');
+var URL_OK=/[?&]ok=1/.test(location.search) ? '1' : '';
+var URL_CID=(location.search.match(/[?&]u=([a-z0-9]+)/i) || [])[1] || '';
+var DAYS=['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
+var FULL={'Пн':'Понедельник','Вт':'Вторник','Ср':'Среда','Чт':'Четверг','Пт':'Пятница','Сб':'Суббота','Вс':'Воскресенье'};
+var MONTHS=['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+
+function $(id){ return document.getElementById(id); }
+function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function ls(k,v){ try{ if(v===undefined) return localStorage.getItem(k); localStorage.setItem(k,v); }catch(e){} return null; }
+/* Кука живёт год и не зависит от того, открыт сайт в браузере или с главного экрана. */
+function ck(k,v){
+  try{
+    if(v===undefined){
+      var m=document.cookie.match(new RegExp('(?:^|; )'+k+'=([^;]*)'));
+      return m ? decodeURIComponent(m[1]) : null;
+    }
+    document.cookie = k+'='+encodeURIComponent(v)+';path=/;max-age=31536000;samesite=lax';
+  }catch(e){}
+  return null;
+}
+/* Пишем в оба хранилища, читаем из любого — что переживёт, то и подхватим. */
+function store(k,v){
+  if(v===undefined) return ls(k) || ck(k);
+  ls(k,v); ck(k,v);
+  return null;
+}
+function plural(n,a,b,c){ var x=Math.abs(n)%100, y=x%10;
+  if(x>10&&x<20) return c; if(y>1&&y<5) return b; return y===1?a:c; }
+
+/* ─── Транспорт ───
+   Одна и та же страница работает и внутри Apps Script (google.script.run),
+   и на своём сервере (fetch к JSON-эндпоинту). */
+var API=(window.RASPISANIE_API||''), TOKEN=(window.RASPISANIE_TOKEN||'');
+var INSIDE=!!(window.google && window.google.script && window.google.script.run);
+function jget(qs, ok, err){
+  fetch(API+'?'+qs, {cache:'no-store'})
+    .then(function(r){ return r.json(); })
+    .then(function(j){ j && j.ok ? ok(j.data) : err(new Error((j&&j.error)||'Ошибка API')); })
+    .catch(err);
+}
+function srvData(ok, err){
+  if(INSIDE) google.script.run.withSuccessHandler(ok).withFailureHandler(err).api_getData(false);
+  else jget('fn=data', ok, err);
+}
+function srvRefresh(ok, err){
+  if(INSIDE) google.script.run.withSuccessHandler(ok).withFailureHandler(err).api_refresh();
+  else jget('fn=refresh', ok, err);
+}
+/* Страницу открывают разные люди с одной ссылки, поэтому выбранная группа живёт
+   только в браузере — иначе одноклассники перетирали бы выбор друг другу. */
+function srvSetGroup(key){ ls('group', key); }
+/* Обезличенный заход: случайный номер браузера, метка источника, группа,
+   тип устройства. Ни имени, ни почты, ни телефона — см. «Условия и данные». */
+/* Перезагрузка страницы или переход с соседней страницы того же домена — это
+   не «пришёл с bestcenter.uz», а тот же человек на том же месте. */
+function selfRef(){
+  try{
+    var r = document.referrer;
+    return !!r && new URL(r).host === location.host;
+  }catch(e){ return false; }
+}
+function trackVisit(g){
+  try{
+    if(ls('hitSent')) return;          // один заход на открытие страницы
+    ls('hitSent','1');
+    setTimeout(function(){ try{ localStorage.removeItem('hitSent'); }catch(e){} }, 1800000);
+    var cid = store('cid') || URL_CID, first = cid ? '' : '1';
+    if(URL_CID) store('cid', URL_CID);
+    if(!cid){
+      cid = Math.random().toString(36).slice(2,10) + Date.now().toString(36).slice(-4);
+      store('cid', cid);
+    }
+    var ua = navigator.userAgent || '';
+    var dev = /iPhone|iPad|iPod/i.test(ua) ? 'iPhone'
+            : /Android/i.test(ua) ? 'Android'
+            : /Macintosh/i.test(ua) ? 'Mac'
+            : /Windows/i.test(ua) ? 'Windows' : 'Другое';
+    var p = {
+      cid: cid, first: first, from: FROM || '',
+      ref: selfRef() ? '' : (document.referrer || ''),
+      grp: g ? g.name : '',
+      dev: dev,
+      scr: (screen.width||0) + 'x' + (screen.height||0),
+      lang: navigator.language || ''
+    };
+    if(INSIDE) google.script.run.api_hit(p);
+    else if(API){
+      var q = Object.keys(p).map(function(k){ return k+'='+encodeURIComponent(p[k]); }).join('&');
+      fetch(API+'?fn=hit&'+q, {mode:'no-cors'}).catch(function(){});
+    }
+  }catch(e){}
+}
+
+function srvSetWatch(keys){
+  if(INSIDE) google.script.run.api_setWatch(keys);
+  else if(TOKEN) fetch(API+'?fn=watch&token='+encodeURIComponent(TOKEN)+'&keys='+encodeURIComponent(JSON.stringify(keys)));
+}
+
+/* ─── Иконки направлений ─── */
+var ICONS={
+  geo:'<path d="M12 3 2.6 8 12 13l9.4-5L12 3Z"/><path d="M2.6 13 12 18l9.4-5"/>',
+  it:'<rect x="7" y="7" width="10" height="10" rx="2"/><path d="M10.5 10.5h3v3h-3z"/><path d="M10 3v4M14 3v4M10 17v4M14 17v4M3 10h4M3 14h4M17 10h4M17 14h4"/>',
+  econ:'<path d="M3 20h18"/><path d="M6 20v-6M11 20V8M16 20v-9"/><path d="m5 9 5-4 4 3 5-5"/>',
+  ling:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18Z"/>',
+  media:'<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/>',
+  auto:'<path d="M3.5 18a9 9 0 1 1 17 0"/><path d="m12 14.2 4.6-4.6"/><circle cx="12" cy="15.8" r="1.4"/>',
+  med:'<path d="M3 12h3.5l2-5 3.5 10 2.5-5H21"/>',
+  dent:'<path d="M12 3.2c-1.6 0-2.6-1-4.4-.4C5.5 3.5 4 5.6 4.4 9c.5 3.4 1.3 12 3.2 12 1.6 0 1.2-6 4.4-6s2.8 6 4.4 6c1.9 0 2.7-8.6 3.2-12 .4-3.4-1.1-5.5-3.2-6.2-1.8-.6-2.8.4-4.4.4Z"/>',
+  pharm:'<path d="M9.5 3h5"/><path d="M10.5 3v6L5.6 18.6A2 2 0 0 0 7.4 21.5h9.2a2 2 0 0 0 1.8-2.9L13.5 9V3"/><path d="M7.6 15h8.8"/>',
+  book:'<path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15.5H6.5A2.5 2.5 0 0 0 4 21V5.5Z"/><path d="M20 18.5H6.5"/>'
+};
+function iconKey(name){
+  var s=String(name||'').toLowerCase();
+  if(/геолог/.test(s)) return 'geo';
+  if(/информац|программ|систем и техн/.test(s)) return 'it';
+  if(/эконом|менедж|финанс/.test(s)) return 'econ';
+  if(/лингвист|филолог|перевод/.test(s)) return 'ling';
+  if(/журналист|медиа/.test(s)) return 'media';
+  if(/автоматиз|мехатрон|инженер/.test(s)) return 'auto';
+  if(/стоматолог/.test(s)) return 'dent';
+  if(/фармац/.test(s)) return 'pharm';
+  if(/лечебн|медиц|биохим|педиатр|сестрин/.test(s)) return 'med';
+  return 'book';
+}
+/* Свой оттенок на каждое направление: бейдж читается как принадлежность,
+   а не как серая кнопка настроек. */
+var ICO_COLOR={geo:'--c2',it:'--c1',econ:'--c7',ling:'--c5',media:'--c6',
+               auto:'--c8',med:'--c4',dent:'--c1',pharm:'--c3',book:'--c7'};
+function iconColor(name){ return 'var('+(ICO_COLOR[iconKey(name)]||'--c1')+')'; }
+function icon(name){
+  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"'+
+    ' stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+ICONS[iconKey(name)]+'</svg>';
+}
+
+/* ─── Разбор ячейки ───
+   \b в JS не знает кириллицы, поэтому границы слов заданы явно. */
+var ROOM_RE=/^(.*?)(\d{1,4}\s*(?:ауд|аудитория|ком|каб|зал)(?![А-Яа-яЁё])\.?(?:\s*[A-Z]{2,5}(?![a-zA-Z]))?)\s*(.*)$/i;
+var WHO_RE=/(?:(?:проф|доц|асс|ст\.\s*пр|преп)\.?\s*[А-ЯЁ][а-яё]+|[А-ЯЁ][а-яё]+\s+[А-ЯЁ]\.)/;
+function parseCell(txt){
+  var t=String(txt||'').replace(/\s+/g,' ').trim();
+  if(!t) return null;
+  var link=t.match(/https?:\/\/\S+/);
+  if(link) t=t.replace(link[0],'').trim();
+  if(!t) return null;
+  var subj=t, room='', who='';
+  var m=t.match(ROOM_RE);
+  if(m && m[1].trim()){ subj=m[1].trim(); room=m[2].trim(); who=m[3].trim(); }
+  if(!who){
+    var w=subj.match(WHO_RE);
+    if(w && w.index>0){ who=subj.slice(w.index).trim(); subj=subj.slice(0,w.index).trim(); }
+  }
+  return { subj:subj.replace(/[,.\s]+$/,''), room:room, who:who.replace(/^[,\s]+/,'') };
+}
+
+/* ─── Цвет предмета ───
+   Закреплён на всю неделю: «Матанализ 117 ауд.» и «Матанализ 228 ауд.» — один цвет.
+   Раздаём по порядку первой встречи, а не хешем: соседние пары дня не сливаются. */
+var COLORS={}, SUBJECTS=[];
+function subjKey(s){ return String(s||'').toLowerCase().replace(/[^а-яёa-z]/g,''); }
+function buildColors(g){
+  COLORS={}; SUBJECTS=[];
+  var seen={};
+  DAYS.slice(0,6).forEach(function(d){
+    pairsOf(g,d).forEach(function(p){
+      var info=parseCell(p); if(!info) return;
+      var k=subjKey(info.subj); if(!k) return;
+      if(!seen[k]){ seen[k]={key:k,name:info.subj,n:0}; SUBJECTS.push(seen[k]); }
+      seen[k].n++;
+    });
+  });
+  SUBJECTS.forEach(function(s,i){ s.color='var(--c'+(i%8+1)+')'; COLORS[s.key]=s.color; });
+}
+function colorOf(subj){ return COLORS[subjKey(subj)] || 'var(--ink-30)'; }
+
+function minutesOf(range){
+  var m=String(range||'').match(/(\d{1,2}):(\d{2})\s*[-–—]\s*(\d{1,2}):(\d{2})/);
+  return m ? {a:+m[1]*60 + +m[2], b:+m[3]*60 + +m[4]} : null;
+}
+function hhmm(range,i){ return (String(range||'').split('–')[i]||'').trim(); }
+function dur(mins){
+  // Неразрывный пробел: «17 мин» не должно переноситься числом на одну строку, а единицей на другую.
+  var NB=' ';
+  var h=Math.floor(mins/60), m=mins%60;
+  return (h?h+NB+'ч ':'') + (m?m+NB+'мин':(h?'':'0'+NB+'мин'));
+}
+/* Текущее время в минутах — считаем от реальных часов, а не прибавляем по единице.
+   Иначе после сна вкладки (iOS усыпляет таймеры) отсчёт замирает и врёт. */
+function nowMin(){
+  if(!DATA || !DATA.now) return 0;
+  return DATA.now.minutes + (Date.now() - (DATA._t0 || Date.now()))/60000;
+}
+function group(){
+  if(!DATA) return null;
+  return DATA.groups.filter(function(x){ return x.key===SEL; })[0] || DATA.groups[0] || null;
+}
+function pairsOf(g,d){
+  var f=(g.days||[]).filter(function(x){ return x.day===d; })[0];
+  return f ? f.pairs : [];
+}
+function edits(){
+  var map={}, last=(DATA.changes||[])[0], g=group();
+  if(!last||!g) return map;
+  (last.changes||[]).forEach(function(c){ if(c.group===g.name && c.day) map[c.day+'#'+c.pair]=c; });
+  return map;
+}
+function state(g,i,day){
+  if(day!==DATA.now.day) return '';
+  var mm=minutesOf((g.times||[])[i]);
+  if(!mm) return '';
+  var n=nowMin();
+  return n>=mm.b ? 'past' : (n>=mm.a ? 'live' : '');
+}
+
+/* ─── Полоса дня ─── */
+function strip(g,day){
+  var p=pairsOf(g,day), out='';
+  for(var i=0;i<6;i++){
+    var info=parseCell(p[i]);
+    if(info) out+='<i class="'+(state(g,i,day)||'busy')+'" style="--c:'+colorOf(info.subj)+'"></i>';
+    else out+='<i></i>';
+  }
+  return '<div class="strip">'+out+'</div>';
+}
+
+/* ─── Карточка дня ─── */
+function dayCard(g,day,note){
+  var p=pairsOf(g,day), ed=edits(), filled=[];
+  for(var i=0;i<6;i++) if(parseCell(p[i])) filled.push(i);
+
+  var isNow=(day===DATA.now.day);
+  var head='<div class="card__hdr"><div class="card__title">'+esc(FULL[day])+
+    (note?' <span>'+esc(note)+'</span>':'')+'</div>'+
+    '<div class="card__count'+(isNow&&filled.length?' is-now':'')+'">'+
+    (filled.length? filled.length+' '+plural(filled.length,'пара','пары','пар') : 'нет пар')+'</div></div>';
+
+  if(!filled.length) return '<div class="card">'+head+'<div class="empty">Занятий нет</div></div>';
+
+  var body='', prev=-1;
+  filled.forEach(function(i){
+    if(prev===-1 && i>0) body+='<div class="free">Начало в '+esc(hhmm((g.times||[])[i],0))+'</div>';
+    else if(prev>=0 && i-prev>1){
+      var a=minutesOf((g.times||[])[prev]), b=minutesOf((g.times||[])[i]);
+      body+='<div class="free">Окно '+esc(a&&b?dur(b.a-a.b):'')+'</div>';
+    }
+    body+=rowOf(g,day,i,p[i],ed[day+'#'+(i+1)]);
+    prev=i;
+  });
+  return '<div class="card">'+head+strip(g,day)+body+'</div>';
+}
+
+function rowOf(g,day,i,txt,ch){
+  var info=parseCell(txt), st=state(g,i,day), time=(g.times||[])[i]||'', col=colorOf(info.subj);
+  return '<div class="row'+(st?' is-'+st:'')+(ch?' is-edit':'')+'" style="--c:'+col+'">'+
+    '<div class="row__top">'+
+      '<div class="row__name">'+esc(info.subj)+'</div>'+
+      '<div class="row__ms">'+esc(hhmm(time,0))+'</div></div>'+
+    ((info.room||info.who) ? '<div class="row__line2">'+
+      (info.room?'<span class="room">'+esc(info.room)+'</span>':'')+
+      (info.who?'<span class="who">'+esc(info.who)+'</span>':'')+'</div>' : '')+
+    (ch ? '<div class="row__was">'+(ch.before?'Было: '+esc(ch.before):'Пару добавили')+'</div>' : '')+
+  '</div>';
+}
+
+/* ─── Герой ─── */
+function metaOf(info){ return [info.room, info.who].filter(Boolean).join(' · '); }
+/* Остаток времени — флип-часы: четыре разряда, каждый переворачивается створкой.
+   Меньше часа — «мин : сек», больше — «ч : мин». */
+function pad2(n){ return (n<10?'0':'')+n; }
+function clockParts(sec){
+  sec=Math.max(0, Math.ceil(sec));
+  var h=Math.floor(sec/3600), m=Math.floor(sec%3600/60), ss=sec%60;
+  return h ? { d:pad2(h)+pad2(m), a:'ч', b:'мин' }
+           : { d:pad2(m)+pad2(ss), a:'мин', b:'сек' };
+}
+function clockHtml(){
+  return '<div class="clk">'+
+    '<div class="clk__d">'+
+      '<span class="fl" id="d0"></span><span class="fl" id="d1"></span>'+
+      '<span class="clk__sep">:</span>'+
+      '<span class="fl" id="d2"></span><span class="fl" id="d3"></span>'+
+    '</div>'+
+    '<div class="clk__lbls"><span id="l0"></span><b class="sp"></b><span id="l1"></span></div>'+
+  '</div>';
+}
+/* Одна створка: верх уже показывает новую цифру, низ пока старую,
+   а две летящие половинки доигрывают переворот. */
+function flipTo(el, ch){
+  if(!el || el.getAttribute('data-v')===ch) return;
+  var prev=el.getAttribute('data-v');
+  el.setAttribute('data-v', ch);
+  if(prev===null){
+    el.innerHTML='<b class="u"><i>'+ch+'</i></b><b class="l"><i>'+ch+'</i></b>';
+    return;
+  }
+  el.innerHTML='<b class="u"><i>'+ch+'</i></b><b class="l"><i>'+prev+'</i></b>'+
+               '<b class="u f"><i>'+prev+'</i></b><b class="l f"><i>'+ch+'</i></b>';
+}
+function paintClock(sec){
+  var p=clockParts(sec);
+  for(var i=0;i<4;i++) flipTo($('d'+i), p.d.charAt(i));
+  var a=$('l0'), b=$('l1');
+  if(a) a.textContent=p.a;
+  if(b) b.textContent=p.b;
+}
+function heroCard(kind,label,title,sub,big,cap){
+  // Красный здесь значит «поломка», поэтому цвет предмета в статус не пускаем:
+  // зелёный — идёт по расписанию, красный — только про правки.
+  var lbl = kind==='ok' ? '' : (kind==='bad' ? ' is-bad' : ' is-idle');
+  return '<div class="hero">'+
+    '<div class="hero__lbl'+lbl+'">'+esc(label)+'</div>'+
+    (big?clockHtml()+
+         '<div class="hero__cap">'+esc(cap||'')+'</div>'+
+         '<div class="hero__bar"><i id="bar"></i></div>':'')+
+    '<div class="hero__title">'+esc(title)+'</div>'+
+    (sub?'<div class="hero__meta">'+esc(sub)+'</div>':'')+'</div>';
+}
+var HERO=null;
+function hero(g){
+  HERO=null;
+  var day=DATA.now.day, p=pairsOf(g,day), n=nowMin();
+  if(day==='Вс') return heroCard('idle','Воскресенье','Занятий нет','Следующий день — понедельник');
+  for(var i=0;i<6;i++){
+    var info=parseCell(p[i]); if(!info) continue;
+    var mm=minutesOf((g.times||[])[i]); if(!mm) continue;
+    if(n>=mm.a && n<mm.b){
+      HERO={target:mm.b, a:mm.a, b:mm.b, live:true};
+      return heroCard('ok','Сейчас',info.subj, metaOf(info), true, 'до конца пары');
+    }
+    if(n<mm.a){
+      HERO={target:mm.a, a:mm.a, b:mm.b, live:false};
+      return heroCard('ok','Следующая',info.subj, metaOf(info), true, 'до начала · в '+hhmm((g.times||[])[i],0));
+    }
+  }
+  var ni=DAYS.indexOf(day)+1, nd=(DAYS[ni]==='Вс'||!DAYS[ni])?'Пн':DAYS[ni];
+  var np=pairsOf(g,nd);
+  for(var j=0;j<6;j++){
+    var ninfo=parseCell(np[j]);
+    if(ninfo) return heroCard('idle','На сегодня всё',ninfo.subj,
+      (nd==='Пн'&&day!=='Сб'?'В понедельник':'Завтра')+' в '+hhmm((g.times||[])[j],0)+' · '+metaOf(ninfo));
+  }
+  return heroCard('idle','На сегодня всё','Пар больше нет','');
+}
+
+/* ─── Экраны ─── */
+function link(g){
+  return g.link ? '<div class="ftr"><a href="'+esc(g.link)+'" target="_blank" rel="noopener">Телемост группы →</a></div>' : '';
+}
+/* Живая подписка вместо разового файла: телефон сам перечитывает ссылку,
+   поэтому правки вуза доезжают до календаря без участия человека. */
+function icsUrl(g){
+  var base = API || (DATA && DATA.exec) || '';
+  if(!base) return '';
+  return base + '?fn=ics&group=' + encodeURIComponent(g.key);
+}
+function calCard(g){
+  var url = icsUrl(g);
+  if(!url) return '';
+  return '<div class="card cal">'+
+    '<div class="cal__h">Пары в календаре телефона</div>'+
+    '<div class="cal__p">Подписка обновляется сама: вуз правит таблицу — календарь меняется следом. '+
+      'Напоминание приходит за 10 минут до пары и работает без интернета.</div>'+
+    '<a class="cal__go" href="'+esc(url.replace(/^https?:/, 'webcal:'))+'">Добавить в календарь</a>'+
+    '<div class="cal__or">или вставить ссылку вручную — Google Календарь → «Добавить по URL»</div>'+
+    '<input class="cal__u" readonly value="'+esc(url)+'" onclick="this.select()">'+
+  '</div>';
+}
+function viewToday(g){
+  var day=DATA.now.day;
+  var dl=String(DATA.now.dateLabel||'').split('.');
+  var date=dl.length===2 ? (+dl[0])+' '+MONTHS[+dl[1]-1] : '';
+  var html=hero(g);
+  if(day==='Вс') html+='<div id="days">'+dayCard(g,'Пн','завтра')+'</div>';
+  else{
+    var ni=DAYS.indexOf(day)+1, nd=(DAYS[ni]==='Вс'||!DAYS[ni])?'Пн':DAYS[ni];
+    html+='<div id="days">'+dayCard(g,day,date)+
+      dayCard(g,nd, nd==='Пн'&&day!=='Сб' ? 'в понедельник' : 'завтра')+'</div>';
+  }
+  return html+calCard(g)+link(g);
+}
+
+/* Матрица «дни × пары» — вся неделя одним взглядом, цвет = предмет. */
+function matrix(g){
+  var head='<tr><th></th>'+DAYS.slice(0,6).map(function(d){
+    return '<th'+(d===DATA.now.day?' class="today"':'')+'>'+d+'</th>';
+  }).join('')+'</tr>';
+  var rows='';
+  for(var i=0;i<6;i++){
+    rows+='<tr><td class="n">'+(i+1)+'</td>'+DAYS.slice(0,6).map(function(d){
+      var info=parseCell(pairsOf(g,d)[i]);
+      if(!info) return '<td class="cell"></td>';
+      var st=state(g,i,d);
+      return '<td class="cell on'+(st==='live'?' live':'')+'" style="--c:'+colorOf(info.subj)+
+        (st==='past'?';opacity:.3':'')+'" title="'+esc(info.subj)+' · '+esc(FULL[d])+'"></td>';
+    }).join('')+'</tr>';
+  }
+  return '<div class="matrix"><table><tbody>'+head+rows+'</tbody></table></div>';
+}
+
+function weekStats(g){
+  var total=0, perDay=[], gaps=0;
+  DAYS.slice(0,6).forEach(function(d){
+    var idx=[];
+    for(var i=0;i<6;i++) if(parseCell(pairsOf(g,d)[i])) idx.push(i);
+    total+=idx.length;
+    perDay.push({day:d, n:idx.length});
+    for(var k=1;k<idx.length;k++){
+      var a=minutesOf((g.times||[])[idx[k-1]]), b=minutesOf((g.times||[])[idx[k]]);
+      if(a&&b) gaps += Math.max(0, b.a-a.b);
+    }
+  });
+  var heavy=perDay.slice().sort(function(x,y){ return y.n-x.n; })[0] || {day:'—',n:0};
+  return '<div class="stats">'+
+    '<div class="stat"><b>'+total+'</b><span>пар в неделю</span></div>'+
+    '<div class="stat"><b>'+esc(heavy.day)+'</b><span>плотнее всего</span></div>'+
+    '<div class="stat"><b>'+(gaps?Math.round(gaps/60*10)/10:0)+' ч</b><span>в окнах</span></div>'+
+    '</div>';
+}
+
+function legend(){
+  if(!SUBJECTS.length) return '';
+  var max=SUBJECTS.reduce(function(m,s){ return Math.max(m,s.n); },1);
+  var list=SUBJECTS.slice().sort(function(a,b){ return b.n-a.n; });
+  return '<div class="legend">'+list.map(function(s){
+    return '<div class="leg" style="--c:'+s.color+'">'+
+      '<span class="dot dot--sub"></span>'+
+      '<span class="leg__name">'+esc(s.name)+'</span>'+
+      '<span class="leg__bar"><i style="width:'+Math.round(s.n/max*100)+'%"></i></span>'+
+      '<span class="leg__n">'+s.n+'</span></div>';
+  }).join('')+'</div>';
+}
+
+function viewWeek(g){
+  var html='<div class="card"><div class="card__hdr">'+
+    '<div class="card__title">Неделя целиком</div>'+
+    '<div class="card__count">'+SUBJECTS.length+' '+plural(SUBJECTS.length,'предмет','предмета','предметов')+'</div>'+
+    '</div>'+matrix(g)+weekStats(g)+legend()+'</div>';
+  html+='<div id="days">'+DAYS.slice(0,6).map(function(d){
+    return dayCard(g,d, d===DATA.now.day?'сегодня':'');
+  }).join('')+'</div>';
+  return html+link(g);
+}
+
+function chRow(slot,from,to,bad){
+  return '<div class="ch"><div class="ch__slot">'+esc(slot)+'</div>'+
+    (from?'<div class="ch__from">'+esc(from)+'</div>':'')+
+    '<div class="ch__to"><span class="dot '+(bad?'dot--bad':'dot--ok')+'"></span>'+esc(to)+'</div></div>';
+}
+function viewChanges(g){
+  var mine=(DATA.changes||[]).map(function(e){
+    return { ts:e.ts, changes:(e.changes||[]).filter(function(c){ return c.group===g.name; }) };
+  }).filter(function(e){ return e.changes.length; });
+
+  if(!mine.length) return heroCard('ok','Журнал правок','Расписание не меняли','Таблицу сверяю каждый час');
+
+  var n=mine[0].changes.length;
+  return heroCard('bad','Последняя правка',
+      new Date(mine[0].ts).toLocaleString('ru-RU',{day:'numeric',month:'long'}),
+      n+' '+plural(n,'изменение','изменения','изменений')+' в твоей группе')+
+    '<div class="card">'+mine.map(function(e){
+      var when=new Date(e.ts).toLocaleString('ru-RU',{day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'});
+      return '<div class="ent"><div class="ent__when">'+esc(when)+'</div>'+e.changes.map(function(c){
+        if(c.type==='link') return chRow('Телемост','','Ссылка изменилась',false);
+        if(c.type==='group_added') return chRow('Группа','','Появилась в таблице',false);
+        if(c.type==='group_removed') return chRow('Группа','','Убрана из таблицы',true);
+        var slot=(FULL[c.day]||c.day)+' · '+c.pair+'-я пара'+(c.time?' · '+c.time:'');
+        return chRow(slot, c.before||'', c.after||'Пару убрали', !c.after);
+      }).join('')+'</div>';
+    }).join('')+'</div>';
+}
+
+/* ─── Отрисовка ─── */
+function render(){
+  if(!DATA) return;
+  var g=group();
+  if(!g){ $('main').innerHTML='<div class="card"><div class="empty">Таблицу не удалось разобрать</div></div>'; return; }
+  buildColors(g);
+
+  var bare=g.name.replace(/^\s*\d\s*курс\s*/i,'');
+  var code=(bare.match(/\d{2}\.\d{2}\.\d{2}/)||[''])[0];
+  $('course').textContent=g.sheet+(code?' · '+code:'');
+  $('gname').textContent=bare.replace(code,'').trim();
+
+  var last=(DATA.changes||[])[0];
+  var mineLast=last?(last.changes||[]).filter(function(c){ return c.group===g.name; }):[];
+  var unseen=!!(mineLast.length && store('seenTs')!==last.ts);
+  document.documentElement.classList.toggle('is-changed', unseen);
+
+  ['today','week','changes'].forEach(function(t){
+    $('t-'+t).setAttribute('aria-selected', t===TAB?'true':'false');
+  });
+  $('main').innerHTML = TAB==='today'?viewToday(g):(TAB==='week'?viewWeek(g):viewChanges(g));
+  if(TAB==='today' && HERO) tickCountdown();
+
+  // Служебное — мелким шрифтом внизу, чтобы не шуметь над расписанием.
+  var m=DATA.header && DATA.header.match(/с\s+(\d{2}\.\d{2}\.\d{4})/);
+  var watched=(DATA.watch||[]).indexOf(g.key)>=0;
+  // Переключатель уведомлений виден только владельцу: бот пишет ему, а ссылка общая.
+  var note = !DATA.owner ? ''
+    : (!DATA.tgReady
+        ? '<span class="warn">Telegram не подключён — уведомления не придут</span>'
+        : '<button class="ftr__btn'+(watched?' is-on':'')+'" onclick="toggleWatch()">Уведомления '+
+          (watched?'включены':'выключены')+'</button>');
+  $('ftr').innerHTML=(m?'В силе с '+m[1]+' · ':'')+'сверено в '+(DATA.now.stamp||'')+
+    ' · <button class="ftr__btn" id="ref" onclick="refresh()">сверить</button>'+
+    (note?'<br>'+note:'');
+}
+
+/* ─── Действия ─── */
+function setTab(t){
+  TAB=t;
+  if(t==='changes'){ var l=(DATA&&DATA.changes||[])[0]; if(l) store('seenTs',l.ts); }
+  render(); window.scrollTo(0,0);
+}
+/* Личная ссылка: группа и согласие зашиты прямо в адрес, поэтому она открывается
+   уже настроенной даже там, где хранилище браузера обнулилось. */
+function myUrl(){
+  /* На своём домене делиться надо своим адресом: API там указывает на Apps
+     Script, и ссылка увела бы человека обратно в медленный фрейм Google. */
+  var base = INSIDE ? ((DATA && DATA.exec) || '')
+                    : (location.origin + location.pathname);
+  var g = group();
+  if(!base || !g) return '';
+  var u = store('cid');
+  return base + '?group=' + encodeURIComponent(g.key) + '&ok=1' +
+         (u ? '&u=' + encodeURIComponent(u) : '');
+}
+function openHome(){
+  var u = myUrl();
+  if(!u) return;
+  $('homeUrl').value = u;
+  showInstallUi();
+  $('home').classList.add('open');
+}
+function closeHome(){ store('homeShown','1'); $('home').classList.remove('open'); }
+/* Chrome отдаёт это событие, когда сайт можно установить. Держим его, чтобы
+   показать настоящую системную кнопку. На iPhone Apple такого API не даёт вовсе. */
+var UA = navigator.userAgent || '';
+var IS_IOS = /iPad|iPhone|iPod/.test(UA) ||
+             (/Macintosh/.test(UA) && (navigator.maxTouchPoints || 0) > 1);
+var IS_ANDROID = /Android/.test(UA);
+/* Уже открыто как приложение — предлагать установку незачем. */
+function isStandalone(){
+  try{
+    return window.navigator.standalone === true ||
+      (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
+  }catch(e){ return false; }
+}
+
+var INSTALL = null;
+window.addEventListener('beforeinstallprompt', function(e){
+  e.preventDefault();
+  INSTALL = e;
+  showInstallUi();
+});
+/* Кнопка есть только там, где браузер её даёт. У Apple такого API нет вовсе,
+   поэтому для iPhone показываем шаги. */
+function showInstallUi(){
+  var btn = $('homeInstall'), ios = $('stepsIos'), andr = $('stepsAndroid');
+  if(!btn) return;
+  if(INSTALL){
+    btn.hidden = false; ios.hidden = true; andr.hidden = true;
+  } else {
+    btn.hidden = true;
+    ios.hidden = !IS_IOS;
+    andr.hidden = IS_IOS;
+  }
+}
+function doInstall(){
+  if(!INSTALL) return;
+  INSTALL.prompt();
+  INSTALL.userChoice.then(function(){ INSTALL = null; closeHome(); });
+}
+function copyMyUrl(){
+  var el = $('homeUrl'), btn = $('homeCopy');
+  try{
+    el.select(); el.setSelectionRange(0, 99999);
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(el.value);
+    } else {
+      document.execCommand('copy');
+    }
+    if(btn){
+      btn.textContent = 'Ссылка скопирована';
+      setTimeout(function(){ btn.textContent = 'Скопировать ссылку'; }, 1800);
+    }
+  }catch(e){}
+}
+function openConsent(){ $('consent').classList.add('open'); }
+function acceptConsent(){
+  store('agreed','1');
+  $('consent').classList.remove('open');
+  trackVisit(group());
+  if(!SEL) openPicker(true);
+}
+function openDoc(){ $('doc').classList.add('open'); }
+function closeDoc(){ $('doc').classList.remove('open'); }
+function openPicker(first){
+  $('picker').classList.add('open');
+  $('pickHello').hidden = !first;
+  $('pickClose').hidden = !!first;
+  renderList();
+  // На первом запуске не поднимаем клавиатуру — она закрыла бы половину списка.
+  if(!first) setTimeout(function(){ $('q').focus(); }, 60);
+}
+function closePicker(){ $('picker').classList.remove('open'); }
+
+function renderList(){
+  if(!DATA){ $('list').innerHTML='<div class="sheet__head">Загрузка</div>'; return; }
+  var q=($('q').value||'').toLowerCase().trim(), by={}, order=[];
+  (DATA.groups||[]).forEach(function(g){
+    if(q && (g.name+' '+g.sheet).toLowerCase().indexOf(q)<0) return;
+    if(!by[g.sheet]){ by[g.sheet]=[]; order.push(g.sheet); }
+    by[g.sheet].push(g);
+  });
+  if(!order.length){ $('list').innerHTML='<div class="sheet__head">Ничего не нашлось</div>'; return; }
+  $('list').innerHTML=order.map(function(s){
+    return '<div class="sheet__head">'+esc(s)+'</div>'+by[s].map(function(g){
+      var nm=g.name.replace(/^\s*\d\s*курс\s*/i,'');
+      var code=(nm.match(/\d{2}\.\d{2}\.\d{2}/)||[''])[0];
+      return '<button class="opt'+(g.key===SEL?' is-sel':'')+'" onclick="pick('+
+        JSON.stringify(g.key).replace(/"/g,'&quot;')+')">'+
+        '<span class="opt__ico" style="--c:'+iconColor(g.name)+'">'+icon(g.name)+'</span>'+
+        '<span class="opt__txt"><span class="opt__name">'+esc(nm.replace(code,'').trim())+'</span>'+
+        (code?'<span class="opt__code">'+esc(code)+'</span>':'')+'</span>'+
+        (g.key===SEL?'<span class="dot dot--ok"></span>':'')+'</button>';
+    }).join('');
+  }).join('');
+}
+function pick(key){
+  var wasFirst = !$('pickClose') || $('pickClose').hidden;
+  SEL=key; store('group',key); srvSetGroup(key);
+  closePicker(); render(); window.scrollTo(0,0);
+  // После первой настройки сразу предлагаем закрепить — там же выдаём
+  // персональную ссылку, которая переживёт очистку хранилища.
+  if(wasFirst && !store('homeShown') && !isStandalone()) setTimeout(openHome, 450);
+}
+function toggleWatch(){
+  var g=group(); if(!g) return;
+  var w=(DATA.watch||[]).slice(), i=w.indexOf(g.key);
+  if(i>=0) w.splice(i,1); else w.push(g.key);
+  DATA.watch=w; render(); srvSetWatch(w);
+}
+function refresh(cb){
+  if(BUSY){ if(cb) cb(); return; }
+  BUSY=true;
+  var b=$('ref'); if(b) b.textContent='Сверяю…';
+  srvRefresh(
+    function(d){ BUSY=false; onData(d); if(cb) cb(); },
+    function(e){ BUSY=false; render(); fail(e&&e.message); if(cb) cb(); }
+  );
+}
+function fail(msg){ $('alert').classList.add('is-on'); $('alertMsg').textContent=msg||''; }
+function onData(d){
+  LOADED=true; DATA=d; DATA._t0=Date.now();
+  $('alert').classList.remove('is-on');
+  // Ссылка общая, поэтому группа только своя: серверный selected игнорируем,
+  // иначе новому человеку открылась бы чужая группа.
+  var saved=store('group') || URL_GRP;
+  SEL=(d.groups||[]).some(function(g){ return g.key===saved; })?saved:null;
+  if(SEL && SEL!==store('group')) store('group', SEL);
+  render();
+  // Сначала согласие, потом выбор группы — иначе окна наложились бы друг на друга.
+  // Заход считаем только после согласия: до него ничего не отправляем.
+  if(!(store('agreed')||URL_OK)) openConsent();
+  else { trackVisit(group()); if(!SEL) openPicker(true); }
+}
+
+/* ─── Орб ───
+   Настоящий thinking-orbs: пресет «composing» → режим ribbon, тот же, что на
+   info.bestcenter.uz. Ядро вшито в страницу выше, поэтому работает и внутри
+   Apps Script, где внешний модуль не подгрузить. */
+var ORB=(function(){
+  var lib=window.__ORBS, cv=$('ptr-orb');
+  if(!lib || !cv || !cv.getContext) return null;
+  var preset=lib.resolvePreset('composing',64);
+  var draw=lib.MODE_DRAWS[preset.mode];
+  if(!draw) return null;
+  var dpr=Math.min(2, window.devicePixelRatio||1);
+  cv.width=64*dpr; cv.height=64*dpr;
+  var ctx=cv.getContext('2d');
+  var still=matchMedia('(prefers-reduced-motion: reduce)');
+  var raf=0, t0=0, baseT=0;
+  function paint(t){
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    ctx.clearRect(0,0,64,64);
+    draw(ctx,64,t,false,preset.opts);
+  }
+  function frame(now){
+    raf=requestAnimationFrame(frame);
+    if(!t0) t0=now;
+    paint(baseT + (now-t0)/1000*preset.speed);
+  }
+  return {
+    show:function(){ cv.hidden=false; $('ptr').classList.add('has-orb'); },
+    scrub:function(px){
+      this.show();
+      if(raf){ cancelAnimationFrame(raf); raf=0; }
+      baseT=px*0.02*preset.speed;
+      paint(baseT);
+    },
+    start:function(){
+      this.show();
+      if(still.matches){ paint(baseT); return; }
+      if(!raf){ t0=0; raf=requestAnimationFrame(frame); }
+    },
+    stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } }
+  };
+})();
+
+/* ─── Первая загрузка ─── */
+setTimeout(function(){
+  if(!LOADED) fail('Сервер молчит больше 90 секунд. Обычно это значит, что скрипту не выдали доступ к Таблицам и Диску — запусти setupTrigger в Apps Script вручную.');
+}, 90000);
+
+srvData(onData, function(e){ LOADED=true; fail(e&&e.message); });
+
+/* Раз в секунду двигаем только цифры и полосу. Полную пересборку экрана делаем
+   раз в минуту и при возврате из фона — тогда отсчёт не отстаёт после сна вкладки. */
+function tickCountdown(){
+  if(!DATA || !HERO || TAB!=='today') return;
+  var left=(HERO.target - nowMin())*60;
+  if(left<=0){ render(); return; }
+  paintClock(left);
+  var bar=$('bar');
+  if(bar){
+    var span=(HERO.b-HERO.a)*60;
+    var done=HERO.live ? (span-left)/span : Math.max(0, 1-left/3600);
+    bar.style.width=Math.max(0,Math.min(1,done))*100+'%';
+  }
+}
+// Экран целиком пересобираем только на границе пары: иначе перерисовка стирала бы
+// створки на полпути и переворот не был бы виден.
+setInterval(tickCountdown, 1000);
+document.addEventListener('visibilitychange', function(){
+  if(!document.hidden && DATA && TAB==='today') render();
+});
+
+/* ─── Pull-to-refresh (только сенсорные экраны) ─── */
+(function(){
+  if(!('ontouchstart' in window)) return;
+  var ptrEl=$('ptr'), spinEl=ptrEl.querySelector('.ptr__spin'), sigEl=ptrEl.querySelector('.sig');
+  var wrapEl=document.querySelector('.wrap');
+  var THRESH=70, MAXPULL=140, LOAD_GAP=76;
+  var pulling=false, refreshing=false, startY=0, pull=0;
+
+  // Орб стоит по центру промежутка, который открылся: центр на p/2, значит верх на p/2-32.
+  function orbTop(p){ return p/2 - 32; }
+
+  function setPull(p){
+    pull=p;
+    spinEl.style.opacity=Math.min(1,p/THRESH);
+    spinEl.style.transform='translateY('+orbTop(p)+'px)';
+    if(!refreshing){
+      if(ORB) ORB.scrub(p);
+      else sigEl.style.transform='rotate('+(p*2.2)+'deg)';
+    }
+    wrapEl.style.transform = p ? 'translateY('+p+'px)' : '';
+  }
+  // При отпускании промежуток садится на фиксированную высоту, а орб доезжает
+  // до её центра тем же движением — без рывка и без прыжка вверх.
+  function settle(){
+    wrapEl.classList.add('is-snap'); ptrEl.classList.add('is-snap');
+    pull=LOAD_GAP;
+    spinEl.style.opacity='1';
+    spinEl.style.transform='translateY('+orbTop(LOAD_GAP)+'px)';
+    wrapEl.style.transform='translateY('+LOAD_GAP+'px)';
+    setTimeout(function(){
+      wrapEl.classList.remove('is-snap'); ptrEl.classList.remove('is-snap');
+    },280);
+  }
+  function collapse(){
+    wrapEl.classList.add('is-snap'); ptrEl.classList.add('is-snap');
+    pull=0;
+    spinEl.style.opacity='0';
+    spinEl.style.transform='translateY('+orbTop(0)+'px)';
+    wrapEl.style.transform='';
+    setTimeout(function(){
+      wrapEl.classList.remove('is-snap'); ptrEl.classList.remove('is-snap');
+      spinEl.style.opacity=''; spinEl.style.transform=''; sigEl.style.transform='';
+      if(ORB) ORB.scrub(0);
+    },280);
+  }
+  document.addEventListener('touchstart', function(e){
+    if(refreshing || window.scrollY>0) return;
+    startY=e.touches[0].clientY; pulling=true;
+  },{passive:true});
+  document.addEventListener('touchmove', function(e){
+    if(!pulling||refreshing) return;
+    var dy=e.touches[0].clientY-startY;
+    if(dy<=0 || window.scrollY>0){ if(pull) setPull(0); return; }
+    e.preventDefault();
+    setPull(Math.min(MAXPULL, dy*0.45));
+  },{passive:false});
+  document.addEventListener('touchend', function(){
+    if(!pulling) return;
+    pulling=false;
+    if(pull>=THRESH && !refreshing){
+      refreshing=true;
+      ptrEl.classList.add('is-loading');
+      if(ORB) ORB.start();
+      settle();
+      var t0=Date.now();
+      refresh(function(){
+        setTimeout(function(){
+          refreshing=false;
+          ptrEl.classList.remove('is-loading');
+          if(ORB) ORB.stop();
+          collapse();
+        }, Math.max(0, 700-(Date.now()-t0)));
+      });
+    } else collapse();
+  },{passive:true});
+})();
+</script>
+</body>
+</html>

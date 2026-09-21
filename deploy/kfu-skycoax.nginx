@@ -1,0 +1,34 @@
+# kfu.skycoax.uz — та же сборка в /var/www/kfu + прокси /api. HTTP-блок;
+# certbot добавит 443 и редирект автоматически.
+server {
+    listen 80;
+    listen [::]:80;
+    server_name kfu.skycoax.uz;
+
+    root /var/www/kfu;
+    index index.html;
+    charset utf-8;
+
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:8790;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 60;
+    }
+
+    location / { try_files $uri $uri/ /index.html; }
+    location = /index.html { add_header Cache-Control "no-cache"; }
+    location /assets/ { add_header Cache-Control "public, max-age=31536000, immutable"; }
+    location ~* \.(png|webmanifest)$ { add_header Cache-Control "public, max-age=2592000"; }
+    location = /manifest.json { add_header Cache-Control "public, max-age=86400"; }
+
+    access_log /var/log/nginx/kfu-skycoax.access.log;
+    error_log  /var/log/nginx/kfu-skycoax.error.log;
+}

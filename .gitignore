@@ -1,0 +1,26 @@
+# Зависимости и сборки
+node_modules/
+dist/
+web/dist/
+server/data/
+__pycache__/
+*.pyc
+
+# Секреты и локальное
+.env
+.env.*
+!.env.example
+.claude/
+
+# Превью и скриншоты (генерируются инструментами, не исходник)
+.preview-*/
+.preview-*.png
+.chrome-preview*/
+.edge-preview*/
+apps-script/_preview/
+
+# Крупные выгрузки и бандлы миграции
+output/
+*.tgz
+*.zip
+*.log
