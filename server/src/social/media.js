@@ -7,7 +7,7 @@ import { writeFileSync, renameSync, rmSync, statfsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { social } from '../config.js';
-import { nowIso } from './db.js';
+import { nowIso, tx } from './db.js';
 import {
   SocialError, ok, invalid, notFound, guard, isAdmin, TEXT, mediaTypeError, bodyOf, marks,
 } from './http.js';
@@ -99,6 +99,56 @@ export function thumbFits(full, t) {
   // Узкие фото: при уменьшении короткая сторона округляется, и 2 % не хватает — допускаем ±1 точку.
   const scale = longT / longFull;
   return Math.abs(t.width - full.width * scale) <= 1.01 && Math.abs(t.height - full.height * scale) <= 1.01;
+}
+
+/**
+ * Фото профиля из Google при регистрации (auth.js, только взрослым). Google сам отдаёт квадратный JPEG нужного
+ * размера («=s512-c-rj» и «=s128-c-rj» в конце адреса фото), дальше — та же очистка, что у загрузки из приложения
+ * (sanitizeJpeg: без EXIF, ICC и хвостов). Ставится, только если человек ещё не выбрал фото сам.
+ * @returns {Promise<boolean>} поставлено ли фото
+ */
+export async function importGoogleAvatar(ctx, userId, picture) {
+  if (!/^https:\/\/[a-z0-9.-]+\.googleusercontent\.com\//i.test(String(picture || ''))) return false;
+  const base = String(picture).replace(/=[^/=]*$/, '');
+  const get = async (side, max) => {
+    const res = await fetch(`${base}=s${side}-c-rj`, {
+      headers: { accept: 'image/jpeg' }, redirect: 'follow', signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) throw new Error('Google ответил ' + res.status);
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length > max) throw new Error('фото слишком большое');
+    return buf;
+  };
+  const full = sanitizeJpeg(await get(512, FULL_BYTES), 1024);
+  if (Math.abs(full.width - full.height) > 2) return false;
+  let thumb = null;
+  try {
+    const t = sanitizeJpeg(await get(128, THUMB_BYTES), 640);
+    if (thumbFits({ kind: 'avatar', width: full.width, height: full.height }, t)) thumb = t;
+  } catch { /* без миниатюры — покажется полное фото */ }
+  diskGuard();
+
+  const id = randomBytes(16).toString('base64url');
+  writeAtomic(fileOf(id), full.data, `.tmp-${id}`);
+  if (thumb) writeAtomic(fileOf(id, true), thumb.data, `.tmp-${id}_t`);
+  const db = ctx.db;
+  let set = false;
+  try {
+    set = tx(db, () => {
+      const u = db.prepare("SELECT avatar_id FROM users WHERE id = ? AND status = 'active'").get(userId);
+      if (!u || u.avatar_id) return false;   // аккаунт удалили или человек уже поставил своё фото
+      const now = nowIso();
+      db.prepare(`INSERT INTO media (id, owner_id, kind, width, height, bytes, thumb_bytes, sha256, created_at, attached_at)
+                  VALUES (?,?,?,?,?,?,?,?,?,?)`)
+        .run(id, userId, 'avatar', full.width, full.height, full.data.length, thumb ? thumb.data.length : 0,
+          createHash('sha256').update(full.data).digest('hex'), now, now);
+      db.prepare('UPDATE users SET avatar_id = ? WHERE id = ?').run(id, userId);
+      return true;
+    });
+  } finally {
+    if (!set) unlinkMedia([id]);
+  }
+  return set;
 }
 
 const MEDIA_TEXT = {

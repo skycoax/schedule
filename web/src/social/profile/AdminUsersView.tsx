@@ -1,6 +1,7 @@
-// Пользователи (только модераторам): сводка, поиск по имени и @имени, список аккаунтов — новые сверху.
-// Нажатие открывает профиль (там «•••» — ограничить, сбросить, снять ограничение). Почты, Google ID, возраста
-// и списка друзей здесь нет: их модераторы не видят (политика конфиденциальности, «Модерация»).
+// Пользователи (только модераторам): сводка, поиск по имени, @имени и почте, список аккаунтов — новые сверху.
+// Нажатие раскрывает подробности: почта, данные Google, возраст, регистрация, входы и устройства; оттуда —
+// профиль (там «•••» — ограничить, сбросить, снять ограничение). Google ID, списка друзей и того, кто
+// на кого жаловался, здесь нет (политика конфиденциальности, «Модерация»).
 // Грузится лениво, как и «Жалобы».
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { JSX } from 'react';
@@ -47,6 +48,7 @@ function Stats({ st }: { st: AdminUsersStats }): JSX.Element {
 }
 
 function Row({ u, onOpen }: { u: AdminUser; onOpen: (username: string) => void }): JSX.Element {
+  const [open, setOpen] = useState(false);
   const meta = [u.username ? '@' + u.username : 'профиль не заполнен', u.uniShort || ''].filter(Boolean).join(' · ');
   const counts = [
     n(u.counts.posts, ['пост', 'поста', 'постов']),
@@ -80,11 +82,54 @@ function Row({ u, onOpen }: { u: AdminUser; onOpen: (username: string) => void }
     </>
   );
   return (
-    <li className="adm-row">
-      {u.username
-        ? <button type="button" className="adm-row__btn" onClick={() => onOpen(u.username!)}>{body}<Icon name="chevronRight" size={16} className="adm-row__chev" /></button>
-        : <div className="adm-row__btn adm-row__btn--static">{body}</div>}
+    <li className={'adm-row' + (open ? ' is-open' : '')}>
+      <button type="button" className="adm-row__btn" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        {body}<Icon name="chevronDown" size={16} className="adm-row__chev" />
+      </button>
+      {open && <Details u={u} onOpen={onOpen} />}
     </li>
+  );
+}
+
+const DATE_TIME = new Intl.DateTimeFormat('ru', {
+  day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tashkent',
+});
+const whenOf = (iso: string | null) => (iso ? DATE_TIME.format(Date.parse(iso)) : '—');
+/** Дни в sessions.seen_at — 'YYYY-MM-DD' (UTC). */
+const dayOf = (d: string | null) => (d ? DATE_Y.format(Date.parse(d + 'T12:00:00Z')) : '—');
+
+/** Подробности аккаунта (только модераторам): почта, данные Google, регистрация, входы и устройства. */
+function Details({ u, onOpen }: { u: AdminUser; onOpen: (username: string) => void }): JSX.Element {
+  const rows: [string, string][] = [
+    ['Почта', u.email + (u.emailVerified ? '' : ' (не подтверждена)')],
+    ['Имя в Google', u.google.name || '—'],
+    ['Возраст', u.age === 'minor' ? '16–17 лет' : '18 и старше'],
+    ['Язык Google', u.google.locale || '—'],
+    ...(u.google.domain ? [['Домен Google', u.google.domain] as [string, string]] : []),
+    ['Регистрация', [whenOf(u.createdAt), u.signup.host, u.signup.device].filter(Boolean).join(' · ')],
+    ['Последний вход', u.lastLoginAt
+      ? `${whenOf(u.lastLoginAt)} · всего ${n(u.loginCount, ['вход', 'входа', 'входов'])}`
+      : 'ещё не входил после обновления — данные появятся при следующем входе'],
+    ['Был в приложении', dayOf(u.lastSeen)],
+    ['Устройства', u.devices.length ? u.devices.join(', ') : '—'],
+    ['Активные входы', String(u.sessions)],
+    ['Правила приняты', u.rulesAt ? whenOf(u.rulesAt) : 'нет'],
+    ...(u.links.tg ? [['Telegram', '@' + u.links.tg] as [string, string]] : []),
+    ...(u.links.ig ? [['Instagram', u.links.ig] as [string, string]] : []),
+    ...(u.bio ? [['О себе', u.bio] as [string, string]] : []),
+  ];
+  return (
+    <div className="adm-det">
+      <dl className="adm-det__list">
+        {rows.map(([k, v]) => (
+          <div key={k} className="adm-det__row"><dt>{k}</dt><dd>{v}</dd></div>
+        ))}
+      </dl>
+      <div className="adm-det__acts">
+        {u.username && <Button variant="tinted" size={32} onClick={() => onOpen(u.username!)}>Открыть профиль</Button>}
+        <a className="ui-btn ui-btn--plain ui-btn--32" href={'mailto:' + u.email}>Написать на почту</a>
+      </div>
+    </div>
   );
 }
 
@@ -153,7 +198,7 @@ export function AdminUsersView(p: {
       <form className="ppl-search" role="search" onSubmit={(e) => e.preventDefault()}>
         <Icon name="search" size={18} className="ppl-search__ico" />
         <input
-          className="ppl-search__in" type="search" value={q} placeholder="Имя или @имя" aria-label="Имя или @имя"
+          className="ppl-search__in" type="search" value={q} placeholder="Имя, @имя или почта" aria-label="Имя, @имя или почта"
           autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="search" maxLength={40}
           onChange={(e) => setQ(e.currentTarget.value)}
         />
@@ -164,7 +209,7 @@ export function AdminUsersView(p: {
           </button>
         )}
       </form>
-      <p className="adm-note">Почту, возраст и список друзей модераторы не видят — так сказано в политике.</p>
+      <p className="adm-note">Нажми на человека — откроются почта, данные Google, входы и устройства.</p>
       {body}
     </div>
   );

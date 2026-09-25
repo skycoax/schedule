@@ -388,4 +388,14 @@ button.adm-row__btn:active{background:var(--fill)}
 .adm-tag{display:inline-block;padding:3px 8px;border-radius:8px;background:var(--fill);font-size:12px;line-height:1.3;color:var(--ink-60)}
 .adm-tag--warn{background:color-mix(in srgb, var(--c2) 18%, transparent);color:var(--c2)}
 .adm-tag--bad{background:var(--red-dim);color:var(--red-ink)}
-.adm-row__chev{flex:none;align-self:center;color:var(--ink-30)}
+.adm-row__chev{flex:none;align-self:center;color:var(--ink-30);transition:transform var(--dur) var(--ease)}
+.adm-row.is-open .adm-row__chev{transform:rotate(180deg)}
+/* Подробности аккаунта под строкой. */
+.adm-det{padding:0 16px 14px 72px;animation:view-in 200ms var(--ease)}
+.adm-det__list{margin:0;padding:10px 12px;border-radius:12px;background:var(--surface);box-shadow:inset 0 0 0 1px var(--glass-edge)}
+.adm-det__row{display:grid;grid-template-columns:118px minmax(0,1fr);gap:8px;padding:5px 0;font-size:13.5px;line-height:1.35}
+.adm-det__row + .adm-det__row{border-top:.5px solid var(--sep)}
+.adm-det__row dt{color:var(--ink-60)}
+.adm-det__row dd{margin:0;color:var(--ink-100);overflow-wrap:anywhere;white-space:pre-line}
+.adm-det__acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+@media (max-width:374px){ .adm-det{padding-left:16px} .adm-det__row{grid-template-columns:100px minmax(0,1fr)} }

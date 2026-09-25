@@ -402,21 +402,28 @@ export function adminRoutes(inst, ctx) {
   });
 
   // ─── #37 пользователи: список со сводкой (только модераторам) ───
-  // Почты, Google ID, возрастной группы, списка друзей и того, кто на кого жаловался, здесь нет:
-  // их модераторы не видят (политика, «Модерация»). Имя — как написано (модератор видит без маскировки).
-  // ?q= — поиск по имени и @имени; страницы по 30, новые сверху.
+  // Всё, что Para знает об аккаунте, кроме Google ID, списка друзей и того, кто на кого жаловался
+  // (политика, «Модерация»): почта, данные Google, возрастная группа, где и с какого устройства
+  // завели аккаунт, входы и устройства. Имя — как написано (модератор видит без маскировки).
+  // ?q= — поиск по имени, @имени и почте; страницы по 30, новые сверху.
   const USERS_PAGE = 30;
   const USER_COLS = `u.id, u.username, u.name, u.avatar_id, u.uni, u.email, u.email_verified, u.status,
-    u.banned_until, u.ban_reason, u.created_at, u.rules_version, m.thumb_bytes AS av_thumb,
+    u.banned_until, u.ban_reason, u.created_at, u.rules_version, u.rules_at, u.age_group, u.bio, u.tg, u.ig,
+    u.google_name, u.google_locale, u.google_hd, u.google_picture, u.signup_host, u.signup_device,
+    u.last_login_at, u.login_count, m.thumb_bytes AS av_thumb,
+    (SELECT MAX(s.seen_at) FROM sessions s WHERE s.user_id = u.id) AS last_seen,
+    (SELECT COUNT(*) FROM sessions s WHERE s.user_id = u.id AND s.expires_at > $now) AS n_sessions,
+    (SELECT GROUP_CONCAT(DISTINCT s.device) FROM sessions s WHERE s.user_id = u.id AND s.device != '') AS devices,
     (SELECT COUNT(*) FROM posts p WHERE p.author_id = u.id AND p.root_id IS NULL AND p.deleted_at IS NULL) AS n_posts,
     (SELECT COUNT(*) FROM posts p WHERE p.author_id = u.id AND p.root_id IS NOT NULL AND p.deleted_at IS NULL) AS n_replies,
     (SELECT COALESCE(SUM(p.like_count), 0) FROM posts p WHERE p.author_id = u.id AND p.deleted_at IS NULL) AS n_likes,
     (SELECT COUNT(*) FROM reports r WHERE r.user_id = u.id AND r.status = 'open') AS rep_open,
     (SELECT COUNT(*) FROM reports r WHERE r.user_id = u.id) AS rep_all`;
   const usersAll = db.prepare(`SELECT ${USER_COLS} FROM users u LEFT JOIN media m ON m.id = u.avatar_id
-    WHERE u.id < ? ORDER BY u.id DESC LIMIT ?`);
+    WHERE u.id < $cursor ORDER BY u.id DESC LIMIT $lim`);
   const usersFound = db.prepare(`SELECT ${USER_COLS} FROM users u LEFT JOIN media m ON m.id = u.avatar_id
-    WHERE u.id < ? AND (u.name_fold LIKE ? ESCAPE '\\' OR u.username LIKE ? ESCAPE '\\') ORDER BY u.id DESC LIMIT ?`);
+    WHERE u.id < $cursor AND (u.name_fold LIKE $like ESCAPE '\\' OR u.username LIKE $prefix ESCAPE '\\'
+      OR u.email LIKE $like ESCAPE '\\') ORDER BY u.id DESC LIMIT $lim`);
   const likeEsc = (s) => s.replace(/[\\%_]/g, (c) => '\\' + c);
   inst.get('/api/social/admin/users', async (req) => {
     guard(req, 'SA');
@@ -424,9 +431,10 @@ export function adminRoutes(inst, ctx) {
     const q = fold(cleanText(typeof q0 === 'string' ? q0 : '', { multiline: false })).replace(/^@/, '').slice(0, 40);
     const cursor = cursorParam((req.query || {}).cursor);
     limit('read', keyOf(req));
+    const params = { $cursor: cursor ?? 9e15, $lim: USERS_PAGE + 1, $now: nowIso() };
     const rows = q
-      ? usersFound.all(cursor ?? 9e15, `%${likeEsc(q)}%`, `${likeEsc(q)}%`, USERS_PAGE + 1)
-      : usersAll.all(cursor ?? 9e15, USERS_PAGE + 1);
+      ? usersFound.all({ ...params, $like: `%${likeEsc(q)}%`, $prefix: `${likeEsc(q)}%` })
+      : usersAll.all(params);
     const page = rows.slice(0, USERS_PAGE);
     const items = page.map((u) => ({
       id: u.id,
@@ -441,6 +449,20 @@ export function adminRoutes(inst, ctx) {
       banned: banOf(u),
       counts: { posts: u.n_posts, replies: u.n_replies, likes: u.n_likes, friends: friendCount(db, u.id) },
       reports: { open: u.rep_open, total: u.rep_all },
+      // Только для админки:
+      email: u.email,
+      emailVerified: Number(u.email_verified) === 1,
+      age: u.age_group,
+      bio: u.bio || '',
+      links: { tg: u.tg || '', ig: u.ig || '' },
+      google: { name: u.google_name || '', locale: u.google_locale || '', domain: u.google_hd || '', picture: u.google_picture || '' },
+      signup: { host: u.signup_host || '', device: u.signup_device || '' },
+      rulesAt: u.rules_at || null,
+      lastLoginAt: u.last_login_at || null,
+      loginCount: Number(u.login_count) || 0,
+      lastSeen: u.last_seen || null,
+      sessions: Number(u.n_sessions) || 0,
+      devices: u.devices ? String(u.devices).split(',').filter(Boolean) : [],
     }));
     // Сводка — с первой страницей общего списка. «Заходили за неделю» — только число, без имён.
     let stats = null;

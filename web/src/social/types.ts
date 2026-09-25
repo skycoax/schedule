@@ -202,6 +202,12 @@ export interface AdminUser {
   createdAt: string; team: boolean; rulesAccepted: boolean; banned: Ban | null;
   counts: { posts: number; replies: number; likes: number; friends: number };
   reports: { open: number; total: number };
+  // Только для админки (политика, «Модерация»): почта, возраст, данные Google, регистрация и входы.
+  email: string; emailVerified: boolean; age: AgeGroup; bio: string; links: { tg: string; ig: string };
+  google: { name: string; locale: string; domain: string; picture: string };
+  signup: { host: string; device: string };
+  rulesAt: string | null; lastLoginAt: string | null; loginCount: number; lastSeen: string | null;
+  sessions: number; devices: string[];
 }
 export interface AdminUsersStats { total: number; today: number; week: number; active: number; noProfile: number; banned: number }
 export interface AdminUsersPage { items: AdminUser[]; next: string | null; stats: AdminUsersStats | null }

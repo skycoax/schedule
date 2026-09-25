@@ -15,6 +15,7 @@ import { limit, limited, keyOf, ipKey } from './limits.js';
 import { cleanText, graphemes, fold } from './text.js';
 import { audit } from './moderation.js';
 import { meOf } from './users.js';
+import { importGoogleAvatar } from './media.js';
 
 const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
 const SESSION_DAYS = 180;
@@ -89,16 +90,21 @@ function firstName(claims) {
  * Общий для входа через Google и POST /api/auth/dev.
  * @param {{ sub: string, email: string, emailVerified: boolean, givenName?: string, name?: string }} claims
  * @param {{ intent: 'signin'|'delete', age: 'minor'|'adult'|null, accepted: 0|1, uni: string|null }} state
- * @returns {object|null} строка users; null — intent=delete, а аккаунта нет (ничего не создано)
+ * @param {{ host?: string, device?: string }} [meta] где и с какого устройства вошли (для админки)
+ * @returns {object|null} строка users; null — intent=delete, а аккаунта нет (ничего не создано).
+ *   У только что созданного аккаунта — поле created: true (для фото из Google).
  */
-export function findOrCreateUser(ctx, claims, state) {
+export function findOrCreateUser(ctx, claims, state, meta = {}) {
   const db = ctx.db;
   return tx(db, () => {
     const now = nowIso();
     const found = db.prepare('SELECT * FROM users WHERE google_sub = ?').get(claims.sub);
     if (found) {
-      db.prepare('UPDATE users SET email = ?, email_verified = ? WHERE id = ?')
-        .run(claims.email, claims.emailVerified ? 1 : 0, found.id);
+      // Данные Google обновляются при каждом входе (сменил фамилию или фото в Google — видно в админке).
+      db.prepare(`UPDATE users SET email = ?, email_verified = ?, google_name = ?, google_locale = ?, google_hd = ?,
+                  google_picture = ?, last_login_at = ?, login_count = login_count + 1 WHERE id = ?`)
+        .run(claims.email, claims.emailVerified ? 1 : 0, claims.name || found.google_name, claims.locale || found.google_locale,
+          claims.hd || found.google_hd, claims.picture || found.google_picture, now, found.id);
       if (state.intent === 'signin' && state.accepted === 1) {
         db.prepare('UPDATE users SET rules_version = ?, policy_version = ?, rules_at = ? WHERE id = ?')
           .run(social.rulesVersion, social.policyVersion, now, found.id);
@@ -125,20 +131,43 @@ export function findOrCreateUser(ctx, claims, state) {
     const agreed = state.accepted === 1;
     const r = db.prepare(`
       INSERT INTO users (google_sub, email, email_verified, age_group, name, name_fold, searchable, friend_req, uni,
-                         status, banned_until, ban_reason, rules_version, policy_version, rules_at, created_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+                         status, banned_until, ban_reason, rules_version, policy_version, rules_at, created_at,
+                         google_name, google_locale, google_hd, google_picture, signup_host, signup_device,
+                         last_login_at, login_count)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)`).run(
       claims.sub, claims.email, claims.emailVerified ? 1 : 0, age, name, fold(name),
       age === 'adult' ? 1 : 0, age === 'adult' ? 'all' : 'none', uni,
       mark ? 'banned' : 'active', mark ? mark.until : null, mark ? mark.reason : '',
-      agreed ? social.rulesVersion : 0, agreed ? social.policyVersion : 0, agreed ? now : null, now);
-    return db.prepare('SELECT * FROM users WHERE id = ?').get(Number(r.lastInsertRowid));
+      agreed ? social.rulesVersion : 0, agreed ? social.policyVersion : 0, agreed ? now : null, now,
+      claims.name || '', claims.locale || '', claims.hd || '', claims.picture || '',
+      String(meta.host || '').slice(0, 100), String(meta.device || '').slice(0, 60), now);
+    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(Number(r.lastInsertRowid));
+    user.created = true;
+    return user;
   });
 }
 
 /**
+ * После входа: новому взрослому аккаунту — фото профиля из Google (в фоне, вход не ждёт).
+ * До 18 лет фото автоматически не ставится: иначе лицо подростка сразу увидят все.
+ */
+function avatarFromGoogle(ctx, user, claims) {
+  if (!user || !user.created || !claims.picture || user.age_group !== 'adult' || user.status !== 'active') return;
+  importGoogleAvatar(ctx, user.id, claims.picture).catch((err) => {
+    ctx.log.warn({ err: err && err.message ? String(err.message).slice(0, 120) : 'error' }, 'фото из Google не загрузилось');
+  });
+}
+
+/** Где и с какого устройства вошли — для админки (без IP и сырого User-Agent). */
+const metaOf = (req) => ({
+  host: String(req.headers.host || '').toLowerCase().replace(/:\d+$/, '').slice(0, 100),
+  device: deviceOf(req.headers['user-agent']),
+});
+
+/**
  * Завершить вход (§B.5 #3 шаги 9–10): старая сессия этого браузера удаляется, создаётся новая
- * (у человека не больше 20), кука. Устройство и браузер к сессии не записываются (колонка device
- * остаётся пустой), вход в журнал не пишется: ни одна функция этого не использует. Возвращает строку users.
+ * (у человека не больше 20), кука. К сессии записывается устройство — «iPhone · Safari» (deviceOf,
+ * для админки); вход в журнал модерации не пишется. Возвращает строку users.
  */
 export function completeSignIn(ctx, req, reply, user) {
   const db = ctx.db;
@@ -147,7 +176,7 @@ export function completeSignIn(ctx, req, reply, user) {
     if (req.sid) db.prepare('DELETE FROM sessions WHERE id = ?').run(req.sid);
     db.prepare(`INSERT INTO sessions (token_hash, user_id, created_at, seen_at, expires_at, device)
                 VALUES (?,?,?,?,?,?)`)
-      .run(sha256hex(token), user.id, nowIso(), today(), nowIso(Date.now() + SESSION_DAYS * DAY), '');
+      .run(sha256hex(token), user.id, nowIso(), today(), nowIso(Date.now() + SESSION_DAYS * DAY), deviceOf(req.headers['user-agent']));
     db.prepare(`DELETE FROM sessions WHERE user_id = ? AND id NOT IN
                 (SELECT id FROM sessions WHERE user_id = ? ORDER BY id DESC LIMIT ${MAX_SESSIONS})`)
       .run(user.id, user.id);
@@ -236,13 +265,34 @@ export function claimsFrom(idToken, { clientId, nonce }) {
   const subOk = typeof c.sub === 'string' && /^[A-Za-z0-9_-]{1,255}$/.test(c.sub);
   const emailOk = typeof c.email === 'string' && c.email.length <= 254 && c.email.includes('@');
   if (!(issOk && audOk && timeOk && nonceOk && subOk && emailOk)) return null;
+  const str = (v, max) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
+  const picture = str(c.picture, 500);
   return {
     sub: c.sub,
     email: c.email.toLowerCase(),
     emailVerified: c.email_verified === true || c.email_verified === 'true',
     name: typeof c.name === 'string' ? c.name : '',
     givenName: typeof c.given_name === 'string' ? c.given_name : '',
+    // Остальное из того же id_token (scope profile): для админки и фото профиля при регистрации.
+    picture: /^https:\/\/[a-z0-9.-]+\.googleusercontent\.com\//i.test(picture) ? picture : '',
+    locale: str(c.locale, 20),
+    hd: str(c.hd, 100).toLowerCase(),
   };
+}
+
+/**
+ * Устройство для админки и списка входов: «iPhone · Safari», «Android · Chrome». Только семейство системы
+ * и браузера — без версий, модели и сырого User-Agent.
+ */
+export function deviceOf(ua) {
+  const s = String(ua || '');
+  const os = /iPhone/.test(s) ? 'iPhone' : /iPad/.test(s) ? 'iPad' : /Android/.test(s) ? 'Android'
+    : /Windows/.test(s) ? 'Windows' : /Macintosh|Mac OS X/.test(s) ? 'Mac' : /Linux|X11/.test(s) ? 'Linux' : '';
+  const br = /Telegram/i.test(s) ? 'Telegram' : /Instagram/.test(s) ? 'Instagram' : /SamsungBrowser/.test(s) ? 'Samsung Internet'
+    : /YaBrowser/.test(s) ? 'Яндекс' : /EdgA?\//.test(s) ? 'Edge' : /OPR\/|Opera/.test(s) ? 'Opera'
+      : /Firefox|FxiOS/.test(s) ? 'Firefox' : /CriOS|Chrome\//.test(s) ? 'Chrome' : /Safari\//.test(s) ? 'Safari'
+        : /iPhone|iPad/.test(s) ? 'приложение на экране «Домой»' : '';
+  return [os, br].filter(Boolean).join(' · ').slice(0, 60);
 }
 
 /**
@@ -423,10 +473,11 @@ export function authRoutes(inst, ctx) {
       return reply.redirect(`${origin}/api/auth/google/finish?ticket=${ticket}`, 302);
     }
     // 8) Аккаунт по google_sub; при intent=delete новый не создаётся.
-    const user = findOrCreateUser(ctx, claims, state);
+    const user = findOrCreateUser(ctx, claims, state, metaOf(req));
     if (!user) return go('none', back);
     // 9–10) Новая сессия, запись в журнал.
     completeSignIn(ctx, req, reply, user);
+    avatarFromGoogle(ctx, user, claims);
     return go('ok', back);
   });
 
@@ -444,9 +495,10 @@ export function authRoutes(inst, ctx) {
     const bind = readCookies(req)[web.oauth];
     if (!bind || !safeEqual(sha256hex(bind), t.bindHash)) return go('browser');
     if (social.mode === 'off' && t.state.intent !== 'delete') return go('unavailable');
-    const user = findOrCreateUser(ctx, t.claims, t.state);
+    const user = findOrCreateUser(ctx, t.claims, t.state, metaOf(req));
     if (!user) return go('none');
     completeSignIn(ctx, req, reply, user);
+    avatarFromGoogle(ctx, user, t.claims);
     return go('ok');
   });
 
@@ -466,7 +518,7 @@ export function authRoutes(inst, ctx) {
       const user = findOrCreateUser(ctx,
         { sub: 'dev:' + name, email: name + '@dev.local', emailVerified: true, givenName: capitalize(name) },
         { intent, age: signin ? (b.age || 'adult') : null, accepted: signin && b.accept !== false ? 1 : 0,
-          uni: req.tenant ? req.tenant.id : null });
+          uni: req.tenant ? req.tenant.id : null }, metaOf(req));
       if (!user) throw new SocialError(404, 'not_found', 'Аккаунта Para с этим Google нет — удалять нечего');
       completeSignIn(ctx, req, reply, user);
       return ok(meOf(ctx, user));

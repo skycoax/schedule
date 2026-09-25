@@ -145,7 +145,8 @@ export function SignInSheet(p: { reason: AuthReason; returnTo: string; onClose: 
                 <button type="button" className="signin__link" onClick={() => setDocOpen(true)}>Политику конфиденциальности</button>
               </p>
             </div>
-            <p className="signin__note">Para сохранит от Google только Google ID, почту и имя. Почту никто не увидит.
+            <p className="signin__note">Para возьмёт из Google имя, почту и фото — фото станет фото профиля (с 18 лет),
+              его можно поменять. Почту другие люди не увидят.
               {!brand.hub && ' Аккаунт Para один для всех вузов и приложения Para.'}</p>
           </>
         )}

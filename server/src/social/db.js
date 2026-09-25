@@ -203,7 +203,20 @@ export const SCHEMA_V2 = `
 ALTER TABLE oauth_states ADD COLUMN origin TEXT;
 `;
 
-const MIGRATIONS = [SCHEMA_V1, SCHEMA_V2];
+// Данные входа через Google и регистрации — только для модераторов в админке (политика, «Что Para получает
+// от Google» и «Модерация»). Наружу, в профили и посты, не отдаются.
+export const SCHEMA_V3 = `
+ALTER TABLE users ADD COLUMN google_name    TEXT NOT NULL DEFAULT '';  -- имя и фамилия, как записаны в Google
+ALTER TABLE users ADD COLUMN google_locale  TEXT NOT NULL DEFAULT '';  -- язык аккаунта Google: ru, uz, en…
+ALTER TABLE users ADD COLUMN google_hd      TEXT NOT NULL DEFAULT '';  -- домен Google Workspace (почта вуза), если есть
+ALTER TABLE users ADD COLUMN google_picture TEXT NOT NULL DEFAULT '';  -- адрес фото в Google (с последнего входа)
+ALTER TABLE users ADD COLUMN signup_host    TEXT NOT NULL DEFAULT '';  -- где завели аккаунт: para.skycoax.uz, kfu.skycoax.uz…
+ALTER TABLE users ADD COLUMN signup_device  TEXT NOT NULL DEFAULT '';  -- «iPhone · Safari» при регистрации
+ALTER TABLE users ADD COLUMN last_login_at  TEXT;                      -- последний вход через Google
+ALTER TABLE users ADD COLUMN login_count    INTEGER NOT NULL DEFAULT 0;
+`;
+
+const MIGRATIONS = [SCHEMA_V1, SCHEMA_V2, SCHEMA_V3];
 
 /** Открыть (и при необходимости создать) social.db и довести схему до последней версии. */
 export function openSocialDb(dir = config.dataDir) {

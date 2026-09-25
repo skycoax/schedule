@@ -20,7 +20,7 @@ export function GuestCard(): JSX.Element {
       </p>
       <GoogleButton onClick={() => s.requestSignIn('account')} disabled={!!caption} caption={caption} />
       <p className="prof-guest__note">
-        Другим будут видны имя, @имя пользователя, фото и твои посты. Почту Google не видит никто.
+        Другим будут видны имя, @имя пользователя, фото и твои посты. Почту другие люди не увидят.
       </p>
     </section>
   );

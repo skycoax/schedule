@@ -1153,23 +1153,29 @@ async function runMain() {
   assert.ok(stats.users > 0 && stats.mediaBytes > 0 && stats.bannedUsers >= 1);
   ok('журнал (все действия, без почты и текстов) и сводка модератора');
 
-  // Пользователи в админке: только модератору; без почты, Google ID и возраста; поиск по @имени.
+  // Пользователи в админке: только модератору; почта, возраст, данные входа — да, Google ID — никогда.
   expect(await call(guest, 'GET', '/api/social/admin/users'), 401, 'пользователи гостю', 'auth');
   expect(await call(B.jar, 'GET', '/api/social/admin/users'), 403, 'пользователи не модератору', 'forbidden');
   const users = expect(await call(boss.jar, 'GET', '/api/social/admin/users'), 200, 'пользователи');
   assert.ok(users.items.length > 0 && users.stats && users.stats.total >= users.items.length);
   for (const k of ['total', 'today', 'week', 'active', 'noProfile', 'banned']) assert.equal(typeof users.stats[k], 'number', 'сводка: ' + k);
   const usersText = JSON.stringify(users);
-  assert.ok(!usersText.includes('@dev.local') && !usersText.includes('"email') && !usersText.includes('dev:')
-    && !/"age/.test(usersText), 'в админке нет почты, Google ID и возраста');
+  assert.ok(!usersText.includes('dev:') && !usersText.includes('google_sub') && !usersText.includes('token'),
+    'в админке нет Google ID и ключей входа');
   const u0 = users.items[0];
   assert.deepEqual(Object.keys(u0.counts).sort(), ['friends', 'likes', 'posts', 'replies']);
   assert.ok(users.items.every((x, i, a) => i === 0 || a[i - 1].id > x.id), 'новые сверху');
   const aNow = await meOf(A.jar);
   const foundU = expect(await call(boss.jar, 'GET', `/api/social/admin/users?q=${encodeURIComponent('@' + aNow.username)}`), 200, 'поиск');
-  assert.ok(foundU.items.some((x) => x.id === aNow.id) && foundU.stats === null, 'поиск по @имени, без сводки');
+  const aRow = foundU.items.find((x) => x.id === aNow.id);
+  assert.ok(aRow && foundU.stats === null, 'поиск по @имени, без сводки');
+  assert.match(aRow.email, /@dev\.local$/, 'почта видна модератору');
+  assert.ok(['adult', 'minor'].includes(aRow.age) && aRow.loginCount >= 1 && aRow.signup.host === HUB, 'возраст, входы, адрес');
+  assert.ok(Array.isArray(aRow.devices) && typeof aRow.sessions === 'number' && 'google' in aRow);
+  const byMail = expect(await call(boss.jar, 'GET', `/api/social/admin/users?q=${encodeURIComponent(aRow.email)}`), 200, 'поиск по почте');
+  assert.ok(byMail.items.some((x) => x.id === aNow.id), 'поиск по почте');
   expect(await call(boss.jar, 'GET', '/api/social/admin/users?cursor=abc'), 400, 'кривой курсор', 'invalid');
-  ok('админка «Пользователи»: только модератору, без почты и возраста, поиск и страницы');
+  ok('админка «Пользователи»: только модератору; почта, возраст и входы видны, Google ID — нет; поиск и страницы');
 
   const B2 = await login(`sm_${RUN}_b`);
   expect(await call(A.jar, 'POST', '/api/auth/logout', { json: {}, headers: W }), 200, 'выход');
