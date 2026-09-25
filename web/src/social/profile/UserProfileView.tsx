@@ -256,9 +256,10 @@ export function UserProfileView(p: UserProfileViewProps): JSX.Element {
         );
         break;
       case 'none':
+        // Заявки закрыты — главной кнопки нет, остаётся «Поделиться»; причина — строкой под счётчиками.
         buttons = user.canFriend
           ? <Button size={44} full busy={busy} onClick={() => void friend('request')}>Добавить в друзья</Button>
-          : <p className="prof-hd__rel-note">Не принимает заявки в друзья</p>;
+          : <></>;
         break;
       case 'outgoing':
         buttons = <Button variant="tinted" size={44} full busy={busy} onClick={() => void friend('cancel')}>Заявка отправлена</Button>;
@@ -294,6 +295,9 @@ export function UserProfileView(p: UserProfileViewProps): JSX.Element {
     );
   }
 
+  const closedNote = user && user.relation === 'none' && !user.canFriend
+    ? <p className="prof-hd__caption">Не принимает заявки в друзья</p> : null;
+
   const banNote = user && user.banned && s.me?.isAdmin ? (
     <div className="prof-ban">
       <p className="prof-ban__t">{banText(user.banned)}</p>
@@ -323,7 +327,7 @@ export function UserProfileView(p: UserProfileViewProps): JSX.Element {
   } else {
     body = (
       <>
-        <ProfileHeader user={user} note={banNote}>{buttons}</ProfileHeader>
+        <ProfileHeader user={user} note={<>{closedNote}{banNote}</>}>{buttons}</ProfileHeader>
         <div className="prof-tabs"><h2 className="prof-tab"><span>Ветки</span></h2></div>
         {page.posts.length ? (
           <PostList

@@ -55,19 +55,19 @@
 .prof-finish__p:last-child{margin-bottom:0}
 
 /* ── Шапка профиля: фото слева, рядом имя и @имя; ниже «О себе», ссылки, счётчики и кнопки ── */
-.prof-hd{display:flex;flex-direction:column;align-items:stretch;text-align:left;padding:4px 0 16px}
-.prof-hd__top{display:flex;align-items:center;gap:14px}
+.prof-hd{display:flex;flex-direction:column;align-items:stretch;text-align:left;padding:6px 0 20px}
+.prof-hd__top{display:flex;align-items:center;gap:16px}
 /* Кнопка в конце строки (≡ «Настройки» в своём профиле) — обычная, прокручивается вместе со страницей. */
 .prof-hd__top > .navbtn{flex:none;align-self:center}
 .prof-hd__who{flex:1;min-width:0}
 .prof-hd__name{display:flex;align-items:center;gap:6px;max-width:100%;
-  font:700 22px/1.2 var(--font);letter-spacing:-.02em}
+  font:700 21px/1.2 var(--font);letter-spacing:-.015em}
 .prof-hd__name-t{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .prof-hd__name .badge-team{width:20px;height:20px}
-.prof-hd__meta{max-width:100%;margin-top:2px;font-size:15px;color:var(--ink-100);
+.prof-hd__meta{max-width:100%;margin-top:3px;font-size:14.5px;color:var(--ink-100);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .prof-hd__uni{color:var(--ink-60)}
-.prof-hd__bio{margin-top:12px;width:100%}
+.prof-hd__bio{margin-top:14px;width:100%}
 .prof-hd__bio-t{font-size:15px;line-height:1.4;white-space:pre-wrap;overflow-wrap:anywhere}
 .prof-hd__bio-t.is-clamped{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 .prof-hd__more{position:relative;min-height:32px;padding:0;color:var(--ink-60);font-size:15px}
@@ -81,7 +81,9 @@
 .prof-chip svg{flex:none;color:var(--accent)}
 .prof-chip__t{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .prof-hd__hidden{display:inline-flex;align-items:center;gap:6px;margin-top:10px;font-size:13.5px;color:var(--ink-60)}
-.prof-hd__counts{margin-top:12px;font-size:14.5px;color:var(--ink-60)}
+.prof-hd__counts{margin-top:12px;font-size:14px;color:var(--ink-60)}
+/* Пояснение под счётчиками: «Не принимает заявки в друзья». */
+.prof-hd__caption{margin-top:4px;font-size:13.5px;line-height:1.35;color:var(--ink-60)}
 .prof-hd__cnt{position:relative;color:var(--ink-60);font:inherit}
 .prof-hd__cnt::after{content:"";position:absolute;left:-6px;right:-6px;top:-13px;bottom:-13px}
 .prof-hd__cnt:active{opacity:.6}

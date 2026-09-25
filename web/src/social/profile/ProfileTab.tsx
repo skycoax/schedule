@@ -229,7 +229,6 @@ export default function ProfileTab(p: ProfileTabProps): JSX.Element {
         return (
           <div className="wrap wrap--prof prof-screen">
             {on && <NavBar left={<BackButton onClick={back} />} title="Настройки" />}
-            <LargeTitle title="Настройки" />
             {settings}
           </div>
         );

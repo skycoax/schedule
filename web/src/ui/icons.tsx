@@ -7,7 +7,7 @@ export type IconName =
   | 'calendar' | 'calendarFill' | 'bubbles' | 'bubblesFill' | 'person' | 'personFill' | 'history' | 'compose'
   | 'back' | 'chevronRight' | 'chevronDown' | 'ellipsis' | 'heart' | 'heartFill' | 'reply' | 'share' | 'photo'
   | 'send' | 'close' | 'search' | 'check' | 'globe' | 'lock' | 'flag' | 'hand' | 'trash' | 'people' | 'shield'
-  | 'plus' | 'link' | 'telegram' | 'instagram' | 'wifiOff' | 'warning' | 'plane' | 'menu' | 'comment';
+  | 'plus' | 'link' | 'telegram' | 'instagram' | 'wifiOff' | 'warning' | 'plane' | 'menu' | 'comment' | 'contrast';
 
 interface Def { s?: string; f?: string; a?: string; e?: 1 }
 
@@ -33,6 +33,8 @@ const ICONS: Record<IconName, Def> = {
   // Бумажный самолётик «Поделиться», ≡ «Меню», облачко «Ответить» — как в Threads.
   plane: { s: 'M20.5 3.5 3.5 10.2l6.9 3.3 3.3 6.9L20.5 3.5ZM10.4 13.5l4.4-4.4' },
   menu: { s: 'M4 8h16M4 16h16' },
+  // Тема оформления: круг, наполовину залитый.
+  contrast: { s: 'M12 3.25a8.75 8.75 0 1 0 0 17.5a8.75 8.75 0 1 0 0-17.5Z', f: 'M12 3.25a8.75 8.75 0 0 1 0 17.5Z' },
   comment: { s: 'M20.2 15.4A8.6 8.6 0 1 0 17 19l3.7 1.2-1.2-3.6c.3-.4.5-.8.7-1.2Z' },
   close: { s: 'M6 6l12 12M18 6 6 18' },
   search: { s: 'M4 10.75a6.75 6.75 0 1 0 13.5 0a6.75 6.75 0 1 0 -13.5 0M15.75 15.75l4.5 4.5' },

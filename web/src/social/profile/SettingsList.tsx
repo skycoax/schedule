@@ -5,27 +5,40 @@ import type { JSX, ReactNode } from 'react';
 import { brand } from '../../brand';
 import { Install } from '../../components/Install';
 import { ViewportDebug } from '../../components/ViewportDebug';
-import { ThemeControl } from '../../components/ThemeControl';
 import { isStandalone } from '../../hooks/useInstall';
 import { useUniversityMenu } from '../../shell/useUniversityMenu';
 import type { Role, ScheduleContext, ThemeApi } from '../../tabs';
-import { confirmDialog } from '../../ui/ActionSheet';
+import type { ThemeMode } from '../../hooks/useTheme';
+import { chooseAction, confirmDialog } from '../../ui/ActionSheet';
 import { Icon } from '../../ui/icons';
 import type { IconName } from '../../ui/icons';
 import { useLayer } from '../../ui/layers';
 import { ListRow, ListSection } from '../../ui/List';
-import { Segmented } from '../../ui/Segmented';
 import { Switch } from '../../ui/Switch';
 import { socialApi } from '../api';
 import { hiddenUsers } from '../local';
 import { LINKS } from '../rules';
 import { currentReturnTo, useSession } from '../session';
-import type { FriendRequests, LinksVisibility, Me, MePatch } from '../types';
+import type { LinksVisibility, Me, MePatch } from '../types';
 import { PolicySheet, RulesSheet } from './RulesSheet';
 import { toastFail } from './UsernameField';
 import './profile.css';
 
 export const uniShortNow = () => brand.label.replace(/^Расписание\s+/i, '');
+
+// Значения строк-выборов: слева название, справа текущее значение; нажатие — список с галочкой (как в iOS).
+const ROLE: Record<Role, string> = { student: 'Студент', teacher: 'Преподаватель' };
+const THEME: Record<ThemeMode, string> = { auto: 'Как в системе', light: 'Светлая', dark: 'Тёмная' };
+const LINKS_VIS: Record<LinksVisibility, string> = { friends: 'Друзья', signed: 'Все, кто вошёл' };
+
+/** Список вариантов с галочкой у текущего; выбрали другой — onPick. */
+async function choose(title: string, current: string, options: Record<string, string>, onPick: (v: string) => void) {
+  const v = await chooseAction({
+    title,
+    actions: Object.entries(options).map(([id, label]) => ({ id, label, checked: id === current })),
+  });
+  if (v && v !== current) onPick(v);
+}
 
 /** Строка с элементом управления (сегменты, переключатель). stack — подпись сверху, элемент под ней. */
 function CtlRow(p: { label: string; icon?: { name: IconName; color: string }; stack?: boolean; sw?: boolean; id?: string; children: ReactNode }) {
@@ -110,25 +123,27 @@ export function SettingsList(p: {
   return (
     <div className="set">
       <ListSection header="Расписание">
-        <ListRow label="Вуз" value={uniShortNow()} icon={{ name: 'globe', color: 'var(--c7)' }} onClick={menu.open} />
+        {/* На адресе вуза вуз задан самим адресом — выбирать нечего. */}
+        {brand.hub && (
+          <ListRow label="Вуз" value={uniShortNow()} icon={{ name: 'globe', color: 'var(--c7)' }} onClick={menu.open} />
+        )}
         <ListRow
           label={teacher ? 'Преподаватель' : 'Группа'}
           value={sched && sched.kind === (teacher ? 'teacher' : 'group') ? sched.title : teacher ? 'Не выбран' : 'Не выбрана'}
           icon={{ name: teacher ? 'person' : 'calendar', color: 'var(--c1)' }}
           onClick={p.openPicker}
         />
-        <CtlRow label="Режим" icon={{ name: 'people', color: 'var(--c8)' }}>
-          <Segmented<Role>
-            ariaLabel="Режим" value={p.role} onChange={p.setRole}
-            options={[{ value: 'student', label: 'Студент' }, { value: 'teacher', label: 'Преподаватель' }]}
-          />
-        </CtlRow>
+        <ListRow
+          label="Режим" value={ROLE[p.role]} icon={{ name: 'people', color: 'var(--c8)' }}
+          onClick={() => void choose('Режим', p.role, ROLE, (v) => p.setRole(v as Role))}
+        />
       </ListSection>
 
       <ListSection header="Оформление">
-        <div className="set-row set-row--full">
-          <ThemeControl mode={p.theme.mode} onChange={p.theme.set} />
-        </div>
+        <ListRow
+          label="Тема" value={THEME[p.theme.mode]} icon={{ name: 'contrast', color: 'var(--c6)' }}
+          onClick={() => void choose('Тема', p.theme.mode, THEME, (v) => p.theme.set(v as ThemeMode))}
+        />
       </ListSection>
 
       {me && social && (
@@ -141,34 +156,24 @@ export function SettingsList(p: {
       )}
 
       {me && social && privacy && (
-        <>
-          <ListSection header="Конфиденциальность" footer={minor ? 'До 18 лет — только друзья' : undefined}>
-            <CtlRow label="Кто видит Telegram и Instagram" stack>
-              <Segmented<LinksVisibility>
-                ariaLabel="Кто видит Telegram и Instagram" value={minor ? 'friends' : privacy.links}
-                onChange={(v) => void patch('links', v, { linksVisibility: v })}
-                options={[{ value: 'friends', label: 'Друзья' }, { value: 'signed', label: 'Все, кто вошёл', disabled: minor }]}
-              />
-            </CtlRow>
-          </ListSection>
-          <ListSection footer="Если выключить, найти тебя можно будет только по точному @имени.">
-            <CtlRow label="Показывать меня в поиске" sw>
-              <Switch label="Показывать меня в поиске" checked={privacy.searchable}
-                onChange={(v) => void patch('searchable', v, { searchable: v })} />
-            </CtlRow>
-          </ListSection>
-          <ListSection
-            footer={minor ? 'До 18 лет заявки по умолчанию выключены. Включай, только если знаешь, кто будет писать.' : undefined}
-          >
-            <CtlRow label="Кто может добавить в друзья" stack>
-              <Segmented<FriendRequests>
-                ariaLabel="Кто может добавить в друзья" value={privacy.friendRequests}
-                onChange={(v) => void patch('friendRequests', v, { friendRequests: v })}
-                options={[{ value: 'all', label: 'Все' }, { value: 'none', label: 'Никто' }]}
-              />
-            </CtlRow>
-          </ListSection>
-        </>
+        <ListSection
+          header="Конфиденциальность"
+          footer={minor
+            ? 'Контакты — Telegram и Instagram в профиле; до 18 лет их видят только друзья. Без поиска тебя найдут только по точному @имени.'
+            : 'Контакты — Telegram и Instagram в профиле. Без поиска тебя найдут только по точному @имени.'}
+        >
+          <ListRow
+            label="Контакты" value={LINKS_VIS[minor ? 'friends' : privacy.links]} disabled={minor}
+            icon={{ name: 'link', color: 'var(--c2)' }}
+            chevron={!minor}
+            onClick={minor ? undefined : () => void choose('Кто видит Telegram и Instagram', privacy.links, LINKS_VIS,
+              (v) => void patch('links', v as LinksVisibility, { linksVisibility: v as LinksVisibility }))}
+          />
+          <CtlRow label="Показывать в поиске" icon={{ name: 'person', color: 'var(--c7)' }} sw>
+            <Switch label="Показывать меня в поиске людей" checked={privacy.searchable}
+              onChange={(v) => void patch('searchable', v, { searchable: v })} />
+          </CtlRow>
+        </ListSection>
       )}
 
       {hiddenCount > 0 && (

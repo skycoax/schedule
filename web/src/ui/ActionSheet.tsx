@@ -2,12 +2,17 @@
 // Каждое окно — слой истории («Назад» закрывает его). Промис выполняется ПОСЛЕ того, как окно
 // убрало свою запись из истории, поэтому следующее окно («Удалить пост?» после меню) не теряется.
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
+import { Icon } from './icons';
 import type { JSX, KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { pushLayer } from './layers';
 import './ui.css';
 
-export interface SheetAction { id: string; label: string; role?: 'default' | 'destructive' | 'cancel'; disabled?: boolean }
+export interface SheetAction {
+  id: string; label: string; role?: 'default' | 'destructive' | 'cancel'; disabled?: boolean;
+  /** Текущее значение в списке выбора (Режим, Тема…) — галочка справа, как в меню iOS. */
+  checked?: boolean;
+}
 
 type Req =
   | { kind: 'choose'; title?: string; message?: string; actions: SheetAction[]; resolve: (v: string | null) => void }
@@ -175,10 +180,12 @@ function Dialog({ a, off }: { a: Active; off: boolean }): JSX.Element {
           {main.map((x) => (
             <button
               key={x.id} type="button" disabled={x.disabled}
-              className={'ui-as__btn' + (x.role === 'destructive' ? ' ui-as__btn--destructive' : '')}
+              className={'ui-as__btn' + (x.role === 'destructive' ? ' ui-as__btn--destructive' : '') + (x.checked ? ' is-checked' : '')}
+              aria-label={x.checked ? `${x.label}, выбрано` : undefined}
               onClick={() => pick(x)}
             >
               {x.label}
+              {x.checked && <Icon name="check" size={18} className="ui-as__check" />}
             </button>
           ))}
         </div>

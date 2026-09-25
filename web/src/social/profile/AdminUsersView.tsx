@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { JSX } from 'react';
 import { plural } from '../../lib/plural';
-import { BackButton, LargeTitle, NavBar } from '../../shell/NavBar';
+import { BackButton, NavBar } from '../../shell/NavBar';
 import { Button } from '../../ui/Button';
 import { Icon } from '../../ui/icons';
 import { Spinner } from '../../ui/Spinner';
@@ -149,7 +149,6 @@ export function AdminUsersView(p: {
   return (
     <div className="wrap wrap--prof prof-screen">
       {p.active && <NavBar left={<BackButton onClick={p.onBack} />} title="Пользователи" />}
-      <LargeTitle title="Пользователи" />
       {stats ? <Stats st={stats} /> : <div className="adm-stats adm-stats--skel" aria-hidden="true" />}
       <form className="ppl-search" role="search" onSubmit={(e) => e.preventDefault()}>
         <Icon name="search" size={18} className="ppl-search__ico" />
