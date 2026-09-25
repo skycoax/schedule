@@ -1,6 +1,7 @@
 // База «Обсуждений»: один файл <DATA_DIR>/social.db на все вузы (аккаунты, друзья и блокировки
 // общие; публикации помечены вузом). Лежит рядом с базами вузов <id>.db; deploy.sh папку data/ не трогает.
-// Схема — CONTRACT.md §C.2 дословно. Новая версия схемы = новый элемент MIGRATIONS (user_version).
+// Схема — CONTRACT.md §C.2 дословно (V1) и изменения после него (V2…). Новая версия схемы = новый элемент
+// MIGRATIONS (user_version).
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -196,7 +197,13 @@ CREATE TABLE IF NOT EXISTS audit (
 CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit (ts);
 `;
 
-const MIGRATIONS = [SCHEMA_V1];
+// Вход с адреса вуза (kfu.skycoax.uz…): Google возвращает на Para, а завершается вход там, где начался.
+// origin — адрес страницы, с которой начали вход (NULL — сама Para).
+export const SCHEMA_V2 = `
+ALTER TABLE oauth_states ADD COLUMN origin TEXT;
+`;
+
+const MIGRATIONS = [SCHEMA_V1, SCHEMA_V2];
 
 /** Открыть (и при необходимости создать) social.db и довести схему до последней версии. */
 export function openSocialDb(dir = config.dataDir) {

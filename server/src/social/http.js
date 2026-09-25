@@ -98,7 +98,7 @@ export function needAdmin(req) {
   if (!isAdmin(req.user)) throw new SocialError(403, 'forbidden', TEXT.forbidden);
   return req.user;
 }
-/** U — выбран вуз (?uni= или кука uni, см. hubTenant). */
+/** U — выбран вуз: на адресе вуза — сам адрес, на Para — ?uni= или кука uni (см. hubTenant). */
 export function needUni(req) {
   if (!req.tenant) throw new SocialError(400, 'uni', TEXT.uni);
   return req.tenant;
@@ -170,8 +170,10 @@ export const marks = (list) => list.map(() => '?').join(',');
 // ─── Адрес, куки, IP ───
 
 /**
- * Настройки, которые зависят от адреса Para и не меняются после запуска (configureHttp).
- * origin — PARA_ORIGIN или https://<первый адрес hub.json>; secure — куки с __Host- и Secure.
+ * Настройки, которые зависят от адресов и не меняются после запуска (configureHttp).
+ * origin — адрес Para: PARA_ORIGIN или https://<первый адрес hub.json>; на него возвращает Google.
+ * secure — куки с __Host- и Secure. allowedOrigins — страницы Para, с которых можно писать на адрес Para
+ * (адрес вуза принимает запись только со своей страницы, см. csrfGate).
  */
 export const web = {
   origin: '',
@@ -187,6 +189,17 @@ export function configureHttp(ctx) {
   web.sid = web.secure ? '__Host-para_sid' : 'para_sid';
   web.oauth = web.secure ? '__Host-para_oauth' : 'para_oauth';
   web.allowedOrigins = new Set(ctx.hub.hosts.map((h) => 'https://' + h).concat(social.origin ? [social.origin] : []));
+}
+
+/**
+ * Адрес страницы, с которой пришёл запрос: Para — web.origin; адрес вуза — https://<его адрес>.
+ * Сюда возвращают после входа, и куки у каждого адреса свои (__Host-: только этот адрес).
+ * Вызывать после hostGuard: адрес уже сверен со списком Para и вузов, чужого Host здесь нет.
+ */
+export function originOf(req) {
+  if (req.hub) return web.origin;
+  const host = String(req.headers.host || '').toLowerCase();
+  return web.secure ? 'https://' + host.replace(/:\d+$/, '') : 'http://' + host;
 }
 
 export const SESSION_MAX_AGE = 15_552_000;   // 180 дней
@@ -251,11 +264,11 @@ function decodedPath(url) {
 
 /**
  * 1) Заголовки no-store + noindex для /api/auth и /api/social (ставим сразу, чтобы они были и у отказов);
- * 2) только адрес Para: на адресе вуза этих маршрутов «нет».
+ * 2) только адрес Para или подключённого вуза: на незнакомом адресе этих маршрутов «нет».
  */
-export async function hubGuard(req, reply) {
+export async function hostGuard(req, reply) {
   if (JSON_PATH.test(decodedPath(req.url))) reply.header('cache-control', 'no-store').header('x-robots-tag', 'noindex');
-  if (!req.hub) return deny(reply, 404, 'not_found', TEXT.notFound);
+  if (!req.hub && !req.tenant) return deny(reply, 404, 'not_found', TEXT.notFound);
 }
 
 /**
@@ -272,13 +285,17 @@ export async function socialHeaders(req, reply, payload) {
   return payload;
 }
 
-/** CSRF (§B.1): X-Para: 1 и своя страница (Origin из списка, либо без Origin и не с чужого сайта). */
+/**
+ * CSRF (§B.1): X-Para: 1 и своя страница — Origin этого же адреса (у Para — из списка), либо без Origin и не
+ * с чужого сайта. Para и адреса вузов для SameSite — один сайт (кука уходит и с соседнего адреса),
+ * поэтому Origin сверяется с точным адресом.
+ */
 export async function csrfGate(req, reply) {
   if (!MUTATING.has(req.method)) return;
   const origin = req.headers.origin;
   const site = req.headers['sec-fetch-site'];
   const originOk = origin
-    ? web.allowedOrigins.has(origin) || (!social.production && DEV_ORIGIN.test(origin))
+    ? (req.hub ? web.allowedOrigins.has(origin) : origin === originOf(req)) || (!social.production && DEV_ORIGIN.test(origin))
     : (!site || site === 'same-origin' || site === 'none');
   if (req.headers['x-para'] !== '1' || !originOk) return deny(reply, 403, 'csrf', TEXT.csrf);
 }

@@ -40,8 +40,13 @@ function render(site, url, dir, brandObj) {
     .replace(/\{\{(URL|OG_IMAGE|SITE_NAME|TITLE|DESCRIPTION)\}\}/g, (_, k) => esc(values[k]));
 }
 
-export function pageHtml(t) {
-  return render(t.site, `https://${t.hosts[0]}`, t.dir, t.brand);
+/**
+ * Страница на адресе вуза: та же Para, только вуз задан адресом, а в шапке — его эмблема.
+ * social — режим «Обсуждений» (есть, когда есть Para: вход и лента общие с ней); без него — одно расписание.
+ */
+export function pageHtml(t, hub) {
+  const brandObj = hub ? { ...t.brand, social: social.mode } : t.brand;
+  return render(t.site, `https://${t.hosts[0]}`, t.dir, brandObj);
 }
 
 /**

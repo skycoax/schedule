@@ -1,5 +1,7 @@
 // «Обсуждения» Para: аккаунты (вход через Google), лента, профили, друзья, жалобы и модерация.
-// Работает только на адресе Para (para.skycoax.uz; при DEV_HUB=1 — localhost, *.localhost, 127.0.0.1).
+// Работает на адресе Para (para.skycoax.uz; при DEV_HUB=1 — localhost, *.localhost, 127.0.0.1) и на адресах
+// вузов (kfu.skycoax.uz…): адрес вуза — та же Para с уже выбранным вузом. База одна, аккаунт один,
+// а вход (кука) у каждого адреса свой; Google возвращает только на Para, оттуда вход передаётся адресу вуза (auth.js).
 // Контракт — CONTRACT.md (§B API, §C база, §F подключение). Модули:
 //   db.js — social.db и схема · http.js — ошибки, проверки, куки, CSRF · auth.js — вход и сессии
 //   users.js — Me, имена, профили, друзья · posts.js — лента и ветки · media.js — фото
@@ -8,7 +10,7 @@
 import { mkdirSync } from 'node:fs';
 import { social, googleConfigured } from '../config.js';
 import { openSocialDb } from './db.js';
-import { configureHttp, hubGuard, csrfGate, socialHeaders, errorHandler, notFoundRoute, parseJson, JSON_LIMIT } from './http.js';
+import { configureHttp, hostGuard, csrfGate, socialHeaders, errorHandler, notFoundRoute, parseJson, JSON_LIMIT } from './http.js';
 import { authRoutes, sessionLoader } from './auth.js';
 import { postRoutes } from './posts.js';
 import { userRoutes, accountRoutes } from './users.js';
@@ -39,7 +41,7 @@ export const logSerializers = {
 };
 
 /**
- * Accounts and «Обсуждения». A Fastify plugin, registered only when hub/hub.json exists.
+ * Accounts and «Обсуждения». A Fastify plugin, registered only when hub/hub.json exists; serves Para and every tenant host.
  * SOCIAL_MODE=off → registers only the deletion subset (§F.2 step 1); everything else under /api/auth|social → 404 JSON.
  * @param {import('fastify').FastifyInstance} app  encapsulated child instance (via app.register)
  * @param {{ hub: { hosts: string[], dir: string }, tenants: Array<{ id: string, hosts: string[], brand: object, enabled?: boolean }> }} opts
@@ -65,7 +67,7 @@ export async function registerSocial(app, { hub, tenants }) {
     inst.decorateRequest('user', null);
     inst.decorateRequest('sid', null);
 
-    inst.addHook('onRequest', hubGuard);            // только адрес Para; no-store + noindex
+    inst.addHook('onRequest', hostGuard);           // Para или адрес вуза; no-store + noindex
     inst.addHook('onRequest', csrfGate);            // X-Para + своя страница
     inst.addHook('onRequest', sessionLoader(ctx));  // req.user, req.sid
     inst.addHook('onSend', socialHeaders);          // без CORS; no-store + noindex, кроме выдачи фото

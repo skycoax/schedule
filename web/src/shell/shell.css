@@ -77,7 +77,7 @@
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
 /* ─── Нижние вкладки: стеклянная капсула над краем экрана ─── */
-.tabbar{position:fixed;left:0;right:0;bottom:calc(var(--tabbar-gap) + env(safe-area-inset-bottom));z-index:25;
+.tabbar{position:fixed;left:0;right:0;bottom:var(--tabbar-bottom);z-index:25;
   width:min(calc(100% - 40px), calc(var(--n, 3) * 124px + 8px));height:var(--tabbar-h);margin:0 auto;padding:4px;
   border-radius:999px;background:var(--bar-glass);
   -webkit-backdrop-filter:blur(24px) saturate(180%);backdrop-filter:blur(24px) saturate(180%);

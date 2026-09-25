@@ -36,6 +36,16 @@ export function isHubHost(hub, host) {
 export const isDevHub = (hub, host) =>
   !!hub && social.devHub && /^(?:[a-z0-9-]+\.)?localhost$|^127\.0\.0\.1$/.test(hostOf(host));
 
+/**
+ * Разработка (DEV_HUB=1, не production): <id вуза>.localhost — адрес этого вуза (kfu.localhost → kfu),
+ * чтобы проверять приложение на адресе вуза в браузере. Остальные *.localhost — по-прежнему Para.
+ */
+export function devTenantOf(tenants, host) {
+  if (!social.devHub) return null;
+  const m = hostOf(host).match(/^([a-z0-9-]+)\.localhost$/);
+  return (m && tenants.find((t) => t.id === m[1])) || null;
+}
+
 function cookie(req, name) {
   const m = String(req.headers.cookie || '').match(new RegExp('(?:^|;\\s*)' + name + '=([^;]*)'));
   if (!m) return '';

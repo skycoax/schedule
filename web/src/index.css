@@ -43,7 +43,10 @@
   --nav-space:calc(var(--nav-top) + var(--nav-h) + 14px);
   --tabbar-h:62px;
   --tabbar-gap:10px;
-  --tabbar-space:calc(var(--tabbar-h) + var(--tabbar-gap) + env(safe-area-inset-bottom));
+  /* Низ капсулы вкладок: на iPhone с полоской «Домой» — как у системных вкладок iOS 26, в нижнем
+     безопасном поле (34 − 12 = 22 px от края), без полоски — 10 px от края. */
+  --tabbar-bottom:max(var(--tabbar-gap), calc(env(safe-area-inset-bottom) - 12px));
+  --tabbar-space:calc(var(--tabbar-h) + var(--tabbar-bottom));
   --kb:0px;
   --glass-shadow:0 6px 20px rgba(0,0,0,.14);
   --bar-glass-solid:#f7f7f9;
@@ -122,6 +125,11 @@
 
 *{box-sizing:border-box;margin:0;padding:0}
 [hidden]{display:none !important}
+/* iOS 26–27 (ошибка WebKit, FB19889436): после клавиатуры закреплённые элементы могут рисоваться со
+   сдвигом — шапка посреди экрана, вкладки за нижним краем. ui/keyboard.ts считает сдвиг в --vv-fix,
+   здесь он возвращает их на место. В обычном состоянии --vv-fix нет, сдвиг 0. */
+.topfade,.navrow,.tabbar,.tabfade,.coach,.ptr,.newpill,.rcmp,.ui-toasts,.nudge,.ui-layer,.ui-as-layer,
+.umenu,.umenu__catch,.modal,.sheet,.pview{translate:0 var(--vv-fix, 0px)}
 html{-webkit-text-size-adjust:100%;overscroll-behavior-y:contain;background:var(--bg);
   /* Фокус и scrollIntoView не прячут элемент под закреплённой строкой сверху и вкладками снизу. */
   scroll-padding-top:var(--nav-space)}

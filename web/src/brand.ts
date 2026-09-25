@@ -2,7 +2,8 @@
 // (kfu.skycoax.uz, tsue.skycoax.uz…) кладёт в index.html JSON с данными вуза
 // (<script id="brand">). Сами вузы описаны в server/tenants/<id>/tenant.json.
 // На адресе Para (para.skycoax.uz) бренд нейтральный, hub = true, а вуз — тот, что
-// выбрал человек; id пустой, пока вуз не выбран.
+// выбрал человек; id пустой, пока вуз не выбран. Адрес вуза — та же Para с уже выбранным
+// вузом и его эмблемой: вкладки, вход и «Обсуждения» там те же (social есть и там).
 import type { SocialMode } from './social/types';
 
 export interface Brand {
@@ -19,7 +20,8 @@ export interface Brand {
   /** Короткое «откуда данные» для окна согласия. */
   sourceShort: string;
   searchHint: string;
-  /** Только Para: режим «Обсуждений» для первой отрисовки (server/src/site.js, SOCIAL_MODE). */
+  /** Режим «Обсуждений» для первой отрисовки (server/src/site.js, SOCIAL_MODE) — на Para и на адресах вузов.
+   *  Нет поля — сервер без Para: на странице только расписание. */
   social?: SocialMode;
   /** Только Para: старые адреса вузов переносят сюда настройки во фрагменте #m= (hub.json redirectOldHosts). */
   moveIn?: boolean;
@@ -47,3 +49,6 @@ function read(): Brand {
 }
 
 export const brand: Brand = read();
+
+/** Есть ли на этом адресе аккаунты и «Обсуждения» (Para и адреса вузов на сервере с Para). */
+export const hasSocial = !!brand.social;

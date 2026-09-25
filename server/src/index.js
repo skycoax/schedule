@@ -1,6 +1,8 @@
 // HTTP-слой: один сервер на все вузы. Какой вуз — решает адрес запроса
 // (kfu.skycoax.uz, tsue.skycoax.uz…), вузы описаны в tenants/<id>/tenant.json.
 // Исключение — Para (para.skycoax.uz, см. hub.js): там вуз выбирает сам человек.
+// Адрес вуза — та же Para с уже выбранным вузом и его брендом: расписание, вкладки, вход
+// и «Обсуждения» работают одинаково (social/), отличаются только бренд и то, откуда берётся вуз.
 // Отдаёт API и саму страницу приложения с брендом вуза. Запуск: npm start (Node 22+).
 import Fastify from 'fastify';
 import { existsSync, readFileSync } from 'node:fs';
@@ -9,7 +11,7 @@ import cors from '@fastify/cors';
 import { config } from './config.js';
 import { metaGet } from './db.js';
 import { loadTenants, tenantFor, shortName } from './tenants.js';
-import { loadHub, isHubHost, isDevHub, hubTenant } from './hub.js';
+import { loadHub, isHubHost, isDevHub, devTenantOf, hubTenant } from './hub.js';
 import { pageHtml, hubPageHtml, manifest, hubManifest, redirectHtml, brandFile, assetFile, unknownHostHtml } from './site.js';
 import { scheduleResponse } from './schedule.js';
 import { teachersList, teacherSchedule } from './teachers.js';
@@ -18,7 +20,7 @@ import { addReview, listReviews, ReviewError } from './reviews.js';
 import { startPoller, pollOnce } from './poller.js';
 import { registerSocial, corsOptions, logSerializers } from './social/index.js';
 
-// Отдельные страницы Para (публичные ссылки для Google Play и магазина правил).
+// Отдельные страницы Para (публичные ссылки для Google Play и правила «Обсуждений»): одни на все адреса.
 const HUB_PAGES = { '/policy': 'policy.html', '/rules': 'rules.html', '/delete-account': 'delete-account.html' };
 
 const app = Fastify({
@@ -41,8 +43,9 @@ if (hub) app.log.info({ hosts: hub.hosts, redirectOldHosts: hub.redirectOldHosts
 app.decorateRequest('tenant', null);
 app.decorateRequest('hub', false);
 app.addHook('onRequest', async (req) => {
-  req.hub = isHubHost(hub, req.headers.host) || isDevHub(hub, req.headers.host);
-  req.tenant = req.hub ? hubTenant(tenants, req) : tenantFor(tenants, req.headers.host);
+  const devUni = devTenantOf(tenants, req.headers.host);   // разработка: kfu.localhost — адрес вуза
+  req.hub = !devUni && (isHubHost(hub, req.headers.host) || isDevHub(hub, req.headers.host));
+  req.tenant = req.hub ? hubTenant(tenants, req) : devUni || tenantFor(tenants, req.headers.host);
 });
 
 // Маршруты API работают только на адресе подключённого вуза.
@@ -145,7 +148,7 @@ app.setNotFoundHandler((req, reply) => {
   reply.code(404).send({ message: line, error: 'Not Found', statusCode: 404 });
 });
 
-// ─── Аккаунты и обсуждения (только на адресе Para, см. social/index.js) ───
+// ─── Аккаунты и обсуждения (на адресе Para и на адресах вузов, см. social/index.js) ───
 if (hub) await app.register(registerSocial, { hub, tenants });
 
 // ─── Сама страница, манифест и картинки бренда ───
@@ -187,7 +190,8 @@ async function site(req, reply) {
 
   // Политика, правила обсуждений и удаление аккаунта отдельными страницами: на них нужны
   // публичные ссылки в Google Play. Тот же смысл есть внутри приложения («Условия и данные»).
-  const doc = req.hub && HUB_PAGES[path.replace(/\/+$/, '')];
+  // Страницы одни на все адреса: аккаунт и «Обсуждения» тоже одни.
+  const doc = hub && HUB_PAGES[path.replace(/\/+$/, '')];
   if (doc) {
     const file = join(hub.dir, doc);
     if (existsSync(file)) {
@@ -196,7 +200,7 @@ async function site(req, reply) {
     }
   }
 
-  if (req.hub && path === '/robots.txt') {
+  if (path === '/robots.txt') {
     reply.header('cache-control', 'public, max-age=86400').type('text/plain; charset=utf-8');
     return 'User-agent: *\nDisallow: /api/\n';
   }
@@ -237,12 +241,12 @@ async function site(req, reply) {
   if (/\.[a-z0-9]+$/i.test(path)) { reply.code(404); return { ok: false, error: 'Файл не найден' }; }
 
   // Ссылки на пост или профиль не для поисковиков: содержимое там от людей, а не от Para.
-  if (req.hub && req.query && (req.query.post || req.query.user)) reply.header('x-robots-tag', 'noindex');
+  if (req.query && (req.query.post || req.query.user)) reply.header('x-robots-tag', 'noindex');
   reply.header('cache-control', 'no-cache').type('text/html; charset=utf-8');
   if (req.hub) return hubPageHtml(hub, t);
   // Старый адрес вуза: люди переезжают в Para вместе со своими настройками.
   if (hub && hub.redirectOldHosts) return redirectHtml(t, hub);
-  return pageHtml(t);
+  return pageHtml(t, hub);
 }
 app.get('/', site);
 app.get('/*', site);

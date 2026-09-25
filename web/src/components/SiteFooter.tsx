@@ -1,10 +1,7 @@
 // Нижний колонтитул — общий для режимов студента и преподавателя.
 // «Политика конфиденциальности» — обычная ссылка на страницу /policy: её ищут Google (проверка
-// приложения для входа) и Play. На старых адресах вузов этой страницы нет — ведём на адрес Para.
+// приложения для входа) и Play. Страница одна на все адреса — и на Para, и на адресах вузов.
 import type { CSSProperties } from 'react';
-import { brand } from '../brand';
-
-const policyHref = brand.hub ? '/policy' : 'https://para.skycoax.uz/policy';
 
 // Строка ссылок: у каждой область нажатия не меньше 44 px в высоту, текст остаётся мелким. Разделитель —
 // просто отступ: на узком экране ссылки встают друг под другом без висящей точки.
@@ -26,7 +23,7 @@ export function SiteFooter({ onOpenDoc }: { onOpenDoc: () => void }) {
         <div>Неофициальное приложение</div>
         <div style={row}>
           <button type="button" style={tap} onClick={onOpenDoc}>Условия и данные</button>
-          <a href={policyHref} target="_blank" rel="noopener" style={tap}>Политика конфиденциальности</a>
+          <a href="/policy" target="_blank" rel="noopener" style={tap}>Политика конфиденциальности</a>
         </div>
       </div>
     </footer>

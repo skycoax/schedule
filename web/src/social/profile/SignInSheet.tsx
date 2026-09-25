@@ -10,6 +10,7 @@ import type { IconName } from '../../ui/icons';
 import { ageBlocked, setAgeBlock } from '../local';
 import { LINKS } from '../rules';
 import { useSession } from '../session';
+import { brand } from '../../brand';
 import type { AgeGroup, AuthReason } from '../types';
 import { GOOGLE_OFF, GoogleButton, OFFLINE_SIGNIN } from './GoogleButton';
 import { PolicySheet, RulesSheet } from './RulesSheet';
@@ -144,7 +145,8 @@ export function SignInSheet(p: { reason: AuthReason; returnTo: string; onClose: 
                 <button type="button" className="signin__link" onClick={() => setDocOpen(true)}>Политику конфиденциальности</button>
               </p>
             </div>
-            <p className="signin__note">Para сохранит от Google только Google ID, почту и имя. Почту никто не увидит.</p>
+            <p className="signin__note">Para сохранит от Google только Google ID, почту и имя. Почту никто не увидит.
+              {!brand.hub && ' Аккаунт Para один для всех вузов и приложения Para.'}</p>
           </>
         )}
 

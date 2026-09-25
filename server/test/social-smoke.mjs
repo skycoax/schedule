@@ -21,6 +21,8 @@ const BASE = new URL(process.argv[2] || 'http://127.0.0.1:8792');
 const UNI = process.argv[3] || 'kfu';
 const HUB = 'para.skycoax.uz';
 const W = { 'X-Para': '1', Origin: 'https://' + HUB };        // заголовки изменяющих запросов
+const UNI_HOST = 'kfu.skycoax.uz';                             // адрес вуза: та же Para с вузом из адреса
+const WU = { 'X-Para': '1', 'Sec-Fetch-Site': 'same-origin' }; // изменяющий запрос со страницы адреса вуза
 const RUN = Date.now().toString(36).slice(-5);                 // повторные запуски на той же базе
 const MODE = process.env.SMOKE_MODE || 'on';
 const NEW_ACCOUNT = process.env.SMOKE_NEW_ACCOUNT === '1';
@@ -162,11 +164,23 @@ async function commonChecks(guest) {
   assert.equal(r.headers['x-robots-tag'], 'noindex');
   ok(`me гостя: режим ${st.mode}, Google ${st.google ? 'настроен' : 'не настроен'}, no-store + noindex`);
 
-  r = await call(guest, 'GET', '/api/auth/me', { host: 'kfu.skycoax.uz' });
-  expect(r, 404, 'me на адресе вуза', 'not_found', 'Нет такого адреса API');
-  r = await call(guest, 'POST', '/api/social/posts', { host: 'kfu.skycoax.uz', json: {}, headers: W });
-  expect(r, 404, 'пост на адресе вуза', 'not_found');
-  ok('на адресе вуза маршрутов обсуждений нет (404 JSON)');
+  // Адрес вуза — та же Para, вуз задан адресом. Писать туда можно только с его же страницы.
+  r = await call(guest, 'GET', '/api/auth/me', { host: UNI_HOST, uni: '' });
+  assert.equal(expect(r, 200, 'me на адресе вуза').user, null);
+  assert.equal(r.headers['x-robots-tag'], 'noindex');
+  r = await call(guest, 'POST', '/api/social/posts', { host: UNI_HOST, uni: '', json: {}, headers: WU });
+  if (MODE === 'off') expect(r, 404, 'пост гостя на адресе вуза в off', 'not_found');
+  else expect(r, 401, 'пост гостя на адресе вуза', 'auth');
+  r = await call(guest, 'POST', '/api/social/posts', { host: UNI_HOST, uni: '', json: {}, headers: W });
+  expect(r, 403, 'запись на адрес вуза со страницы Para', 'csrf');
+  r = await call(guest, 'POST', '/api/auth/logout', { host: UNI_HOST, uni: '', json: {},
+    headers: { 'X-Para': '1', Origin: 'https://tsue.skycoax.uz' } });
+  expect(r, 403, 'запись на адрес вуза со страницы другого вуза', 'csrf');
+  r = await call(guest, 'GET', '/api/auth/google/callback?state=' + 'A'.repeat(43), { host: UNI_HOST, uni: '' });
+  expect(r, 404, 'возврат от Google на адресе вуза', 'not_found');
+  r = await call(guest, 'GET', '/api/auth/me', { host: 'nope.example', uni: '' });
+  expect(r, 404, 'me на незнакомом адресе', 'not_found', 'Нет такого адреса API');
+  ok('адрес вуза: me отвечает, запись — только со своей страницы, возврат от Google — только на Para; чужой адрес — 404');
 
   r = await call(guest, 'GET', '/api/auth/nope');
   expect(r, 404, 'GET /api/auth/nope', 'not_found', 'Нет такого адреса API');
@@ -1186,18 +1200,23 @@ async function fakeGoogleServer(ORIGIN) {
     });
   });
   await new Promise((r) => server.listen(GOOGLE_PORT, '127.0.0.1', r));
-  /** start → «Google» → callback; возвращает адрес, куда callback отправил браузер. */
-  const signIn = async (jar, { intent = 'signin', age = 'adult', sub, email, verified, nonce, fail, back = '/?tab=profile' }) => {
+  /**
+   * start → «Google» → callback; возвращает адрес, куда callback отправил браузер.
+   * host — где начали вход (адрес вуза: callback всё равно на Para); cbJar — куки браузера на адресе Para.
+   */
+  const signIn = async (jar, { intent = 'signin', age = 'adult', sub, email, verified, nonce, fail, back = '/?tab=profile',
+    host = HUB, cbJar = jar }) => {
     let q = `/api/auth/google/start?return=${encodeURIComponent(back)}&intent=${intent}`;
     if (intent === 'signin') q += `&age=${age}&accept=1`;
-    const s = await call(jar, 'GET', q);
+    const s = await call(jar, 'GET', q, { host });
     if (/#auth=limited$/.test(s.headers.location)) throw new Error(LIMITED);
     const u = new URL(s.headers.location);
     assert.equal(u.origin, 'https://accounts.google.com', 'start должен вести на Google: ' + s.headers.location);
     clientId = u.searchParams.get('client_id');
     const code = Buffer.from(JSON.stringify({ sub, email, verified, fail, given: 'Гугл', challenge: u.searchParams.get('code_challenge'),
       nonce: nonce || u.searchParams.get('nonce') })).toString('base64url');
-    const r = await call(jar, 'GET', `/api/auth/google/callback?state=${u.searchParams.get('state')}&code=${code}`);
+    assert.equal(u.searchParams.get('redirect_uri'), ORIGIN + '/api/auth/google/callback', 'Google возвращает только на Para');
+    const r = await call(cbJar, 'GET', `/api/auth/google/callback?state=${u.searchParams.get('state')}&code=${code}`);
     assert.equal(r.status, 302);
     return r.headers.location;
   };
@@ -1230,6 +1249,33 @@ async function fakeGoogle(ORIGIN) {
     assert.match(await signIn(new Map(), { sub: 'n' + RUN, email: 'n@example.com', nonce: 'wrong' }), /#auth=failed$/);
     assert.match(await signIn(new Map(), { sub: 'f' + RUN, email: 'f@example.com', fail: true }), /#auth=failed$/);
     ok('Google: неподтверждённая почта → unverified, чужой nonce и ошибка обмена → failed');
+
+    // Вход с адреса вуза: Google возвращает на Para, Para передаёт итог адресу вуза билетом, а сессию создаёт
+    // адрес вуза, только если у браузера есть его кука входа. Вне production адреса — http (PARA_ORIGIN http://…).
+    const UO = 'http://' + UNI_HOST;
+    const ksub = 'k' + RUN;
+    const kj = new Map();
+    const viaUni = async () => {
+      const loc = new URL(await signIn(kj, { sub: ksub, email: `${ksub}@example.com`, host: UNI_HOST, cbJar: new Map(), back: '/?tab=chat' }));
+      assert.equal(loc.origin + loc.pathname, UO + '/api/auth/google/finish', 'Para передаёт вход адресу вуза: ' + loc);
+      return loc.pathname + loc.search;
+    };
+    let fin = await viaUni();
+    let r = await call(new Map(), 'GET', fin, { host: UNI_HOST, uni: '' });
+    assert.equal(r.headers.location, UO + '/?tab=chat#auth=browser', 'билет без куки входа этого браузера');
+    r = await call(kj, 'GET', fin, { host: UNI_HOST, uni: '' });
+    assert.equal(r.headers.location, UO + '/#auth=expired', 'билет одноразовый');
+    fin = await viaUni();
+    r = await call(kj, 'GET', fin, { host: 'tsue.skycoax.uz', uni: '' });
+    assert.equal(r.headers.location, 'http://tsue.skycoax.uz/#auth=expired', 'билет другого адреса');
+    ok('адрес вуза: билет входа одноразовый, только для своего адреса и только с кукой входа этого браузера');
+    fin = await viaUni();
+    r = await call(kj, 'GET', fin, { host: UNI_HOST, uni: '' });
+    assert.equal(r.headers.location, UO + '/?tab=chat#auth=ok');
+    const km = expect(await call(kj, 'GET', '/api/auth/me', { host: UNI_HOST, uni: '' }), 200, 'me на адресе вуза').user;
+    assert.ok(km, 'после входа на адресе вуза есть сессия');
+    assert.equal(km.uni, 'kfu', 'вуз аккаунта — из адреса');
+    ok('адрес вуза: вход через Google завершается на нём самом, вуз аккаунта — из адреса');
   } finally {
     close();
   }

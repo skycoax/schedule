@@ -1,11 +1,14 @@
 // Вход и сессии (CONTRACT.md §B.5 #1–#5, §C.5): GET /api/auth/me, вход через Google (OAuth 2.0 code flow
 // на сервере: PKCE S256, nonce, одноразовый state, привязанный к куке браузера), выход, вход для разработки.
 // Итог входа уходит во фрагменте адреса (#auth=…) — в журналы сервера он не попадает.
+// Вход с адреса вуза (kfu.skycoax.uz…): Google знает только адрес Para (redirect_uri), поэтому возвращает туда;
+// Para меняет код на id_token и передаёт итог адресу вуза одноразовым билетом (/api/auth/google/finish).
+// Там проверяется, что это тот же браузер, и создаётся сессия — кука только этого адреса.
 import { randomBytes, createHash } from 'node:crypto';
 import { social, googleConfigured } from '../config.js';
 import { tx, nowIso, today, DAY } from './db.js';
 import {
-  SocialError, ok, bodyOf, invalid, notFound, web, readCookies, setCookie, clearCookie, sha256hex, safeEqual,
+  SocialError, ok, bodyOf, invalid, notFound, web, originOf, readCookies, setCookie, clearCookie, sha256hex, safeEqual,
   isLocalDirect, SESSION_MAX_AGE, OAUTH_MAX_AGE,
 } from './http.js';
 import { limit, limited, keyOf, ipKey } from './limits.js';
@@ -168,8 +171,8 @@ export function safeReturn(raw, origin = web.origin) {
 }
 
 /**
- * Переход на /api/auth/google/start пришёл со страницы Para (same-origin), а не по ссылке с другого сайта.
- * Sec-Fetch-Site есть — только same-origin. Нет (старый браузер) — Referer, если он есть, с нашего адреса.
+ * Переход на /api/auth/google/start пришёл со страницы этого же адреса (same-origin), а не по ссылке с другого
+ * сайта. Sec-Fetch-Site есть — только same-origin. Нет (старый браузер) — Referer, если он есть, с этого адреса.
  */
 export function fromParaPage(req) {
   const site = req.headers['sec-fetch-site'];
@@ -178,7 +181,7 @@ export function fromParaPage(req) {
   if (!ref) return true;
   let o;
   try { o = new URL(String(ref)).origin; } catch { return false; }
-  return o === web.origin || web.allowedOrigins.has(o);
+  return o === originOf(req);
 }
 
 const capitalize = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
@@ -191,6 +194,28 @@ const STATE_TTL = 10 * 60_000;
 const MAX_STATES = 100_000;
 const TRIM_STATES = 1000;
 const rnd = (n) => randomBytes(n).toString('base64url');
+
+// Билеты передачи входа с Para на адрес вуза. В памяти: между возвратом от Google и /finish проходят секунды,
+// а после перезапуска сервера незавершённый вход просто «истекает». Ключ — sha256 билета.
+const TICKET_TTL = 2 * 60_000;
+const MAX_TICKETS = 10_000;
+const tickets = new Map();   // sha256(билет) → { origin, back, bindHash, claims, state, exp }
+function putTicket(ticket, data) {
+  const now = Date.now();
+  // Map хранит порядок вставки, срок у всех одинаковый: истёкшие — в начале.
+  for (const [k, v] of tickets) {
+    if (v.exp > now && tickets.size < MAX_TICKETS) break;
+    tickets.delete(k);
+  }
+  tickets.set(sha256hex(ticket), { ...data, exp: now + TICKET_TTL });
+}
+/** Одноразово: билет удаляется при первом предъявлении, даже просроченный. */
+function takeTicket(ticket) {
+  const k = sha256hex(ticket);
+  const t = tickets.get(k);
+  tickets.delete(k);
+  return t && t.exp > Date.now() ? t : null;
+}
 
 /**
  * Утверждения id_token (backend.md §3.4). Токен получен от Google напрямую по TLS в обмен на секрет клиента,
@@ -252,7 +277,8 @@ export function authRoutes(inst, ctx) {
   const trimStates = db.prepare(`DELETE FROM oauth_states WHERE state IN
     (SELECT state FROM oauth_states ORDER BY created_at LIMIT ?)`);
   const insertState = db.prepare(`INSERT INTO oauth_states
-    (state, bind_hash, verifier, nonce, return_to, uni, intent, age_group, accepted, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`);
+    (state, bind_hash, verifier, nonce, return_to, uni, intent, age_group, accepted, created_at, origin)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?)`);
   const makeRoom = () => {
     if (statesCount.get().n < MAX_STATES) return;
     dropOldStates.run(nowIso(Date.now() - STATE_TTL));
@@ -262,13 +288,14 @@ export function authRoutes(inst, ctx) {
   inst.get('/api/auth/google/start', async (req, reply) => {
     reply.header('cache-control', 'no-store').header('referrer-policy', 'no-referrer');
     const q = req.query || {};
-    const back = safeReturn(q.return);
+    const origin = originOf(req);   // Para или адрес вуза: туда человек и вернётся
+    const back = safeReturn(q.return, origin);
     const intent = q.intent === 'delete' ? 'delete' : 'signin';
-    const go = (outcome) => reply.redirect(`${web.origin}${back}#auth=${outcome}`, 302);
+    const go = (outcome) => reply.redirect(`${origin}${back}#auth=${outcome}`, 302);
     if (!googleConfigured() || (social.mode === 'off' && intent === 'signin')) return go('unavailable');
     if (limited('auth', ipKey(req))) return go('limited');
     // Возраст и согласие с правилами приходят в адресе, поэтому вход (он может создать аккаунт) начинается
-    // только со страницы Para: окно входа уводит сюда через location.replace — это переход same-origin.
+    // только со страницы этого же адреса: окно входа уводит сюда через location.replace — переход same-origin.
     // Ссылка с чужого сайта (Telegram, другой вуз) возвращает на наш вопрос о возрасте и правила
     // (#auth=consent открывает окно входа). Старые браузеры без Sec-Fetch-Site проверяем по Referer,
     // если он есть. Вход ради удаления (intent=delete) аккаунт не создаёт и ничего не записывает.
@@ -283,7 +310,7 @@ export function authRoutes(inst, ctx) {
     const nonce = rnd(16);
     const bind = rnd(32);
     insertState.run(state, sha256hex(bind), verifier, nonce, back, req.tenant ? req.tenant.id : null, intent,
-      intent === 'signin' ? age : null, intent === 'signin' ? accepted : 0, nowIso());
+      intent === 'signin' ? age : null, intent === 'signin' ? accepted : 0, nowIso(), origin === web.origin ? null : origin);
     setCookie(reply, web.oauth, bind, OAUTH_MAX_AGE);
     const u = new URL(GOOGLE_AUTH);
     u.search = new URLSearchParams({
@@ -335,22 +362,29 @@ export function authRoutes(inst, ctx) {
     return claimsFrom(json.id_token, { clientId: social.google.clientId, nonce: row.nonce });
   }
 
-  // #3 — возврат от Google: всегда 302 на ORIGIN + return + #auth=<итог>, кука входа стирается.
-  const peekState = db.prepare('SELECT intent FROM oauth_states WHERE state = ?');
+  // #3 — возврат от Google (только на адрес Para): всегда 302 на ORIGIN + return + #auth=<итог>, кука входа
+  // стирается. ORIGIN — где начали вход: Para или адрес вуза (тогда итог уходит туда через /finish).
+  const peekState = db.prepare('SELECT intent, origin FROM oauth_states WHERE state = ?');
   const dropState = db.prepare('DELETE FROM oauth_states WHERE state = ?');
   const takeState = db.prepare('DELETE FROM oauth_states WHERE state = ? RETURNING *');
   inst.get('/api/auth/google/callback', async (req, reply) => {
     reply.header('cache-control', 'no-store').header('referrer-policy', 'no-referrer');
+    if (!req.hub) throw notFound();   // redirect_uri — адрес Para; на адресе вуза этого маршрута нет
     clearCookie(reply, web.oauth);
     const q = req.query || {};
-    const go = (outcome, back = '/') => reply.redirect(`${web.origin}${back}#auth=${outcome}`, 302);
+    let origin = web.origin;
+    const go = (outcome, back = '/') => reply.redirect(`${origin}${back}#auth=${outcome}`, 302);
     const stateStr = typeof q.state === 'string' ? q.state : '';
 
     // 1) Недоступно: нет ключей; в off — всё, кроме входа ради удаления.
     if (!googleConfigured()) return go('unavailable');
     if (social.mode === 'off' && STATE_RE.test(stateStr)) {
       const peek = peekState.get(stateStr);
-      if (peek && peek.intent !== 'delete') { dropState.run(stateStr); return go('unavailable'); }
+      if (peek && peek.intent !== 'delete') {
+        dropState.run(stateStr);
+        origin = peek.origin || web.origin;
+        return go('unavailable');
+      }
     }
     // 2) Предел частоты.
     if (limited('auth', ipKey(req))) return go('limited');
@@ -358,16 +392,22 @@ export function authRoutes(inst, ctx) {
     if (!STATE_RE.test(stateStr)) return go('expired');
     const row = takeState.get(stateStr);
     if (!row || Date.parse(row.created_at) < Date.now() - STATE_TTL) return go('expired');
-    const back = safeReturn(row.return_to);
+    // Адрес начала входа записал сам сервер (start) по уже сверенному адресу запроса.
+    origin = row.origin || web.origin;
+    const relay = origin !== web.origin;
+    const back = safeReturn(row.return_to, origin);
     // 4) Отказ или ошибка на стороне Google.
     if (q.error !== undefined) {
       if (q.error === 'access_denied') return go('cancelled', back);
       ctx.log.info({ googleError: String(q.error).replace(/[^a-z_]/gi, '').slice(0, 40) }, 'вход через Google: ошибка');
       return go('failed', back);
     }
-    // 5) Тот же браузер, что начинал вход (защита от подмены входа).
-    const bind = readCookies(req)[web.oauth];
-    if (!bind || !safeEqual(sha256hex(bind), row.bind_hash)) return go('browser', back);
+    // 5) Тот же браузер, что начинал вход (защита от подмены входа). Вход с адреса вуза проверяет /finish:
+    //    его кука входа видна только тому адресу.
+    if (!relay) {
+      const bind = readCookies(req)[web.oauth];
+      if (!bind || !safeEqual(sha256hex(bind), row.bind_hash)) return go('browser', back);
+    }
     // 6) Обмен кода и проверка id_token.
     const code = typeof q.code === 'string' ? q.code : '';
     if (!code || code.length > 512) return go('failed', back);
@@ -375,13 +415,39 @@ export function authRoutes(inst, ctx) {
     if (!claims) return go('failed', back);
     // 7) Почта должна быть подтверждена.
     if (!claims.emailVerified) return go('unverified', back);
+    const state = { intent: row.intent, age: row.age_group, accepted: Number(row.accepted), uni: row.uni };
+    // Вход с адреса вуза: аккаунт и сессию создаст сам адрес вуза, когда убедится, что это тот же браузер.
+    if (relay) {
+      const ticket = rnd(32);
+      putTicket(ticket, { origin, back, bindHash: row.bind_hash, claims, state });
+      return reply.redirect(`${origin}/api/auth/google/finish?ticket=${ticket}`, 302);
+    }
     // 8) Аккаунт по google_sub; при intent=delete новый не создаётся.
-    const user = findOrCreateUser(ctx, claims,
-      { intent: row.intent, age: row.age_group, accepted: Number(row.accepted), uni: row.uni });
+    const user = findOrCreateUser(ctx, claims, state);
     if (!user) return go('none', back);
     // 9–10) Новая сессия, запись в журнал.
     completeSignIn(ctx, req, reply, user);
     return go('ok', back);
+  });
+
+  // #3б — конец входа, начатого на адресе вуза: Para передала сюда итог одноразовым билетом (2 минуты).
+  // Без куки входа этого браузера билет бесполезен: чужую ссылку на /finish не подсунуть.
+  inst.get('/api/auth/google/finish', async (req, reply) => {
+    reply.header('cache-control', 'no-store').header('referrer-policy', 'no-referrer');
+    clearCookie(reply, web.oauth);
+    const origin = originOf(req);
+    const q = req.query || {};
+    const raw = typeof q.ticket === 'string' && STATE_RE.test(q.ticket) ? q.ticket : '';
+    const t = raw ? takeTicket(raw) : null;
+    if (!t || t.origin !== origin) return reply.redirect(`${origin}/#auth=expired`, 302);
+    const go = (outcome) => reply.redirect(`${origin}${t.back}#auth=${outcome}`, 302);
+    const bind = readCookies(req)[web.oauth];
+    if (!bind || !safeEqual(sha256hex(bind), t.bindHash)) return go('browser');
+    if (social.mode === 'off' && t.state.intent !== 'delete') return go('unavailable');
+    const user = findOrCreateUser(ctx, t.claims, t.state);
+    if (!user) return go('none');
+    completeSignIn(ctx, req, reply, user);
+    return go('ok');
   });
 
   // #5 — вход для разработки: только DEV_LOGIN=1 вне production, только с этой машины и не через nginx.

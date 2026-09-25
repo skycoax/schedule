@@ -1,14 +1,14 @@
 // Оболочка приложения (CONTRACT.md §E.3).
-// На адресе Para (вуз выбран) — три вкладки: «Расписание», «Обсуждения», «Профиль» с одной общей
-// историей «Назад» (D29). На адресах вузов (kfu.skycoax.uz…) — только расписание: ни вкладок,
-// ни SessionProvider, ни social-кода, ни запросов к /api/auth, /api/social и /api/media.
+// На адресе Para (вуз выбран) и на адресах вузов (kfu.skycoax.uz…) — три вкладки: «Расписание»,
+// «Обсуждения», «Профиль» с одной общей историей «Назад» (D29). Без Para на сервере (brand.social нет) —
+// только расписание: ни вкладок, ни SessionProvider, ни social-кода, ни запросов к /api/auth, /api/social и /api/media.
 //
 // История: запись 'tab' лежит в истории ровно тогда, когда открыта не «Расписание». Уход с вкладки
 // сначала закрывает её вложенные экраны и листы (unwind), потом переключает. «Назад» с корня
 // «Обсуждений» или «Профиля» ведёт на «Расписание», а с «Расписания» — из приложения.
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ComponentType, JSX, LazyExoticComponent, ReactNode } from 'react';
-import { brand } from '../brand';
+import { brand, hasSocial } from '../brand';
 import { ls, store } from '../lib/store';
 import {
   RESELECT_EVENT,
@@ -94,17 +94,17 @@ const authPanel = lazyWithReload<Record<string, never>>(() => import('../social/
 
 // ─── Оболочка ──────────────────────────────────────────────────────────────
 
-/** Есть ли нижние вкладки: Para с выбранным вузом и включённый SOCIAL_TABS. Без них тема
- *  выбирается внизу расписания (ThemeSection), а не в «Профиле». */
+/** Есть ли нижние вкладки: вуз выбран (Para) или задан адресом, на сервере есть «Обсуждения», включён
+ *  SOCIAL_TABS. Без них тема выбирается внизу расписания (ThemeSection), а не в «Профиле». */
 export function hasTabBar(): boolean {
-  return !!brand.hub && !!brand.id && SOCIAL_TABS;
+  return !!brand.id && hasSocial && SOCIAL_TABS;
 }
 
 export function AppShell(p: AppShellProps): JSX.Element {
   return hasTabBar() ? <HubRoot {...p} /> : <SingleShell {...p} />;
 }
 
-/** Адрес вуза (или выключенные вкладки): одно расписание. */
+/** Сервер без Para (или выключенные вкладки): одно расписание. */
 function SingleShell({ theme, renderSchedule }: AppShellProps): JSX.Element {
   return (
     <>
