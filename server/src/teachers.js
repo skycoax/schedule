@@ -4,40 +4,10 @@
 // (у EduPage-вуза групп больше тысячи, наружу они так не отдаются), поэтому и индекс — тут.
 // Строится один раз на снимок и кешируется в t.cache.teachers.
 import { getLatestSchedule } from './store.js';
-import { parseCell, minutesRange } from './parse-cell.js';
+import { parseCell, minutesRange, teacherNames, nameKey } from './parse-cell.js';
 import { nowInTz, weekIndex } from './schedule.js';
 
 const DAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
-
-// Каноническое имя «Фамилия И.О.»: у вузов СНГ преподаватель в ячейке записан так,
-// часто с должностью/кафедрой в хвосте («Наврузова Е.П. асс. СОООЯ»). Берём именно
-// «Фамилию И.О.», хвост отбрасываем. ВАЖНО: \b в JS не знает кириллицы (см. parse.ts) —
-// поэтому границы не через \b, а по самому шаблону имени.
-const NAME_RE_G = /[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?\s+[А-ЯЁ]\.\s*(?:[А-ЯЁ]\.)?/g;
-// Должности — срезаем как хвост (для не-кириллических имён, где шаблон выше не сработал).
-const RANK_TAIL_RE = /[\s,]*(?:профессор|доцент|ассистент|преподаватель|тьютор|проф|доц|асс|ст\.?\s*преп|ст\.?\s*пр|преп|тьют)\.?\s*$/i;
-
-// Ключ для склейки вариантов одного человека: только буквы, нижний регистр.
-// «Наврузова Е.П.» и «Наврузова Е.П. асс.» → один и тот же ключ.
-function nameKey(name) {
-  return String(name || '').toLowerCase().replace(/[^\p{L}]/gu, '');
-}
-
-// Имена преподавателей из текста ячейки (их может быть несколько).
-// Кириллица: берём все совпадения «Фамилия И.О.». Иначе (латиница EduPage и т. п.):
-// режем по запятым и снимаем должность с хвоста.
-function teacherNames(who) {
-  const s = String(who || '').replace(/\s+/g, ' ').trim();
-  const cyr = s.match(NAME_RE_G);
-  if (cyr && cyr.length) return cyr.map((x) => x.replace(/\s+/g, ' ').trim());
-  return s.split(/\s*[,;/]\s*/)
-    .map((x) => {
-      let out = x.trim();
-      for (let i = 0; i < 3; i++) { const n = out.replace(RANK_TAIL_RE, '').trim(); if (n === out) break; out = n; }
-      return out.replace(/^[·|,;.\s]+|[·|,;.\s]+$/g, '').trim();
-    })
-    .filter((x) => /\p{L}/u.test(x) && x.replace(/[^\p{L}]/gu, '').length >= 2);
-}
 
 const daysOf = (g, w) => (g.weekDays ? (g.weekDays[w] || []) : (g.days || []));
 

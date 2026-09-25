@@ -15,6 +15,9 @@ export interface Group {
   link: string;       // ссылка на телемост, если есть
   times: string[];    // диапазоны времени «08:30 – 09:50», по одному на пару
   days: Day[];
+  /** Совместные пары (только у выбранной группы): 'Пн#3' → другие группы в той же
+   *  аудитории в то же время. Номер пары с 1, как в журнале правок. server/src/together.js */
+  with?: Record<string, string[]>;
 }
 
 export interface ChangeItem {
@@ -49,4 +52,6 @@ export interface Schedule {
   fetchedAt: string | null;
   ready: boolean;
   week?: string;      // «Неделя B» — какая неделя сейчас показана (если чередуются)
+  /** Не из сети, а сохранённое на телефоне (нет интернета): когда сохранено, ISO. */
+  savedAt?: string;
 }

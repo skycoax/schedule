@@ -1,4 +1,5 @@
 // Тема: авто (по системе) → светлая → тёмная → авто. Выбор запоминается.
+// cycle — по кругу, set — сразу нужная (переключатель «Авто | Светлая | Тёмная»).
 import { useCallback, useEffect, useState } from 'react';
 import { store } from '../lib/store';
 
@@ -49,5 +50,11 @@ export function useTheme() {
     });
   }, []);
 
-  return { mode, cycle };
+  // Прямой выбор (Профиль → Оформление, ThemeSection): тоже запоминается.
+  const set = useCallback((m: ThemeMode) => {
+    store('theme', m);
+    setMode(m);
+  }, []);
+
+  return { mode, cycle, set };
 }

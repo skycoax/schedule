@@ -1,11 +1,14 @@
 // Герой экрана «Сегодня»: что идёт/следующее и обратный отсчёт флип-часами.
 import type { Group } from '../types';
 import { parseCell, pairsOf, pairCount, type CellInfo } from '../lib/parse';
-import { minutesOf, hhmm, DAYS } from '../lib/format';
+import { minutesOf, hhmm, plural, DAYS } from '../lib/format';
 import { FlipClock } from './FlipClock';
 
-function meta(info: CellInfo): string {
-  return [info.room, info.who].filter(Boolean).join(' · ');
+function meta(info: CellInfo, g?: Group, day?: string, i?: number): string {
+  // Совместная пара — коротко в той же строке; список групп есть в карточке дня.
+  const n = g && day ? ((g.with || {})[day + '#' + ((i || 0) + 1)] || []).length : 0;
+  const mates = n ? 'вместе с ' + n + ' ' + plural(n, 'группой', 'группами', 'группами') : '';
+  return [info.room, info.who, mates].filter(Boolean).join(' · ');
 }
 function pad2(n: number): string { return (n < 10 ? '0' : '') + n; }
 function clockParts(sec: number): { d: string; a: string; b: string } {
@@ -25,9 +28,9 @@ function heroState(g: Group, nowMin: number, nowDay: string): Hero {
     const info = parseCell(pairs[i]); if (!info) continue;
     const mm = minutesOf((g.times || [])[i]); if (!mm) continue;
     if (nowMin >= mm.a && nowMin < mm.b)
-      return { kind: 'ok', live: true, a: mm.a, b: mm.b, target: mm.b, label: 'Сейчас', title: info.subj, sub: meta(info), cap: 'до конца пары' };
+      return { kind: 'ok', live: true, a: mm.a, b: mm.b, target: mm.b, label: 'Сейчас', title: info.subj, sub: meta(info, g, nowDay, i), cap: 'до конца пары' };
     if (nowMin < mm.a)
-      return { kind: 'ok', live: false, a: mm.a, b: mm.b, target: mm.a, label: 'Следующая', title: info.subj, sub: meta(info), cap: 'до начала · в ' + hhmm((g.times || [])[i], 0) };
+      return { kind: 'ok', live: false, a: mm.a, b: mm.b, target: mm.a, label: 'Следующая', title: info.subj, sub: meta(info, g, nowDay, i), cap: 'до начала · в ' + hhmm((g.times || [])[i], 0) };
   }
   const ni = DAYS.indexOf(nowDay) + 1;
   const nd = (DAYS[ni] === 'Вс' || !DAYS[ni]) ? 'Пн' : DAYS[ni];
@@ -36,7 +39,7 @@ function heroState(g: Group, nowMin: number, nowDay: string): Hero {
     const info = parseCell(np[j]);
     if (info) return {
       kind: 'idle', label: 'На сегодня всё', title: info.subj,
-      sub: (nd === 'Пн' && nowDay !== 'Сб' ? 'В понедельник' : 'Завтра') + ' в ' + hhmm((g.times || [])[j], 0) + ' · ' + meta(info),
+      sub: (nd === 'Пн' && nowDay !== 'Сб' ? 'В понедельник' : 'Завтра') + ' в ' + hhmm((g.times || [])[j], 0) + ' · ' + meta(info, g, nd, j),
     };
   }
   return { kind: 'idle', label: 'На сегодня всё', title: 'Пар больше нет', sub: '' };

@@ -66,6 +66,9 @@ export function loadTenants() {
   return tenants;
 }
 
+/** Короткое имя вуза для списков: «КФУ · Джизак» из «Расписание КФУ · Джизак». */
+export const shortName = (t) => t.brand.label.replace(/^Расписание\s+/i, '');
+
 /** Вуз по адресу запроса (Host), или null. */
 export function tenantFor(tenants, host) {
   const h = String(host || '').toLowerCase().replace(/:\d+$/, '');

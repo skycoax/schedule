@@ -1,0 +1,117 @@
+/* Общие детали «Обсуждений» (social/ui/*): .rt* .pgrid* .pview* .empty-st* .report* .badge-team .badge-uni.
+   Не в основном бандле: подключается только ленивыми частями. */
+
+/* ─── Текст поста ─── */
+.rt{white-space:pre-wrap;overflow-wrap:anywhere;word-break:normal}
+.rt--clamp{display:-webkit-box;-webkit-box-orient:vertical;overflow:hidden}
+.rt__link, .rt__mention{color:var(--accent);text-decoration:none;border-radius:4px}
+.rt__link:active, .rt__mention:active{opacity:.6}
+.rt__link:focus-visible, .rt__mention:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+
+/* ─── Сетка фото ─── */
+.pgrid{display:grid;gap:2px;margin-top:8px;border-radius:var(--r-media);overflow:hidden;
+  background:var(--media-bg);max-height:min(70vh, 480px);width:100%}
+.pgrid--1{grid-template-columns:1fr}
+.pgrid--2{grid-template-columns:1fr 1fr}
+.pgrid--3{grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr}
+.pgrid--3 .pgrid__i:first-child{grid-row:1 / span 2}
+.pgrid--4{grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr}
+.pgrid__i{position:relative;display:grid;place-items:center;min-width:0;min-height:0;overflow:hidden;
+  background:var(--media-bg)}
+.pgrid__i img{width:100%;height:100%;object-fit:cover;display:block;opacity:0;transition:opacity 180ms ease}
+.pgrid__i img.is-loaded{opacity:1}
+.pgrid__i:active img{opacity:.85}
+.pgrid__i:focus-visible{outline:none}
+.pgrid__i:focus-visible::after{content:'';position:absolute;inset:0;box-shadow:inset 0 0 0 3px var(--accent)}
+.pgrid__err{color:var(--ink-30)}
+@media (prefers-reduced-motion: reduce){ .pgrid__i img{transition:none} }
+
+/* ─── Просмотр фото ─── */
+.pview{position:fixed;inset:0;z-index:95;color:#fff;outline:none;overflow:hidden;
+  -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;
+  animation:pview-in 160ms ease}
+@keyframes pview-in{from{opacity:0}to{opacity:1}}
+.pview__bg{position:absolute;inset:0;background:var(--viewer-bg)}
+.pview__track{position:absolute;inset:0;display:flex;overflow-x:auto;overflow-y:hidden;
+  scroll-snap-type:x mandatory;scrollbar-width:none;touch-action:pan-x;overscroll-behavior:contain}
+.pview__track::-webkit-scrollbar{display:none}
+.pview.is-zoomed .pview__track{overflow-x:hidden;touch-action:none}
+.pview__page{flex:0 0 100%;height:100%;scroll-snap-align:center;scroll-snap-stop:always;
+  display:grid;place-items:center;overflow:hidden}
+.pview__zoom{display:grid;place-items:center;width:100%;height:100%;
+  transition:transform 240ms cubic-bezier(.2,.85,.3,1);will-change:transform}
+.pview.is-zoomed .pview__zoom{cursor:grab}
+/* Кадр вписан в экран по пропорции фото (--pv-r = w/h); без dvh (старый Chrome) — по vh. */
+.pview__frame{position:relative;max-width:100%;max-height:100%;
+  width:min(100%, calc(100vh * var(--pv-r, 1)));width:min(100%, calc(100dvh * var(--pv-r, 1)))}
+.pview__img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:block;
+  -webkit-user-drag:none;pointer-events:none}
+.pview__img:not(.pview__img--thumb){opacity:0;transition:opacity 160ms ease}
+.pview__img.is-loaded{opacity:1}
+.pview__fail{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;
+  color:rgba(255,255,255,.6);font:500 15px var(--font)}
+.pview__top{position:absolute;left:0;right:0;top:0;display:grid;grid-template-columns:44px 1fr 44px;align-items:center;
+  gap:8px;padding:calc(env(safe-area-inset-top) + 8px) 12px 8px;transition:opacity 200ms ease}
+.pview__close{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;color:#fff;
+  background:rgba(255,255,255,.14)}
+.pview__close:active{background:rgba(255,255,255,.24)}
+.pview__close:focus-visible{outline:2px solid #fff;outline-offset:2px}
+.pview__count{text-align:center;font:600 15px var(--font);font-variant-numeric:tabular-nums}
+.pview__dots{position:absolute;left:0;right:0;bottom:calc(env(safe-area-inset-bottom) + 18px);
+  display:flex;justify-content:center;gap:8px;pointer-events:none;transition:opacity 200ms ease}
+.pview__dot{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.35)}
+.pview__dot.is-on{background:#fff}
+.pview.is-bare .pview__top, .pview.is-bare .pview__dots,
+.pview.is-dragging .pview__top, .pview.is-dragging .pview__dots,
+.pview.is-zoomed .pview__dots{opacity:0;pointer-events:none}
+@media (prefers-reduced-motion: reduce){
+  .pview{animation:none}
+  .pview__zoom, .pview__img, .pview__top, .pview__dots{transition:none}
+}
+
+/* ─── Пустое состояние ─── */
+.empty-st{display:flex;flex-direction:column;align-items:center;text-align:center;padding:40px 24px}
+.empty-st__icon{width:60px;height:60px;border-radius:50%;display:grid;place-items:center;
+  background:var(--fill);color:var(--ink-60);margin-bottom:14px}
+.empty-st__title{font-size:20px;font-weight:700;letter-spacing:-.02em;line-height:1.25}
+.empty-st__text{font-size:14.5px;line-height:1.45;color:var(--ink-60);margin-top:6px;max-width:320px}
+.empty-st__act{margin-top:18px;width:100%;max-width:260px}
+
+/* ─── Значки ─── */
+.badge-team{display:inline-flex;align-items:center;flex:none;height:18px;padding:0 6px;border-radius:5px;
+  font:600 11px/1 var(--font);letter-spacing:.04em;text-transform:uppercase;white-space:nowrap;
+  color:var(--accent);background:var(--accent-press)}
+.badge-uni{display:inline-flex;align-items:center;flex:none;height:18px;padding:0 6px;border-radius:5px;
+  font:600 11px/1 var(--font);letter-spacing:.02em;color:var(--ink-60);background:var(--fill);white-space:nowrap}
+
+/* ─── Жалоба ─── */
+.report__sub{font-size:17px;font-weight:600;letter-spacing:-.01em}
+.report__note{font-size:14px;line-height:1.4;color:var(--ink-60);margin-top:4px}
+.report__cancel{font-weight:400}
+.report__list{margin:14px 0 18px;background:var(--surface-2);border-radius:14px;overflow:hidden}
+.report__opt{position:relative;display:flex;align-items:center;gap:12px;min-height:48px;padding:10px 14px;
+  font-size:16px;line-height:1.3;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.report__opt + .report__opt::before{content:'';position:absolute;top:0;left:14px;right:0;border-top:.5px solid var(--sep)}
+.report__opt:active{background:var(--fill)}
+.report__opt:has(.report__radio:focus-visible){outline:2px solid var(--accent);outline-offset:-2px;border-radius:14px}
+@supports not selector(:has(*)){
+  .report__radio:focus-visible + .report__label{outline:2px solid var(--accent);outline-offset:3px;border-radius:4px}
+}
+.report__radio{position:absolute;opacity:0;width:1px;height:1px;margin:0;pointer-events:none}
+.report__label{flex:1;min-width:0}
+.report__mark{flex:none;color:var(--accent);opacity:0}
+.report__opt.is-sel .report__mark{opacity:1}
+.report__field-label{display:block;font-size:13px;font-weight:600;color:var(--ink-60);margin:0 0 6px 4px}
+.report__field{display:block;width:100%;min-height:84px;padding:10px 12px;border:0;border-radius:12px;resize:vertical;
+  background:var(--surface-2);color:var(--ink-100);font:400 16px/1.4 var(--font);outline:none}
+.report__field:focus-visible{box-shadow:0 0 0 2px var(--accent)}
+.report__field[aria-invalid="true"]{box-shadow:0 0 0 2px var(--red)}
+.report__count{font-size:13px;color:var(--ink-60);margin:6px 4px 0;text-align:right}
+.report__count.is-over{color:var(--red-ink)}
+.report__err{margin:12px 0 0;padding:10px 12px;border-radius:12px;background:var(--red-dim);
+  color:var(--red-ink);font-size:14px;line-height:1.4}
+.report__acts{display:flex;flex-direction:column;gap:10px;margin-top:18px}
+.report__done{display:flex;flex-direction:column;align-items:center;text-align:center;padding:12px 8px 4px;outline:none}
+.report__check{width:56px;height:56px;border-radius:50%;display:grid;place-items:center;margin-bottom:14px;
+  color:var(--green-ink);background:var(--green-dim)}
+.report__thanks{font-size:17px;font-weight:600;letter-spacing:-.01em;line-height:1.35}

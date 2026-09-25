@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Para — удаление аккаунта</title>
+<meta name="description" content="Как удалить аккаунт Para и связанные с ним данные: на этой странице, в приложении или по запросу.">
+<meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="/brand/icon-192.png">
+<!--
+  Публичная страница удаления аккаунта (ссылка для Google Play). Работает в любом SOCIAL_MODE, в том числе off:
+  сервер оставляет /api/auth/me, вход с intent=delete, выход и DELETE /api/social/me.
+  Скрипт внизу — только своего сайта; данные человека пишет в страницу только через textContent.
+  Почта для связи (Q3): kamolov1575@gmail.com.
+-->
+<style>
+  :root{color-scheme:light dark;--bg:#f2f2f7;--surface:#fff;--ink:#1c1c1e;--dim:rgba(60,60,67,.62);--line:rgba(60,60,67,.14);--c1:#007AFF;
+    --well:#f2f2f7;--red:#FF3B30;--red-ink:#D70015;--gbtn-bg:#fff;--gbtn-ink:#1f1f1f;--gbtn-edge:#747775}
+  @media (prefers-color-scheme:dark){
+    :root{--bg:#000;--surface:#1c1c1e;--ink:#fff;--dim:rgba(235,235,245,.6);--line:rgba(84,84,88,.55);--c1:#0A84FF;
+      --well:#2c2c2e;--red:#FF453A;--red-ink:#FF6961;--gbtn-bg:#131314;--gbtn-ink:#e3e3e3;--gbtn-edge:#8e918f}
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+  body{margin:0;background:var(--bg);color:var(--ink);padding:32px 16px 64px;
+    font:16px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;overflow-wrap:break-word}
+  main{max-width:720px;margin:0 auto;background:var(--surface);border-radius:24px;padding:28px 22px}
+  h1{font-size:26px;line-height:1.25;letter-spacing:-.02em;margin:0 0 10px}
+  h2{font-size:17px;line-height:1.35;margin:28px 0 8px;scroll-margin-top:16px}
+  p{margin:8px 0}
+  p,li{color:var(--dim)}
+  ul,ol{margin:8px 0;padding-left:20px}
+  li{margin:4px 0}
+  b{color:var(--ink);font-weight:600}
+  .upd{font-size:13px;color:var(--dim);margin:0 0 4px}
+  a{color:var(--c1);text-underline-offset:2px}
+  a:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid var(--c1);outline-offset:2px}
+  table{width:100%;border-collapse:collapse;margin:8px 0 4px;font-size:15px;line-height:1.5}
+  td{padding:9px 0;border-top:1px solid var(--line);color:var(--dim);vertical-align:top}
+  td:first-child{width:132px;padding-right:12px;color:var(--ink);font-weight:600}
+
+  /* Карточка действия: что показать, решает скрипт по /api/auth/me. Без скрипта — ссылка в приложение. */
+  .act{margin:20px 0 6px;padding:18px 16px 16px;border-radius:18px;background:var(--well)}
+  .act p{margin:0 0 12px}
+  .act [hidden]{display:none!important}
+  .btn{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;min-height:50px;margin:0;
+    padding:12px 16px;border:0;border-radius:15px;background:var(--c1);color:#fff;font:inherit;font-size:16px;font-weight:600;line-height:1.25;
+    text-align:center;text-decoration:none;cursor:pointer;-webkit-tap-highlight-color:transparent}
+  .btn:active:not(:disabled){opacity:.75}
+  .btn:disabled{opacity:.4;cursor:default}
+  .btn--red{background:var(--red)}
+  .btn--plain{background:var(--surface);color:var(--c1)}
+  .gbtn{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;min-height:50px;padding:0 16px;
+    border-radius:15px;background:var(--gbtn-bg);color:var(--gbtn-ink);border:1px solid var(--gbtn-edge);
+    font:inherit;font-size:15px;font-weight:500;line-height:1.2;letter-spacing:.1px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+  .gbtn:active:not(:disabled){opacity:.72}
+  .gbtn:disabled{opacity:.4;cursor:default}
+  .gbtn svg{flex:none;width:18px;height:18px}
+  .fine{font-size:13px;line-height:1.45;margin:10px 0 0!important}
+  .chk{display:flex;align-items:center;gap:12px;min-height:44px;margin:0 0 12px;color:var(--ink);cursor:pointer}
+  .chk input{flex:none;width:22px;height:22px;margin:0;accent-color:var(--c1);cursor:pointer}
+  .msg{margin:0 0 14px!important;padding:10px 12px;border-radius:12px;background:var(--surface);color:var(--ink);font-size:15px;line-height:1.45}
+  .msg--bad{color:var(--red-ink)}
+  .link{display:inline-flex;align-items:center;min-height:44px;padding:0 4px;margin:-12px 0;border:0;background:none;
+    color:var(--c1);font:inherit;cursor:pointer;vertical-align:baseline}
+  /* Ссылки внизу — без точек-разделителей: на узком экране встают в две строки, и точка не повисает. */
+  footer{max-width:720px;margin:18px auto 0;display:flex;flex-wrap:wrap;justify-content:center;column-gap:18px;
+    font-size:13px;line-height:1.5;text-align:center}
+  footer a{display:inline-flex;align-items:center;min-height:44px;padding:0 2px}
+  @media (max-width:380px){
+    body{padding:16px 10px 48px}
+    main{border-radius:20px;padding:22px 16px}
+    h1{font-size:24px}
+    .act{padding:16px 14px 14px}
+    td{display:block;width:auto!important;padding:0}
+    td:first-child{padding-top:9px}
+    td + td{border-top:0;padding-bottom:9px}
+  }
+</style>
+</head>
+<body>
+<main>
+  <p class="upd">Обновлено 25 сентября 2026</p>
+  <h1>Удаление аккаунта Para</h1>
+  <p>Аккаунт Para нужен только для «Обсуждений», профиля и друзей. Удалить его можно в любой момент —
+     прямо здесь, в приложении или по запросу. Расписанием можно пользоваться и дальше, без аккаунта.</p>
+
+  <section class="act" id="act" aria-label="Удаление аккаунта">
+    <p class="msg" id="msg" role="status" aria-live="polite" hidden></p>
+
+    <div id="st-static">
+      <a class="btn" href="/?tab=profile&amp;delete=1">Открыть Para и удалить аккаунт</a>
+      <p class="fine">Откроется Para. Если вы не вошли, войдите тем же аккаунтом Google — новый аккаунт
+        при этом не создаётся.</p>
+    </div>
+
+    <p id="st-wait" hidden>Проверяем вход…</p>
+
+    <div id="st-guest" hidden>
+      <p>Войдите тем же аккаунтом Google, которым входили в Para. Новый аккаунт при этом не создаётся.</p>
+      <button type="button" class="gbtn" id="google" aria-describedby="google-off">
+        <svg viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+          <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+          <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+          <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+          <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+        </svg>
+        <span>Продолжить с Google</span>
+      </button>
+      <p class="fine" id="google-off" hidden>Вход через Google пока недоступен. Напишите нам — удалим вручную.</p>
+    </div>
+
+    <div id="st-user" hidden>
+      <p>Вы вошли как <b id="who"></b>.</p>
+      <label class="chk"><input type="checkbox" id="sure"> <span>Понимаю, что это нельзя отменить</span></label>
+      <button type="button" class="btn btn--red" id="del" disabled>Удалить аккаунт навсегда</button>
+      <p class="fine">Это не ваш аккаунт? <button type="button" class="link" id="out">Выйти</button></p>
+    </div>
+
+    <div id="st-done" hidden>
+      <p id="done" tabindex="-1">Аккаунт удалён. Расписанием можно пользоваться и дальше.</p>
+      <a class="btn btn--plain" href="/">Открыть расписание</a>
+    </div>
+  </section>
+
+  <h2 id="app">В приложении</h2>
+  <ol>
+    <li>Откройте Para и перейдите на вкладку «Профиль».</li>
+    <li>Внизу нажмите «Удалить аккаунт».</li>
+    <li>Отметьте «Понимаю, что это нельзя отменить» и нажмите «Удалить аккаунт навсегда».</li>
+  </ol>
+  <p>Если вы не вошли, Para попросит войти тем же аккаунтом Google — новый аккаунт при этом не создаётся.
+     Аккаунт, которому запретили писать за нарушения, тоже можно удалить. Удаление работает, даже когда
+     «Обсуждения» временно выключены.</p>
+
+  <h2 id="web">В браузере</h2>
+  <p>Если приложения уже нет, удалите аккаунт прямо здесь: войдите кнопкой вверху страницы тем же аккаунтом
+     Google и нажмите «Удалить аккаунт навсегда». Это работает в любом браузере — на телефоне
+     и на компьютере.</p>
+
+  <h2 id="request">По запросу</h2>
+  <p>Если войти не получается, напишите на <a href="mailto:kamolov1575@gmail.com">kamolov1575@gmail.com</a> <b>с той почты, к которой
+     привязан аккаунт</b>, с темой «Удалить аккаунт Para» и, если помните, укажите имя пользователя (@…).
+     Удалим в течение 7 дней и ответим, когда всё будет готово.</p>
+  <p>Можно написать и в Telegram <a href="https://t.me/skycoax">@skycoax</a>, но подтвердить, что аккаунт ваш,
+     попросим письмом с этой почты: так никто не сможет удалить чужой аккаунт.</p>
+
+  <h2 id="deleted">Что удаляется</h2>
+  <ul>
+    <li>профиль: имя, имя пользователя, фото, «О себе», «мой вуз», ссылки на Telegram и Instagram;</li>
+    <li>почта, Google ID, возрастная группа и настройки приватности;</li>
+    <li>все ваши посты, ответы и фото в них;</li>
+    <li>ваши отметки «Нравится»;</li>
+    <li>друзья, заявки в друзья и ваши блокировки;</li>
+    <li>вход в аккаунт на всех устройствах.</li>
+  </ul>
+  <p>Всё это удаляется <b>сразу и безвозвратно</b>, файлы фото — тоже. Расписание и настройки на телефоне
+     остаются.</p>
+
+  <h2 id="kept">Что остаётся</h2>
+  <table>
+    <tr><td>Ответы других</td><td>ответы других людей под вашими постами остаются, на месте поста — «Пост удалён».
+        Если на ваш ответ кто-то ответил, на его месте будет «Ответ удалён»</td></tr>
+    <tr><td>Ваши жалобы</td><td>остаются, но уже без связи с вами, — чтобы модераторы могли закончить проверку</td></tr>
+    <tr><td>Жалобы на вас</td><td>копии публикаций, на которые жаловались, и решения по ним — до 180 дней после
+        решения, для безопасности других людей</td></tr>
+    <tr><td>Журнал модерации</td><td>записи о решениях модераторов, без текста публикаций, — 180 дней. Записи
+        о сменах вашего имени пользователя удаляются вместе с аккаунтом</td></tr>
+    <tr><td>Запрет писать</td><td>если аккаунту запретили писать за нарушения — необратимый отпечаток Google ID
+        до конца запрета, но не дольше года. Имени и почты в нём нет</td></tr>
+    <tr><td>Имя пользователя</td><td>остаётся занятым 30 дней, чтобы им не воспользовался кто-то другой,
+        потом освобождается</td></tr>
+    <tr><td>Резервные копии</td><td>ежедневная копия базы аккаунтов на том же сервере хранится 7 дней и удаляется сама. Фото
+        в резервные копии не попадают</td></tr>
+    <tr><td>Кеш браузеров</td><td>фото могут до 7 дней оставаться в кеше браузеров тех, кто их уже открывал</td></tr>
+    <tr><td>Статистика и отзывы</td><td>обезличенные записи о заходах и отзывы с аккаунтом не связаны; удалить
+        их можно по запросу</td></tr>
+    <tr><td>Журналы сервера</td><td>IP-адрес, время, адрес страницы и браузер — стираются через 14 дней</td></tr>
+    <tr><td>Телефон</td><td>настройки и сохранённое расписание остаются в телефоне — очистите данные
+        приложения или удалите его</td></tr>
+  </table>
+
+  <h2 id="part">Удалить только часть данных</h2>
+  <ul>
+    <li>Пост или ответ вместе с фото — «•••» у публикации → «Удалить».</li>
+    <li>Фото профиля, имя, «О себе», «мой вуз» и ссылки — «Профиль» → «Изменить профиль».</li>
+    <li>Друзей, заявки и блокировки — «Профиль» → «Друзья» и «Заблокированные».</li>
+    <li>Убрать себя из поиска и выключить заявки в друзья — «Профиль» → «Конфиденциальность».</li>
+    <li>Выйти на всех устройствах — «Профиль» → «Выйти на всех устройствах».</li>
+    <li>Записи статистики и отзыв — по запросу в Telegram <a href="https://t.me/skycoax">@skycoax</a>
+        или на <a href="mailto:kamolov1575@gmail.com">kamolov1575@gmail.com</a>.</li>
+  </ul>
+
+  <h2 id="google-access">Доступ Google</h2>
+  <p>Удаление аккаунта Para не удаляет ваш аккаунт Google. Убрать Para из приложений с доступом к аккаунту
+     Google можно здесь: <a href="https://myaccount.google.com/connections">myaccount.google.com/connections</a>.</p>
+
+  <h2 id="contact">Связь</h2>
+  <p>Telegram: <a href="https://t.me/skycoax">@skycoax</a><br>
+     Почта: <a href="mailto:kamolov1575@gmail.com">kamolov1575@gmail.com</a></p>
+</main>
+<footer><a href="/">para.skycoax.uz</a> <a href="/policy">Политика конфиденциальности</a>
+  <a href="/rules">Правила обсуждений</a></footer>
+<script>
+(() => {
+  'use strict';
+  // Тексты исхода входа (CONTRACT.md §B.5, столбец «/delete-account»). ok — без текста: покажем кнопку удаления.
+  const AUTH = {
+    cancelled: 'Вход отменён.',
+    expired: 'Время на вход истекло — попробуйте ещё раз.',
+    failed: 'Не получилось войти через Google — попробуйте ещё раз.',
+    browser: 'Вход не завершился: браузер не сохранил данные входа. Откройте страницу в Chrome или Safari.',
+    limited: 'Слишком много попыток входа — попробуйте позже.',
+    unavailable: 'Вход через Google пока недоступен.',
+    unverified: 'В этом аккаунте Google не подтверждена почта.',
+    consent: 'Не получилось войти через Google — попробуйте ещё раз.',
+    none: 'Аккаунта Para с этим Google нет — удалять нечего.',
+  };
+  const $ = (id) => document.getElementById(id);
+  const MUT = { 'Content-Type': 'application/json', 'X-Para': '1' };
+  const say = (text, bad) => { $('msg').textContent = text || ''; $('msg').hidden = !text; $('msg').className = 'msg' + (bad ? ' msg--bad' : ''); };
+  const show = (name) => { for (const k of ['static', 'wait', 'guest', 'user', 'done']) $('st-' + k).hidden = k !== name; };
+  const offline = () => navigator.onLine === false;
+
+  const m = /^#auth=([a-z]+)$/.exec(location.hash);
+  if (m) {
+    if (AUTH[m[1]]) say(AUTH[m[1]], true);
+    history.replaceState(history.state, '', location.pathname + location.search);
+  }
+
+  // Кто вошёл. 404 или ошибка — остаются только инструкции и ссылка в приложение.
+  function load() {
+    show('wait');
+    return fetch('/api/auth/me', { cache: 'no-store', credentials: 'same-origin' })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((j) => {
+        const d = j && j.ok ? j.data : null;
+        if (!d) throw new Error('bad');
+        if (d.user) {
+          $('who').textContent = d.user.username ? '@' + d.user.username : d.user.name;
+          $('sure').checked = false; $('sure').disabled = false; $('del').disabled = true;
+          show('user');
+        } else {
+          $('google').disabled = !d.google;
+          $('google-off').hidden = !!d.google;
+          show('guest');
+        }
+      })
+      .catch(() => show('static'));
+  }
+
+  $('google').addEventListener('click', () => {
+    location.assign('/api/auth/google/start?intent=delete&return=%2Fdelete-account');
+  });
+  $('sure').addEventListener('change', () => { $('del').disabled = !$('sure').checked; });
+
+  $('del').addEventListener('click', () => {
+    if (!$('sure').checked) return;
+    const btn = $('del');
+    const reset = (text) => { say(text, true); btn.textContent = 'Удалить аккаунт навсегда'; $('sure').disabled = false; btn.disabled = !$('sure').checked; };
+    btn.disabled = true; $('sure').disabled = true; btn.textContent = 'Удаляем…'; say('');
+    fetch('/api/social/me', { method: 'DELETE', cache: 'no-store', credentials: 'same-origin', headers: MUT, body: '{"confirm":true}' })
+      .then((r) => r.json().catch(() => null).then((j) => ({ status: r.status, j })))
+      .then(({ status, j }) => {
+        if (j && j.ok) {
+          // Копия профиля и черновики этого браузера больше ни к чему.
+          try {
+            for (const k of Object.keys(localStorage)) if (k === 'me_cache' || k.startsWith('draft_post_')) localStorage.removeItem(k);
+          } catch { /* приватный режим */ }
+          say(''); show('done'); $('done').focus();
+          return;
+        }
+        // Сессия истекла или вышли в другой вкладке — показываем вход заново.
+        if (status === 401) { load().then(() => say('Сессия истекла — войдите снова.', true)); return; }
+        reset(j && j.error ? j.error : 'Не получилось удалить аккаунт. Попробуйте ещё раз или напишите нам.');
+      })
+      .catch(() => reset(offline() ? 'Нет интернета — удалить аккаунт не получится.' : 'Сервер не отвечает — попробуйте чуть позже.'));
+  });
+
+  $('out').addEventListener('click', () => {
+    say('');
+    fetch('/api/auth/logout', { method: 'POST', cache: 'no-store', credentials: 'same-origin', headers: MUT, body: '{}' })
+      .catch(() => null).then(load);
+  });
+
+  load();
+})();
+</script>
+</body>
+</html>

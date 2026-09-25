@@ -2,8 +2,8 @@
 //
 // Собираем то, что и так видит любой веб-сервер (IP, User-Agent, referrer), плюс
 // то, что присылает страница (группа, экран, язык, метка источника). НО:
-//   • сырой IP не храним — только соль+хеш (для дедупликации) и огрублённый вид
-//     (последний октет обнулён) для грубой географии;
+//   • сырой IP не храним — только соль+хеш (для дедупликации); огрублённый вид
+//     (ip_coarse) больше не пишем, а старые значения стираем при запуске (scrubCoarseIp);
 //   • ничего личного (имя, почта, телефон, точные координаты) не собираем;
 //   • всё это раскрыто в политике приложения.
 // То есть данные обезличенные и не для того, чтобы вычислять конкретного человека.
@@ -104,7 +104,7 @@ export function logHit(t, info) {
     new Date().toISOString(),
     String(info.cid || '').slice(0, 32),
     info.first ? 1 : 0,
-    ip.hash, ip.coarse,
+    ip.hash, null,                                // ip_coarse больше не храним (см. scrubCoarseIp)
     null, null,                                   // country/city — грубая гео добавится позже
     ua.device, ua.model, ua.os, ua.browser,
     String(info.ref || '').slice(0, 300),
@@ -113,6 +113,14 @@ export function logHit(t, info) {
     String(info.scr || '').slice(0, 20),
     String(info.lang || '').slice(0, 16),
   );
+}
+
+/**
+ * Стереть огрублённые IP, записанные раньше. Идемпотентно; когда стирать нечего — один
+ * быстрый UPDATE без изменений. Вызывается при запуске для базы каждого вуза.
+ */
+export function scrubCoarseIp(db) {
+  db.prepare('UPDATE hits SET ip_coarse = NULL WHERE ip_coarse IS NOT NULL').run();
 }
 
 // ─── Последние дни подряд по Ташкенту ───
@@ -163,6 +171,21 @@ export function summary(t) {
     trend: trendDays(t.db, 14),
   };
   t.cache.summary = { at: Date.now(), data };
+  return data;
+}
+
+// ─── «Пульс» вуза для списка вузов ───
+// Его просят сразу для всех вузов, поэтому только два дешёвых запроса и кеш на 5 минут.
+export function pulse(t, days = 7) {
+  const cached = t.cache.pulse;
+  if (cached && Date.now() - cached.at < 5 * 60 * 1000) return cached.data;
+  const trend = trendDays(t.db, days);
+  const data = {
+    people: t.db.prepare("SELECT COUNT(DISTINCT cid) n FROM hits WHERE cid <> ''").get().n,
+    today: trend.length ? trend[trend.length - 1].users : 0,
+    spark: trend.map((d) => d.users),
+  };
+  t.cache.pulse = { at: Date.now(), data };
   return data;
 }
 

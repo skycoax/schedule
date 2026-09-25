@@ -17,7 +17,11 @@ server/                   Node 22 + Fastify + node:sqlite (флаг --experiment
   src/source-edupage.js   адаптер EduPage (публичное расписание *.edupage.org)
   src/store.js            снимки, сравнение (журнал правок)
   src/schedule.js         ответ /api/schedule (недели A/B, лёгкий режим ?group=)
+  src/together.js         совместные пары (поток): у выбранной группы поле with — с кем
+                          она в той же аудитории в то же время (фронт: DayCard, Hero)
   src/analytics.js, reviews.js — статистика и отзывы (у каждого вуза своя база)
+  src/social/             «Обсуждения» Para: аккаунты, лента, профили, модерация (одна база social.db)
+  test/                   дымовой тест и наполнение «Обсуждений» (на сервер не выкладываются)
   tenants/<id>/           ВУЗ = эта папка: tenant.json + 7 картинок бренда
   tenants/_tools/brand-images.py  генератор картинок из логотипа
   tenants/README.md       короткая инструкция для человека
@@ -28,6 +32,92 @@ deploy/deploy.sh          ЕДИНСТВЕННЫЙ актуальный спос
 `~/schedule-server`, сайт в `/var/www/schedule`, базы `~/schedule-server/data/<id>.db`.
 nginx и wildcard-сертификат `*.skycoax.uz` уже настроены: **новый вуз не требует
 правок nginx, DNS, сертификатов или systemd.**
+
+### Para — общий адрес для всех вузов
+
+`para.skycoax.uz` — нейтральное приложение **Para**: без эмблем и названий вузов в бренде
+(чтобы не выглядеть официальным приложением вуза; готовится к Google Play как TWA).
+- `server/hub/hub.json` — адрес, тексты Para и `redirectOldHosts`; картинки бренда — там же,
+  их рисует `python server/hub/make-icons.py`. `assetlinks.json` для Android кладётся туда же.
+- `server/src/hub.js` — на адресе Para вуз берётся из `?uni=<id>`, иначе из куки `uni`.
+  API на этом адресе без выбранного вуза отвечает 404 «Вуз не выбран».
+- Фронт: `brand.hub = true`; пока вуз не выбран (`brand.id` пуст) — экран
+  `UniversityStart.tsx`. `lib/uni.ts` хранит выбор в `store('uni')`, группу/преподавателя
+  каждого вуза откладывает в `prev_<id>`; `api.ts` добавляет `uni=` ко всем запросам.
+- При `redirectOldHosts: true` страница старого адреса (`kfu.skycoax.uz`…) переносит
+  человека в Para вместе с настройками (во фрагменте `#m=`); API старых адресов работает.
+  Согласие (`agreed`) и `cid` не переносятся; `#m=` Para принимает только при `redirectOldHosts: true`
+  и только со страницы старого адреса (по `document.referrer`), — ссылкой с `#m=` экран согласия не обойти.
+- Без интернета: `web/public/sw.js` (страница и API — сначала сеть, иначе сохранённое;
+  сохранённый ответ помечен `x-para-saved`, тогда «сейчас» считает `lib/now.ts`).
+- Новый вуз появляется в Para сам (из `tenants/`), эмблема для Para не нужна.
+
+### Обсуждения (только Para)
+
+Аккаунты (вход через Google), лента «Обсуждения», профили, друзья, жалобы и модерация. Работают **только на
+адресе Para** (`para.skycoax.uz`); на адресах вузов `/api/auth|social|media/*` отвечают 404. Контракт —
+`CONTRACT.md` (разделы B API, C база, F подключение); фронт — `web/src/social/`.
+
+```
+server/src/social/
+  index.js       registerSocial(): хуки (только Para → CSRF → сессия), парсеры, 404 на неизвестные адреса
+  http.js        ошибки с кодами, проверки S/P/N/M/A/U, куки, CSRF (X-Para + Origin), обработчик ошибок
+  auth.js        /api/auth/*: me, вход через Google (PKCE, nonce, одноразовый state), выход, вход разработчика
+  users.js       Me, @имена, профили, поиск, друзья, блокировки, PATCH /me, удаление аккаунта (маршрут)
+  posts.js       лента, ветки, публикации, ответы, лайки; удаление постов и аккаунта («надгробия»)
+  media.js       фото: загрузка, миниатюры, выдача /api/media/<id>.jpg и <id>_t.jpg
+  jpeg.js        очистка JPEG (без EXIF/GPS, ICC, комментариев и хвоста после EOI)
+  text.js        очистка текста, длина в графемах, ссылки, маскировка мата при выдаче
+  moderation.js  журнал, жалобы и автоскрытие, очередь и действия модератора, сводка
+  limits.js      ведёрки частоты (в памяти) и дневные пределы (по базе)
+  jobs.js        уборка: входы, баны, фото-сироты, сессии, сроки хранения, копия базы
+  db.js          social.db и схема (PRAGMA user_version)
+server/test/social-smoke.mjs   дымовой тест всех маршрутов
+server/test/social-seed.mjs    наполнение для разработки (alice, bob, mia до 18, boss — модератор)
+```
+
+Данные: `data/social.db` (одна база на все вузы), `data/media/` (фото), `data/backup/` (копии базы за 7 дней).
+Это данные людей: **никогда не удалять их скриптами**, не называть папку исходников `data` или `test`
+(deploy.sh исключает обе из выкладки). Копии в `data/backup/` лежат на том же диске, фото в них не входят;
+копий вне сервера нет (ночной cron на VPS копирует другой проект) — в публичных текстах их не обещать.
+
+Настройки в `server/.env` (значения вписывает владелец на сервере; `.env` не читать, не выводить, не коммитить):
+
+| Переменная | По умолчанию | Смысл |
+|---|---|---|
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | пусто | Web-клиент OAuth; пусто — вход «скоро появится» |
+| `SOCIAL_ADMIN_EMAILS` | пусто | почты модераторов через запятую |
+| `SOCIAL_SALT` | `IP_SALT` | соль отпечатков банов (длинная случайная строка) |
+| `SOCIAL_MODE` | `on` | `on` \| `readonly` \| `off` — аварийный выключатель |
+| `SOCIAL_MIN_AGE` | `16` | возраст для аккаунта (13–18); тексты политики — то же число |
+| `SOCIAL_REPORT_THRESHOLD` | `3` | сколько учитываемых жалоб скрывают пост |
+| `SOCIAL_REPORTER_MIN_AGE_H` | `24` | жалобы аккаунтов моложе — не учитываются для автоскрытия |
+| `MEDIA_DIR` | `<DATA_DIR>/media` | папка фото |
+| `PARA_ORIGIN`, `DEV_LOGIN`, `DEV_HUB`, `SOCIAL_NEW_ACCOUNT_H`, `SOCIAL_RATE_LIMITS`, `SOCIAL_DEV_GOOGLE_TOKEN_URL` | — | только для разработки, в production не действуют |
+
+Аварийный выключатель: `SOCIAL_MODE=readonly` (писать нельзя; жалобы, блокировки, удаление своего и аккаунта,
+выход работают) или `off` (обсуждений нет; вход ради удаления, выход и удаление аккаунта работают), затем
+`sudo systemctl restart schedule-api`.
+
+Правила обсуждений меняются по существу (`web/src/social/rules.ts`, `server/hub/rules.html`) — **вместе с ними
+поднять `social.rulesVersion` в `server/src/config.js`**: все примут правила заново.
+
+Проверка локально (Git Bash; данные — во временной папке, не в `server/data`):
+
+```bash
+P=8792; DATA="$TEMP/para-data-$P"; mkdir -p "$DATA"
+cd server && NODE_ENV=development DEV_LOGIN=1 DEV_HUB=1 PARA_ORIGIN=http://be.localhost:$P NO_POLL=1 \
+  SOCIAL_ADMIN_EMAILS=boss@dev.local SOCIAL_REPORTER_MIN_AGE_H=0 SOCIAL_NEW_ACCOUNT_H=0 \
+  PORT=$P DATA_DIR="$DATA" WEB_DIR=../web/dist node --experimental-sqlite src/index.js
+# в другом терминале, из корня проекта:
+node server/test/social-smoke.mjs http://127.0.0.1:8792 kfu     # «Всё прошло: N проверок.»
+node server/test/social-seed.mjs  http://127.0.0.1:8792 kfu     # наполнение для интерфейса (можно повторять)
+```
+
+Другие прогоны теста: `SMOKE_NEW_ACCOUNT=1` (сервер с `SOCIAL_NEW_ACCOUNT_H=24`, ≈ 6 минут), `SMOKE_MODE=readonly`
+и `SMOKE_MODE=off` (сервер с тем же `SOCIAL_MODE`, после seed), `SMOKE_GOOGLE_PORT=9901` (вход через поддельный
+Google: сервер с `GOOGLE_CLIENT_ID=smoke.apps.googleusercontent.com GOOGLE_CLIENT_SECRET=smoke
+SOCIAL_DEV_GOOGLE_TOKEN_URL=http://127.0.0.1:9901/token`). Подробности — в начале `social-smoke.mjs`.
 
 ### Не использовать (устаревшее)
 
@@ -241,4 +331,5 @@ curl -s https://kfu.skycoax.uz/api/universities   # новый вуз виден
 - Секреты (токены, пароли, `server/.env`) не выводить в лог и не коммитить.
   Если владелец прислал токен в чат — не использовать, попросить отозвать и ввести новый сам.
 - Изменение в `server/src/*` влияет на ВСЕ вузы: после правок проверяй `kfu` и `tsue` тоже.
-- Перед выкладкой: `cd web && npx tsc --noEmit && npm run build`, `node --check server/src/*.js`.
+- Перед выкладкой: `cd web && npx tsc --noEmit && npm run build`, `for f in server/src/*.js server/src/social/*.js; do node --check "$f"; done`
+  (`node --check` со списком файлов проверяет только первый).

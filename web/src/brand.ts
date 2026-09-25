@@ -1,9 +1,14 @@
 // Бренд вуза приходит от сервера: сборка сайта одна на все вузы, а сервер по адресу
 // (kfu.skycoax.uz, tsue.skycoax.uz…) кладёт в index.html JSON с данными вуза
 // (<script id="brand">). Сами вузы описаны в server/tenants/<id>/tenant.json.
+// На адресе Para (para.skycoax.uz) бренд нейтральный, hub = true, а вуз — тот, что
+// выбрал человек; id пустой, пока вуз не выбран.
+import type { SocialMode } from './social/types';
 
 export interface Brand {
   id: string;
+  /** Para: общий адрес для всех вузов, вуз выбирается в приложении. */
+  hub?: boolean;
   /** Надпись над заголовком в окнах: «Расписание КФУ · Джизак». */
   label: string;
   /** Полное название вуза — подпись логотипа для экранных чтецов. */
@@ -14,6 +19,10 @@ export interface Brand {
   /** Короткое «откуда данные» для окна согласия. */
   sourceShort: string;
   searchHint: string;
+  /** Только Para: режим «Обсуждений» для первой отрисовки (server/src/site.js, SOCIAL_MODE). */
+  social?: SocialMode;
+  /** Только Para: старые адреса вузов переносят сюда настройки во фрагменте #m= (hub.json redirectOldHosts). */
+  moveIn?: boolean;
 }
 
 // Заглушка для разработки без сервера (vite dev отдаёт index.html как есть).

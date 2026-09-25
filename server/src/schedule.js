@@ -2,6 +2,7 @@
 import { config } from './config.js';
 import { metaGet } from './db.js';
 import { getLatestSchedule, getChanges } from './store.js';
+import { togetherIndexFor, togetherOf } from './together.js';
 
 const DAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 
@@ -86,7 +87,12 @@ export function scheduleResponse(t, query = {}) {
     groups = all.map(resolve);
   } else {
     const selected = all.find((g) => g.key === wanted) || null;
-    groups = all.map((g) => (g === selected ? resolve(g) : {
+    // Совместные пары выбранной группы: с кем она сидит в одной аудитории (together.js).
+    const withOf = (g) => {
+      const idx = togetherIndexFor(t, sched);
+      return idx ? togetherOf(idx, g, weeks.length > 1 ? wi : 0) : {};
+    };
+    groups = all.map((g) => (g === selected ? { ...resolve(g), with: withOf(g) } : {
       key: g.key, sheet: g.sheet, course: g.course, name: g.name, sub: g.sub || '',
       link: '', times: [], days: [],
     }));

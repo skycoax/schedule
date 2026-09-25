@@ -1,37 +1,55 @@
 // HTTP-слой: один сервер на все вузы. Какой вуз — решает адрес запроса
 // (kfu.skycoax.uz, tsue.skycoax.uz…), вузы описаны в tenants/<id>/tenant.json.
+// Исключение — Para (para.skycoax.uz, см. hub.js): там вуз выбирает сам человек.
 // Отдаёт API и саму страницу приложения с брендом вуза. Запуск: npm start (Node 22+).
 import Fastify from 'fastify';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import cors from '@fastify/cors';
 import { config } from './config.js';
 import { metaGet } from './db.js';
-import { loadTenants, tenantFor } from './tenants.js';
-import { pageHtml, manifest, brandFile, assetFile, unknownHostHtml } from './site.js';
+import { loadTenants, tenantFor, shortName } from './tenants.js';
+import { loadHub, isHubHost, isDevHub, hubTenant } from './hub.js';
+import { pageHtml, hubPageHtml, manifest, hubManifest, redirectHtml, brandFile, assetFile, unknownHostHtml } from './site.js';
 import { scheduleResponse } from './schedule.js';
 import { teachersList, teacherSchedule } from './teachers.js';
-import { logHit, aggregate, summary } from './analytics.js';
+import { logHit, aggregate, summary, pulse, scrubCoarseIp } from './analytics.js';
 import { addReview, listReviews, ReviewError } from './reviews.js';
 import { startPoller, pollOnce } from './poller.js';
+import { registerSocial, corsOptions, logSerializers } from './social/index.js';
+
+// Отдельные страницы Para (публичные ссылки для Google Play и магазина правил).
+const HUB_PAGES = { '/policy': 'policy.html', '/rules': 'rules.html', '/delete-account': 'delete-account.html' };
 
 const app = Fastify({
-  // За nginx настоящий IP приходит в X-Forwarded-For — доверяем ему.
-  trustProxy: true,
-  logger: { level: process.env.LOG_LEVEL || 'info' },
+  // Доверяем только своему nginx (127.0.0.1): иначе X-Forwarded-For подделывается клиентом.
+  trustProxy: '127.0.0.1',
+  // В журнале запросов — без IP и без параметров адреса (там code, state, поиск, ПИН, группа, cid).
+  logger: { level: process.env.LOG_LEVEL || 'info', serializers: logSerializers },
 });
 
-await app.register(cors, { origin: true });
+// API расписания открыто всем сайтам; вход, обсуждения и фото — только со своей страницы.
+await app.register(cors, corsOptions);
 
 const tenants = loadTenants();
+tenants.forEach((t) => scrubCoarseIp(t.db));   // IP с обнулённым октетом больше не храним
 app.log.info({ tenants: tenants.map((t) => `${t.id} → ${t.hosts.join(', ')}`) }, 'вузы загружены');
+const hub = loadHub();
+if (hub) app.log.info({ hosts: hub.hosts, redirectOldHosts: hub.redirectOldHosts }, 'Para подключена');
 
+// На адресе Para вуз выбирает человек (?uni= или кука), на адресе вуза — сам адрес.
 app.decorateRequest('tenant', null);
-app.addHook('onRequest', async (req) => { req.tenant = tenantFor(tenants, req.headers.host); });
+app.decorateRequest('hub', false);
+app.addHook('onRequest', async (req) => {
+  req.hub = isHubHost(hub, req.headers.host) || isDevHub(hub, req.headers.host);
+  req.tenant = req.hub ? hubTenant(tenants, req) : tenantFor(tenants, req.headers.host);
+});
 
 // Маршруты API работают только на адресе подключённого вуза.
 const api = (handler) => async (req, reply) => {
   if (!req.tenant) {
     reply.code(404);
-    return { ok: false, error: 'Этот адрес не подключён ни к одному вузу' };
+    return { ok: false, error: req.hub ? 'Вуз не выбран' : 'Этот адрес не подключён ни к одному вузу' };
   }
   return handler(req.tenant, req, reply);
 };
@@ -45,16 +63,18 @@ app.get('/api/health', async (req) => ({
   now: new Date().toISOString(),
 }));
 
-// ─── Все подключённые вузы — для выбора вуза по логотипу ───
+// ─── Все подключённые вузы — для выбора вуза ───
 // Логотипы — через /brand-of/<id>/…: с того же адреса, иначе CSS-маска упрётся в CORS.
+// people/today/spark — сколько людей пользуется расписанием вуза (см. pulse).
 app.get('/api/universities', async () => ({
   ok: true,
   data: tenants.map((t) => ({
     id: t.id,
-    short: t.brand.label.replace(/^Расписание\s+/i, ''),
+    short: shortName(t),
     university: t.brand.university,
     url: `https://${t.hosts[0]}`,
     logo: `/brand-of/${t.id}/logo-mark.png`,
+    ...pulse(t),
   })),
 }));
 
@@ -117,6 +137,17 @@ app.get('/api/refresh', api(async (t, req, reply) => {
   return { ok: true, data: await pollOnce(t, app.log.child({ tenant: t.id })) };
 }));
 
+// Неизвестный адрес или метод: ответ как у Fastify, но в журнал — без строки запроса
+// (в ней бывают code, state, cid, группа).
+app.setNotFoundHandler((req, reply) => {
+  const line = `Route ${req.raw.method}:${String(req.raw.url || '').split('?')[0]} not found`;
+  req.log.info(line);
+  reply.code(404).send({ message: line, error: 'Not Found', statusCode: 404 });
+});
+
+// ─── Аккаунты и обсуждения (только на адресе Para, см. social/index.js) ───
+if (hub) await app.register(registerSocial, { hub, tenants });
+
 // ─── Сама страница, манифест и картинки бренда ───
 async function site(req, reply) {
   const path = req.url.split('?')[0];
@@ -141,28 +172,76 @@ async function site(req, reply) {
     return file.body;
   }
 
+  // На адресе Para бренд, манифест и картинки — свои, общие для всех вузов.
   const t = req.tenant;
-  if (!t) {
+  const own = req.hub ? hub : t;
+  if (!own) {
     reply.code(404).type('text/html; charset=utf-8');
     return unknownHostHtml();
   }
 
   if (path === '/manifest.json') {
     reply.header('cache-control', 'public, max-age=86400');
-    return manifest(t);
+    return req.hub ? hubManifest(hub) : manifest(t);
+  }
+
+  // Политика, правила обсуждений и удаление аккаунта отдельными страницами: на них нужны
+  // публичные ссылки в Google Play. Тот же смысл есть внутри приложения («Условия и данные»).
+  const doc = req.hub && HUB_PAGES[path.replace(/\/+$/, '')];
+  if (doc) {
+    const file = join(hub.dir, doc);
+    if (existsSync(file)) {
+      reply.header('cache-control', 'public, max-age=3600').type('text/html; charset=utf-8');
+      return readFileSync(file);
+    }
+  }
+
+  if (req.hub && path === '/robots.txt') {
+    reply.header('cache-control', 'public, max-age=86400').type('text/plain; charset=utf-8');
+    return 'User-agent: *\nDisallow: /api/\n';
+  }
+
+  // Связь сайта с Android-приложением (TWA): без неё сверху видна адресная строка.
+  if (req.hub && path === '/.well-known/assetlinks.json') {
+    const file = join(hub.dir, 'assetlinks.json');
+    if (!existsSync(file)) { reply.code(404); return []; }
+    reply.header('cache-control', 'public, max-age=3600').type('application/json');
+    return readFileSync(file);
+  }
+
+  // Значок вкладки: браузер сам просит /favicon.ico, в странице ссылки на него нет.
+  if (path === '/favicon.ico') {
+    const file = brandFile(own, 'icon-192.png');
+    if (!file) { reply.code(404); return { ok: false, error: 'Файл не найден' }; }
+    reply.header('cache-control', 'public, max-age=86400').type(file.type);
+    return file.body;
   }
 
   if (path.startsWith('/brand/')) {
-    const file = brandFile(t, path.slice('/brand/'.length));
+    const file = brandFile(own, path.slice('/brand/'.length));
     if (!file) { reply.code(404); return { ok: false, error: 'Нет такой картинки' }; }
     reply.header('cache-control', 'public, max-age=86400').type(file.type);
     return file.body;
   }
 
+  // Работа без интернета: service worker из сборки сайта. Всегда свежий — иначе
+  // исправление в нём дойдёт до людей только через сутки.
+  if (path === '/sw.js') {
+    const file = join(config.webDir, 'sw.js');
+    if (!existsSync(file)) { reply.code(404); return { ok: false, error: 'Файл не найден' }; }
+    reply.header('cache-control', 'no-cache').type('text/javascript; charset=utf-8');
+    return readFileSync(file);
+  }
+
   // Любой другой путь с расширением — это отсутствующий файл, а не страница.
   if (/\.[a-z0-9]+$/i.test(path)) { reply.code(404); return { ok: false, error: 'Файл не найден' }; }
 
+  // Ссылки на пост или профиль не для поисковиков: содержимое там от людей, а не от Para.
+  if (req.hub && req.query && (req.query.post || req.query.user)) reply.header('x-robots-tag', 'noindex');
   reply.header('cache-control', 'no-cache').type('text/html; charset=utf-8');
+  if (req.hub) return hubPageHtml(hub, t);
+  // Старый адрес вуза: люди переезжают в Para вместе со своими настройками.
+  if (hub && hub.redirectOldHosts) return redirectHtml(t, hub);
   return pageHtml(t);
 }
 app.get('/', site);
@@ -170,9 +249,12 @@ app.get('/*', site);
 
 // ─── Старт ───
 // Опрос источников — вразнобой, чтобы вузы не читали расписание в одну секунду.
-tenants.forEach((t, i) => {
-  setTimeout(() => startPoller(t, app.log.child({ tenant: t.id })), i * 5000).unref();
-});
+// NO_POLL=1 — только для локальной проверки: берём снимки из DATA_DIR и не дёргаем EduPage.
+if (process.env.NO_POLL !== '1') {
+  tenants.forEach((t, i) => {
+    setTimeout(() => startPoller(t, app.log.child({ tenant: t.id })), i * 5000).unref();
+  });
+}
 app.listen({ port: config.port, host: config.host })
   .then(() => app.log.info(`Расписания на http://${config.host}:${config.port}`))
   .catch((err) => { app.log.error(err); process.exit(1); });

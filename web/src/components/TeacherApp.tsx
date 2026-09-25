@@ -1,18 +1,26 @@
 // Режим преподавателя: выбрал себя в списке — видишь свои пары на сегодня и на неделю
 // (время, предмет, кабинет и группы). Данные — /api/teacher, собранные сервером из того
-// же расписания, что видят студенты. Оболочка (шапка, вкладки, футер) — как у студента.
+// же расписания, что видят студенты. Оболочка (верхняя строка, заголовок, футер) — как у студента.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import {
   getTeachers, getTeacher, getReviews, getSummary,
   type TeacherRow, type TeacherSchedule, type TeacherItem, type ReviewsData, type Summary,
 } from '../api';
 import type { Group } from '../types';
-import type { ThemeMode } from '../hooks/useTheme';
+import type { ScheduleSlotProps } from '../tabs';
 import { store } from '../lib/store';
 import { trackVisit } from '../lib/track';
+import { hideBoot } from '../lib/boot';
 import { minutesOf, hhmm, plural, DAYS, FULL, MONTHS } from '../lib/format';
-import { Header } from './Header';
-import { TopBar } from './TopBar';
+import { useUniversityMenu } from '../shell/useUniversityMenu';
+import { hasTabBar } from '../shell/AppShell';
+import { scrollToTop, useReselect } from '../shell/NavBar';
+import { useHideTabBar } from '../ui/bar';
+import { ScheduleNav } from './ScheduleNav';
+import { ScheduleTitle, uniShort } from './ScheduleTitle';
+import { ThemeSection } from './ThemeSection';
+import { PullRefresh } from './PullRefresh';
 import { Hero } from './Hero';
 import { TeacherPicker } from './TeacherPicker';
 import { DocSheet } from './DocSheet';
@@ -21,9 +29,9 @@ import { ReviewsBlock } from './ReviewsBlock';
 import { StatsBlock } from './StatsBlock';
 import { ReviewsModal } from './ReviewsModal';
 import { StatsModal } from './StatsModal';
-import { UniversityMenu, type MenuAnchor } from './UniversityMenu';
+import { OfflineNote } from './OfflineNote';
 
-type Tab = 'today' | 'week';
+type View = 'today' | 'week';
 const D6 = DAYS.slice(0, 6);
 const subjKey = (s: string) => String(s || '').toLowerCase().replace(/[^а-яёa-z]/g, '');
 
@@ -84,16 +92,15 @@ function DayCard({ day, items, note, nowDay, nowMin, colorOf }: {
   );
 }
 
-export function TeacherApp({ mode, cycle, onSwitchRole }: {
-  mode: ThemeMode; cycle: () => void; onSwitchRole: () => void;
+export function TeacherApp({ active, command, onContext, theme, onSwitchRole }: ScheduleSlotProps & {
+  onSwitchRole: () => void;
 }) {
   const [teachers, setTeachers] = useState<TeacherRow[] | null>(null);
   const [sel, setSel] = useState<string | null>(store('teacher'));
   const [sched, setSched] = useState<TeacherSchedule | null>(null);
-  const [tab, setTab] = useState<Tab>('today');
+  const [view, setView] = useState<View>('today');
   const [picker, setPicker] = useState<{ open: boolean; first: boolean }>({ open: false, first: false });
   const [docOpen, setDocOpen] = useState(false);
-  const [uniAnchor, setUniAnchor] = useState<MenuAnchor | null>(null);
   const [err, setErr] = useState('');
   const [reviews, setReviews] = useState<ReviewsData | null>(null);
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -102,9 +109,15 @@ export function TeacherApp({ mode, cycle, onSwitchRole }: {
   const [rateInit, setRateInit] = useState(0);
   const [, setTick] = useState(0);
   const t0 = useRef(Date.now());
+  const uniMenu = useUniversityMenu();
+
+  const load = useCallback((key: string) => {
+    getTeacher(key).then((d) => { t0.current = Date.now(); setSched(d); }).catch((e) => setErr(String(e.message || e)));
+  }, []);
 
   // Список преподавателей вуза + восстановление выбранного.
-  useEffect(() => {
+  const start = useCallback(() => {
+    setErr('');
     getTeachers().then((list) => {
       setTeachers(list);
       const saved = store('teacher');
@@ -115,27 +128,44 @@ export function TeacherApp({ mode, cycle, onSwitchRole }: {
         setPicker({ open: true, first: true });
       }
     }).catch((e) => setErr(String(e.message || e)));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [load]);
+  useEffect(() => { start(); }, [start]);
 
-  // Посекундный тик — для отметки «идёт/прошла» и возврата из фона.
+  // Посекундный тик — для отметки «идёт/прошла» и возврата из фона. Только пока вкладка видна.
   useEffect(() => {
+    if (!active) return;
+    setTick((t) => t + 1);
     const id = setInterval(() => setTick((t) => t + 1), 1000);
     const onVis = () => { if (!document.hidden) setTick((t) => t + 1); };
     document.addEventListener('visibilitychange', onVis);
     return () => { clearInterval(id); document.removeEventListener('visibilitychange', onVis); };
-  }, []);
-
-  const load = useCallback((key: string) => {
-    getTeacher(key).then((d) => { t0.current = Date.now(); setSched(d); }).catch((e) => setErr(String(e.message || e)));
-  }, []);
+  }, [active]);
 
   const colorOf = useColors(sched);
+
+  useEffect(() => { if (teachers || sched || err) hideBoot(); }, [teachers, sched, err]);
+
+  // Интернет вернулся — перечитываем расписание вместо сохранённого.
+  useEffect(() => {
+    const onOnline = () => { if (sel) load(sel); };
+    window.addEventListener('online', onOnline);
+    return () => window.removeEventListener('online', onOnline);
+  }, [sel, load]);
 
   // Отзывы и краткая статистика вуза — те же, что у студента (данные общие, обезличенные).
   const loadReviews = useCallback(() => { getReviews().then(setReviews).catch(() => {}); }, []);
   const loadSummary = useCallback(() => { getSummary().then(setSummary).catch(() => {}); }, []);
   useEffect(() => { loadReviews(); loadSummary(); }, [loadReviews, loadSummary]);
+
+  // Потянул вниз — перечитываем своё расписание, отзывы и статистику.
+  const refresh = useCallback(async () => {
+    loadReviews(); loadSummary();
+    const key = store('teacher');
+    if (!key) return;
+    const d = await getTeacher(key);
+    t0.current = Date.now();
+    setSched(d);
+  }, [loadReviews, loadSummary]);
 
   // Group-совместимый объект из расписания преподавателя — чтобы переиспользовать Hero
   // (таймер до текущей/следующей пары). Ячейка в формате «предмет · ауд. кабинет · группы».
@@ -159,8 +189,34 @@ export function TeacherApp({ mode, cycle, onSwitchRole }: {
     return { key: '', sheet: '', course: '', name: '', link: '', times, days: gdays };
   }, [sched]);
 
+  // Имя: из расписания, а пока оно грузится — из списка преподавателей.
+  const name = sched?.name || (sel ? (teachers || []).find((t) => t.key === sel)?.name || '' : 'Преподаватель');
+  const subtitle = 'Преподаватель · ' + uniShort();
+
+  // Оболочке — для «Профиля»: только когда преподаватель выбран и есть согласие.
+  useEffect(() => {
+    if (!sel || !name || !store('agreed')) return;
+    onContext({ kind: 'teacher', title: name, subtitle, unseenChanges: false, installUrl: '' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sel, name, subtitle]);
+
+  // Первый выбор преподавателя — без нижних вкладок.
+  useHideTabBar(active && picker.open && picker.first, 'onboarding');
+
+  // «Профиль → Преподаватель» открывает выбор. Команду, что была до появления вкладки, не повторяем.
+  const seenCmd = useRef(command?.n ?? 0);
+  useEffect(() => {
+    if (!command || command.n === seenCmd.current) return;
+    seenCmd.current = command.n;
+    if (command.kind === 'picker') setPicker({ open: true, first: false });
+  }, [command]);
+
+  // Повторное нажатие на вкладку «Расписание» — наверх страницы.
+  useReselect('schedule', scrollToTop);
+
   const openReviews = (rating = 0) => { setRateInit(rating); setReviewsOpen(true); };
   const closeReviews = () => { setReviewsOpen(false); loadReviews(); };
+  const openPicker = () => setPicker({ open: true, first: false });
 
   const pick = (key: string) => {
     setSel(key); store('teacher', key);
@@ -170,19 +226,32 @@ export function TeacherApp({ mode, cycle, onSwitchRole }: {
     window.scrollTo(0, 0);
   };
 
-  const openUniversities = (el: HTMLElement) => {
-    const r = el.getBoundingClientRect();
-    const width = Math.min(344, window.innerWidth - 24);
-    setUniAnchor({ top: r.bottom + 8, left: Math.max(12, Math.min(r.left, window.innerWidth - width - 12)) });
-  };
+  const nav = active && (
+    <ScheduleNav view={view} onView={(v) => { setView(v); window.scrollTo(0, 0); }} onUniversities={uniMenu.open} />
+  );
 
-  if (err) return <div className="wrap"><div className="alert is-on"><span className="dot dot--bad"></span><div className="alert__text"><b>Не удалось получить данные</b><span>{err}</span></div></div></div>;
+  if (err) {
+    return (
+      <>
+        {nav}
+        <div className="wrap wrap--sched">
+          <div className="alert is-on" role="alert">
+            <span className="dot dot--bad"></span>
+            <div className="alert__text"><b>Не удалось получить данные</b><span>{err}</span></div>
+            <button type="button" className="hdr__btn" onClick={() => { if (teachers && sel) { setErr(''); load(sel); } else start(); }}>
+              Повторить
+            </button>
+          </div>
+        </div>
+        {uniMenu.element}
+      </>
+    );
+  }
 
   const now = sched?.now;
   const nowMin = now ? now.minutes + (Date.now() - t0.current) / 60000 : 0;
   const byDay: Record<string, TeacherItem[]> = {};
   (sched?.days || []).forEach((d) => { byDay[d.day] = d.items; });
-  const name = sched?.name || (sel ? '' : 'Преподаватель');
 
   // ── «Сегодня» + ближайший учебный день ──
   const today = () => {
@@ -191,10 +260,10 @@ export function TeacherApp({ mode, cycle, onSwitchRole }: {
     const date = dl.length === 2 ? (+dl[0]) + ' ' + MONTHS[+dl[1] - 1] : '';
     const at = (o: number) => DAYS[(DAYS.indexOf(now.day) + o) % DAYS.length];
     const has = (d: string) => (byDay[d] || []).length > 0;
-    const cards: React.ReactNode[] = [];
+    const cards: ReactNode[] = [];
     if (now.day !== 'Вс') cards.push(<DayCard key="d" day={now.day} items={byDay[now.day] || []} note={date} nowDay={now.day} nowMin={nowMin} colorOf={colorOf} />);
 
-    let off = at(1) === 'Вс' ? 2 : 1;
+    const off = at(1) === 'Вс' ? 2 : 1;
     let nextDay = at(off);
     let nextNote = off === 1 ? 'завтра' : 'в понедельник';
     if (!has(now.day) && !has(nextDay)) {
@@ -223,16 +292,16 @@ export function TeacherApp({ mode, cycle, onSwitchRole }: {
 
   return (
     <>
-      <TopBar name={name} onPick={() => setPicker({ open: true, first: false })} onUniversities={openUniversities} />
-      <div className="wrap">
-        <Header name={name} mode={mode} onCycle={cycle} onPick={() => setPicker({ open: true, first: false })} onUniversities={openUniversities} />
+      {nav}
+      <PullRefresh onRefresh={refresh} enabled={active && !!sched} target=".wrap--sched" />
+      <div className="wrap wrap--sched">
+        <ScheduleTitle kind="teacher" title={name} subtitle={subtitle} onPick={openPicker} />
 
-        <div className="seg" role="tablist">
-          <button role="tab" aria-selected={tab === 'today'} onClick={() => { setTab('today'); window.scrollTo(0, 0); }}>Сегодня</button>
-          <button role="tab" aria-selected={tab === 'week'} onClick={() => { setTab('week'); window.scrollTo(0, 0); }}>Неделя</button>
+        {sched?.savedAt && <OfflineNote at={sched.savedAt} />}
+
+        <div id="sched-view" role="tabpanel" aria-label={view === 'today' ? 'Сегодня' : 'Неделя'}>
+          {!sched ? <><div className="skel" /><div className="skel" /></> : (view === 'today' ? today() : week())}
         </div>
-
-        {!sched ? <><div className="skel" /><div className="skel" /></> : (tab === 'today' ? today() : week())}
 
         {sched && (
           <div className="extras">
@@ -242,6 +311,8 @@ export function TeacherApp({ mode, cycle, onSwitchRole }: {
           </div>
         )}
 
+        {!hasTabBar() && <ThemeSection theme={theme} />}
+
         <SiteFooter onOpenDoc={() => setDocOpen(true)} />
       </div>
 
@@ -250,7 +321,7 @@ export function TeacherApp({ mode, cycle, onSwitchRole }: {
       <DocSheet open={docOpen} onClose={() => setDocOpen(false)} />
       <StatsModal open={statsOpen} onClose={() => setStatsOpen(false)} />
       <ReviewsModal open={reviewsOpen} initialRating={rateInit} onClose={closeReviews} />
-      <UniversityMenu anchor={uniAnchor} onClose={() => setUniAnchor(null)} />
+      {uniMenu.element}
     </>
   );
 }

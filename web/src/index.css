@@ -37,6 +37,27 @@
   /* Жёлтый для графиков — один на обе темы: чистый #FFCC00 на белом не виден
      (контраст 1,5), а этот проходит проверку контраста и яркости и там, и там. */
   --yellow:#B58B00;
+  /* Оболочка Para (строка навигации, нижние вкладки) и «Обсуждения». */
+  --nav-h:44px;
+  --nav-top:calc(env(safe-area-inset-top) + 8px);
+  --nav-space:calc(var(--nav-top) + var(--nav-h) + 14px);
+  --tabbar-h:62px;
+  --tabbar-gap:10px;
+  --tabbar-space:calc(var(--tabbar-h) + var(--tabbar-gap) + env(safe-area-inset-bottom));
+  --kb:0px;
+  --glass-shadow:0 6px 20px rgba(0,0,0,.14);
+  --bar-glass-solid:#f7f7f9;
+  --tab-pill:rgba(118,118,128,.16);
+  --tab-ink:var(--ink-100);
+  --accent:var(--c1);
+  --accent-press:rgba(0,122,255,.12);
+  --like:var(--c4);
+  --r-post:20px;
+  --r-media:14px;
+  --r-sheet:22px;
+  --media-bg:#e5e5ea;
+  --viewer-bg:#000;
+  --gbtn-bg:#ffffff; --gbtn-ink:#1f1f1f; --gbtn-edge:#747775;
 }
 
 /* Тёмные значения — одни и те же для авто и ручного режима. */
@@ -62,6 +83,12 @@
     --red-ink:#FF453A;
     --c1:#0A84FF; --c2:#FF9F0A; --c3:#30D158; --c4:#FF375F;
     --c5:#64D2FF; --c6:#BF5AF2; --c7:#5E5CE6; --c8:#66D4CF;
+    --glass-shadow:0 6px 24px rgba(0,0,0,.5);
+    --bar-glass-solid:#2c2c2e;
+    --tab-pill:rgba(0,0,0,.36);
+    --accent-press:rgba(10,132,255,.2);
+    --media-bg:#2c2c2e;
+    --gbtn-bg:#131314; --gbtn-ink:#e3e3e3; --gbtn-edge:#8e918f;
   }
 }
 :root[data-theme="dark"]{
@@ -85,11 +112,20 @@
   --red-ink:#FF453A;
   --c1:#0A84FF; --c2:#FF9F0A; --c3:#30D158; --c4:#FF375F;
   --c5:#64D2FF; --c6:#BF5AF2; --c7:#5E5CE6; --c8:#66D4CF;
+  --glass-shadow:0 6px 24px rgba(0,0,0,.5);
+  --bar-glass-solid:#2c2c2e;
+  --tab-pill:rgba(0,0,0,.36);
+  --accent-press:rgba(10,132,255,.2);
+  --media-bg:#2c2c2e;
+  --gbtn-bg:#131314; --gbtn-ink:#e3e3e3; --gbtn-edge:#8e918f;
 }
 
 *{box-sizing:border-box;margin:0;padding:0}
 [hidden]{display:none !important}
-html{-webkit-text-size-adjust:100%;overscroll-behavior-y:contain;background:var(--bg)}
+html{-webkit-text-size-adjust:100%;overscroll-behavior-y:contain;background:var(--bg);
+  /* Фокус и scrollIntoView не прячут элемент под закреплённой строкой сверху и вкладками снизу. */
+  scroll-padding-top:var(--nav-space)}
+html.has-tabbar{scroll-padding-bottom:var(--tabbar-space)}
 body{
   background:var(--bg); color:var(--ink-100);
   font:400 15px/1.45 var(--font);
@@ -112,11 +148,15 @@ body::after{
 }
 html.is-changed body::before{opacity:0}
 html.is-changed body::after{opacity:1}
+/* Зелёное и красное свечение сверху — сигнал правок расписания: только на вкладке «Расписание». */
+html[data-tab]:not([data-tab="schedule"]) body::before,
+html[data-tab]:not([data-tab="schedule"]) body::after{opacity:0}
 
+/* Сверху страницы — место под закреплённую строку навигации (она есть на каждом экране). */
 .wrap{
   max-width:640px; margin:0 auto;
   padding:24px 16px 32px;
-  padding-top:max(24px, env(safe-area-inset-top));
+  padding-top:calc(var(--nav-space));
   padding-bottom:max(32px, calc(env(safe-area-inset-bottom) + 16px));
   padding-left:max(16px, env(safe-area-inset-left));
   padding-right:max(16px, env(safe-area-inset-right));
@@ -124,6 +164,10 @@ html.is-changed body::after{opacity:1}
 }
 @keyframes page-in{from{opacity:0}to{opacity:1}}
 .wrap.is-snap{transition:transform 250ms var(--ease)}
+/* С нижними вкладками: последняя карточка и подвал целиком над капсулой; вкладки
+   переключаются мгновенно, без проявления страницы. */
+html.has-tabbar .wrap{padding-bottom:calc(var(--tabbar-space) + 28px);animation:none}
+html.has-tabbar .nudge{bottom:calc(var(--tabbar-space) + 10px)}
 
 /* Верхний край: контент не обрывается о статус-бар, а уходит под него —
    цвет фона нарастает сверху вниз, а лёгкое размытие плавно гаснет той же маской
@@ -135,29 +179,12 @@ html.is-changed body::after{opacity:1}
   -webkit-mask-image:linear-gradient(to bottom, #000 calc(env(safe-area-inset-top) + 10px), transparent 100%);
   mask-image:linear-gradient(to bottom, #000 calc(env(safe-area-inset-top) + 10px), transparent 100%);
   transition:height 220ms var(--ease)}
-/* Под закреплённой шапкой затухание длиннее — контент уходит под «таблетки». */
-.topfade.is-compact{height:calc(env(safe-area-inset-top) + 92px);
+/* Под строкой навигации затухание длиннее — контент уходит под стеклянные кнопки. */
+.topfade.is-compact{height:calc(var(--nav-space) + 8px);
   background:linear-gradient(to bottom, var(--bg) 0, var(--bg) calc(env(safe-area-inset-top) + 8px),
     color-mix(in srgb, var(--bg) 55%, transparent) 60%, transparent 100%);
   -webkit-mask-image:linear-gradient(to bottom, #000 calc(env(safe-area-inset-top) + 44px), transparent 100%);
   mask-image:linear-gradient(to bottom, #000 calc(env(safe-area-inset-top) + 44px), transparent 100%)}
-
-/* Закреплённая шапка: логотип · название · «Сменить» — стеклянные таблетки. */
-.cbar{position:fixed;left:0;right:0;top:calc(env(safe-area-inset-top) + 8px);z-index:16;
-  display:flex;align-items:center;gap:8px;max-width:672px;margin:0 auto;
-  padding:0 max(16px, env(safe-area-inset-right)) 0 max(16px, env(safe-area-inset-left));
-  opacity:0;transform:translateY(-10px) scale(.98);pointer-events:none;
-  transition:opacity 200ms var(--ease), transform 200ms var(--ease)}
-.cbar.is-on{opacity:1;transform:none;pointer-events:auto}
-.cbar__logo,.cbar__title,.cbar__btn{height:44px;border-radius:99px;color:var(--ink-100);
-  background:var(--bar-glass);-webkit-backdrop-filter:blur(20px) saturate(180%);backdrop-filter:blur(20px) saturate(180%);
-  box-shadow:inset 0 0 0 1px var(--glass-edge), 0 6px 20px rgba(0,0,0,.14)}
-.cbar__logo{flex:none;width:44px;display:grid;place-items:center}
-.cbar__logo .hdr__logo{width:22px;height:26px}
-.cbar__title{flex:1;min-width:0;display:flex;align-items:center;justify-content:center;gap:6px;
-  padding:0 16px;font-size:16px;font-weight:600}
-.cbar__name{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.cbar__title svg{flex:none;width:16px;height:16px;color:var(--ink-60)}
 
 /* ─── Меню выбора вуза: компактный контекстный список от логотипа ─── */
 .umenu__catch{position:fixed;inset:0;z-index:79}
@@ -172,7 +199,7 @@ html.is-changed body::after{opacity:1}
 .umenu__title{font-size:13px;font-weight:600;color:var(--ink-60)}
 .umenu__count{min-width:20px;height:20px;padding:0 6px;display:grid;place-items:center;border-radius:10px;
   background:var(--fill);font-size:12px;font-weight:600;color:var(--ink-60)}
-.umenu__list{min-height:0;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;touch-action:pan-y;
+.umenu__list{min-height:0;overflow-y:auto;overscroll-behavior:contain;touch-action:pan-y;
   scrollbar-width:thin;scrollbar-color:var(--ink-30) transparent;padding:2px 0 4px}
 .umenu__list::-webkit-scrollbar{width:4px}.umenu__list::-webkit-scrollbar-thumb{background:var(--ink-30);border-radius:4px}
 .umenu__row{display:flex;align-items:center;gap:11px;min-height:58px;padding:8px 14px;position:relative;
@@ -182,6 +209,11 @@ html.is-changed body::after{opacity:1}
 @media (hover:hover){ .umenu__row:hover{background:var(--fill)} }
 .umenu__logo{flex:none;width:24px;height:26px;background:var(--ink-100);
   -webkit-mask:var(--logo) center/contain no-repeat;mask:var(--logo) center/contain no-repeat}
+/* Para: эмблема вуза своим цветом, справа — активность за неделю. */
+.umenu--hub .umenu__row .pulse{width:34px;height:16px}
+.umenu--hub .umenu__logo{width:42px;height:22px;background:var(--c,var(--ink-100));
+  -webkit-mask-position:left center;mask-position:left center}
+.umenu--hub .umenu__row + .umenu__row::before{left:67px}
 .umenu__txt{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
 .umenu__name{font-size:16px;font-weight:500;line-height:1.25}
 .umenu__sub{font-size:13px;line-height:1.25;color:var(--ink-60);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -210,16 +242,15 @@ html.is-changed body::after{opacity:1}
 .chg{flex:none;display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;
   color:var(--ink-60);background:var(--fill);padding:2px 8px 2px 7px;border-radius:99px}
 .chg::before{content:'';width:6px;height:6px;border-radius:99px;background:var(--c2)}
-.cbar button:active{opacity:.7}
-.cbar button:focus-visible{outline:2px solid var(--c1);outline-offset:2px}
+/* «Уменьшить прозрачность»: строка навигации, вкладки и подсказка — сплошные, без размытия. */
 @media (prefers-reduced-transparency: reduce){
   .topfade{-webkit-backdrop-filter:none;backdrop-filter:none}
-  .cbar__logo,.cbar__title,.cbar__btn{background:var(--surface);-webkit-backdrop-filter:none;backdrop-filter:none}
+  .navbtn:not(.navbtn--filled),.tabbar,.coach{background:var(--surface);-webkit-backdrop-filter:none;backdrop-filter:none}
 }
 
-/* Pull-to-refresh: орб по центру открывшегося промежутка. */
+/* Pull-to-refresh: орб по центру открывшегося промежутка, под строкой навигации. */
 .ptr{position:fixed;top:0;left:0;right:0;z-index:20;display:flex;justify-content:center;
-  pointer-events:none;padding-top:calc(env(safe-area-inset-top) + 10px)}
+  pointer-events:none;padding-top:calc(var(--nav-top) + var(--nav-h) + 4px)}
 .ptr__spin{opacity:0}
 .ptr.is-snap .ptr__spin{transition:transform 250ms var(--ease), opacity 200ms var(--ease)}
 .ptr__orb{width:64px;height:64px;display:block}
@@ -228,29 +259,19 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;touch-
 a{color:inherit;text-decoration:none}
 svg{display:block}
 
-/* ─── Шапка ─── */
-.hdr{display:flex;align-items:center;gap:8px;margin-bottom:16px}
-.hdr__txt{flex:1;min-width:0}
+/* ─── Логотип и кнопка-таблетка (общие) ─── */
 /* Логотип вуза — маска формы из /brand/ (сервер отдаёт картинку того вуза, на чей адрес
-   пришли), цвет даёт тема. Логотип — кнопка: открывает выбор вуза. */
+   пришли), цвет даёт тема. В строке навигации он внутри круглой кнопки (выбор вуза). */
 .hdr__logo{flex:none;display:block;width:40px;height:44px;background:var(--ink-100);
   -webkit-mask:var(--logo, url(/brand/logo-mark.png)) center/contain no-repeat;mask:var(--logo, url(/brand/logo-mark.png)) center/contain no-repeat}
-.hdr__logo-btn{flex:none;display:grid;place-items:center;border-radius:12px;transition:opacity var(--dur) var(--ease)}
-.hdr__logo-btn:active{opacity:.6}
-.hdr__txt--btn{text-align:left;cursor:pointer}
-.hdr__logo-btn:focus-visible,.hdr__txt--btn:focus-visible{outline:2px solid var(--c1);outline-offset:3px}
 .eyebrow{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-30)}
-h1{font-size:22px;font-weight:600;letter-spacing:-.018em;margin-top:2px;
-  overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
-.hdr__btn{flex:none;height:34px;padding:0 14px;border-radius:99px;
+.hdr__btn{position:relative;flex:none;height:34px;padding:0 14px;border-radius:99px;
   background:var(--glass);box-shadow:inset 0 0 0 1px var(--glass-edge);
   font-size:13px;font-weight:600;transition:background-color var(--dur) var(--ease)}
+/* Кнопка 34 px, зона нажатия — 44 px (Закрыть, Повторить). */
+.hdr__btn::after{content:'';position:absolute;left:0;right:0;top:-5px;bottom:-5px}
 .hdr__btn:active{background:var(--fill)}
-.hdr__ico{flex:none;width:34px;height:34px;border-radius:99px;display:grid;place-items:center;
-  background:var(--glass);box-shadow:inset 0 0 0 1px var(--glass-edge);color:var(--ink-60);
-  transition:background-color var(--dur) var(--ease)}
-.hdr__ico:active{background:var(--fill)}
-.hdr__ico svg{width:18px;height:18px}
+.hdr__btn:focus-visible{outline:2px solid var(--c1);outline-offset:2px}
 
 /* ─── Карточки ─── */
 .hero,.card,.alert{
@@ -307,14 +328,6 @@ h1{font-size:22px;font-weight:600;letter-spacing:-.018em;margin-top:2px;
 .dot--ok{background:var(--green);box-shadow:0 0 0 3px rgba(52,199,89,.18)}
 .dot--bad{background:var(--red);box-shadow:0 0 0 3px rgba(255,59,48,.16)}
 
-/* ─── Переключатель вкладок ─── */
-.seg{display:flex;gap:4px;background:var(--seg-track);padding:3px;border-radius:16px;margin-bottom:12px;
-  box-shadow:inset 0 0 0 1px var(--glass-edge)}
-.seg button{flex:1;height:34px;border-radius:13px;font-size:13px;font-weight:600;color:var(--ink-60);
-  transition:background-color var(--dur) var(--ease)}
-.seg button[aria-selected="true"]{background:var(--seg-active);color:var(--ink-100);
-  box-shadow:0 1px 3px rgba(0,0,0,.16)}
-
 /* ─── Карточка дня ─── */
 .card{margin-bottom:16px;overflow:hidden}
 .card__hdr{display:flex;align-items:center;justify-content:space-between;gap:8px;
@@ -342,11 +355,23 @@ h1{font-size:22px;font-weight:600;letter-spacing:-.018em;margin-top:2px;
 .room{font-size:12px;font-weight:600;color:var(--ink-100);flex:none;
   background:var(--fill);padding:2px 8px;border-radius:99px}
 .who{font-size:13px;color:var(--ink-60);min-width:0;line-height:1.4}
+/* Совместная пара: «Вместе с 2 группами», по нажатию — список групп */
+.with{display:inline-flex;align-items:center;gap:6px;margin-top:8px;max-width:100%;padding:0;
+  font-size:12.5px;font-weight:500;color:var(--ink-60);text-align:left}
+.with svg{flex:none;width:16px;height:16px}
+.with span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+button.with{cursor:pointer;border-radius:8px;transition:opacity var(--dur) var(--ease)}
+button.with:active{opacity:.6}
+button.with:focus-visible{outline:2px solid var(--c1);outline-offset:3px}
+.with__chev{width:13px !important;height:13px !important;opacity:.7;transition:transform var(--dur) var(--ease)}
+.with.is-open .with__chev{transform:rotate(90deg)}
+.with__list{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.with__g{font-size:12px;font-weight:500;color:var(--ink-100);background:var(--fill);
+  padding:3px 9px;border-radius:99px;line-height:1.35;overflow-wrap:anywhere}
+.with__more{font-size:12px;color:var(--ink-60);padding:3px 2px}
 .row.is-past{opacity:.45}
 .row.is-live .row__name{color:var(--c)}
 .row.is-live .row__ms{color:var(--c)}
-.row__was{margin:8px 0 0;padding:8px 12px;background:var(--red-dim);
-  border-radius:12px;font-size:13px;color:var(--red-ink);line-height:1.5}
 .free{padding:10px 16px;font-size:13px;color:var(--ink-30);position:relative}
 .free + .row::before{content:none}
 .empty{padding:16px;font-size:14px;color:var(--ink-30)}
@@ -411,7 +436,7 @@ h1{font-size:22px;font-weight:600;letter-spacing:-.018em;margin-top:2px;
 .sheet input{flex:1;min-width:0;height:40px;padding:0 14px;border-radius:14px;
   background:var(--fill);border:0;font:400 15px var(--font);color:var(--ink-100)}
 .sheet input::placeholder{color:var(--ink-30)}
-.sheet__list{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;
+.sheet__list{flex:1;overflow-y:auto;
   padding:0 16px max(40px, calc(env(safe-area-inset-bottom) + 24px))}
 .sheet__head{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
   color:var(--ink-30);padding:18px 4px 8px}
@@ -431,13 +456,34 @@ h1{font-size:22px;font-weight:600;letter-spacing:-.018em;margin-top:2px;
 /* Выбранная группа — как в системных списках iOS: галочка, без цветной заливки. */
 .opt.is-sel .opt__name{font-weight:600}
 .opt__check{flex:none;width:18px;height:18px;color:var(--ink-100)}
+/* Первый экран Para: эмблема вуза в цветной плитке, справа — активность и люди. */
+/* Колонка одной ширины: квадратные эмблемы и длинные надписи-логотипы читаются
+   одинаково, а названия вузов стоят ровно друг под другом. */
+.unis__logo{flex:none;width:58px;height:26px;background:var(--c,var(--ink-100));
+  -webkit-mask:var(--logo) left center/contain no-repeat;mask:var(--logo) left center/contain no-repeat}
+.unis__act{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:3px;padding-left:8px}
+.unis__n{font-size:11px;font-weight:600;color:var(--ink-30);font-variant-numeric:tabular-nums}
+.pulse{display:block;flex:none;width:46px;height:20px}
+.unis__total{font-size:13.5px;color:var(--ink-60);margin-top:10px}
+.unis__total b{color:var(--ink-100);font-weight:600}
+.unis__note{font-size:12.5px;line-height:1.5;color:var(--ink-30);padding:14px 4px 0}
+.unis__err{display:flex;align-items:center;justify-content:space-between;gap:12px}
+
+/* Без интернета — показано сохранённое расписание. */
+.offline{display:flex;align-items:center;gap:10px;padding:11px 14px;margin-bottom:14px;border-radius:16px;
+  background:var(--fill);font-size:13.5px;line-height:1.4;color:var(--ink-60)}
+.offline svg{flex:none;width:20px;height:20px;color:var(--ink-60)}
+.offline b{color:var(--ink-100);font-weight:600}
 
 /* ─── Модальное окно (согласие) ─── */
-.modal{position:fixed;inset:0;z-index:70;display:none;align-items:flex-end;justify-content:center;
+/* Карточка прижата к низу (margin-top:auto). Если она выше экрана (320×568), отступ
+   обнуляется и окно прокручивается — верх карточки не уходит за край. */
+.modal{position:fixed;inset:0;z-index:70;display:none;align-items:flex-start;justify-content:center;
+  overflow-y:auto;overscroll-behavior:contain;
   background:var(--scrim);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);
-  padding:16px;padding-bottom:max(16px, calc(env(safe-area-inset-bottom) + 16px))}
+  padding:max(16px, calc(env(safe-area-inset-top) + 8px)) 16px max(16px, calc(env(safe-area-inset-bottom) + 16px))}
 .modal.open{display:flex}
-.modal__c{width:100%;max-width:460px;background:var(--surface);border-radius:24px;
+.modal__c{width:100%;max-width:460px;margin-top:auto;background:var(--surface);border-radius:24px;
   padding:22px 20px 18px;box-shadow:inset 0 0 0 1px var(--glass-edge);
   animation:sheet-up .32s cubic-bezier(.2,.85,.3,1)}
 @keyframes sheet-up{from{transform:translateY(28px);opacity:0}to{transform:none;opacity:1}}
@@ -452,7 +498,7 @@ h1{font-size:22px;font-weight:600;letter-spacing:-.018em;margin-top:2px;
 .modal__ok:active{opacity:.82}
 
 /* Полный текст условий поверх согласия */
-#doc{z-index:90}
+#doc, .sheet--doc{z-index:90}
 .doc{font-size:15px;line-height:1.55;color:var(--ink-100)}
 .doc h3{font-size:14px;font-weight:600;margin:22px 0 6px}
 .doc p{color:var(--ink-60);margin-bottom:8px}
@@ -463,15 +509,14 @@ h1{font-size:22px;font-weight:600;letter-spacing:-.018em;margin-top:2px;
 .doc__upd{font-size:12px;color:var(--ink-30);margin-top:4px}
 
 /* ─── Служебное ─── */
-.alert{display:none;align-items:center;gap:12px;background:var(--red-dim);
+.alert{display:none;flex-wrap:wrap;align-items:center;gap:10px 12px;background:var(--red-dim);
   box-shadow:inset 0 0 0 1px rgba(255,59,48,.25);padding:14px 16px;margin-bottom:16px}
 .alert.is-on{display:flex}
-.alert__text{flex:1;min-width:0;font-size:15px}
+.alert__text{flex:1 1 150px;min-width:0;font-size:15px}
 .alert__text b{font-weight:600;display:block}
 .alert__text span{color:var(--ink-60);font-size:13px}
-.btn{flex:none;height:44px;padding:0 18px;font:600 15px var(--font);color:#fff;
-  background:var(--red);border-radius:14px;transition:opacity var(--dur) var(--ease)}
-.btn:active{opacity:.75}
+/* «Повторить» в плашке ошибки: на узком экране уходит под текст, к правому краю. */
+.alert > .hdr__btn{margin-left:auto;background:var(--surface);color:var(--accent)}
 .skel{border-radius:var(--r-card);background:var(--fill);height:96px;margin-bottom:16px;
   animation:skel 1.2s ease-in-out infinite}
 @keyframes skel{0%,100%{opacity:1}50%{opacity:.45}}
@@ -481,14 +526,6 @@ h1{font-size:22px;font-weight:600;letter-spacing:-.018em;margin-top:2px;
   background:var(--glass);box-shadow:inset 0 0 0 1px var(--glass-edge);color:var(--c1);font-size:14px;font-weight:600}
 .tm:active{opacity:.7}
 .tm svg{width:18px;height:18px}
-
-/* ─── KPI-плитки в админке (стиль панели CyberAdvice) ─── */
-.kpi-row{display:flex;flex-direction:column;gap:10px}
-.kpi{background:var(--surface);border-radius:18px;box-shadow:inset 0 0 0 1px var(--glass-edge);
-  padding:14px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px}
-.kpi__label{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-30)}
-.kpi__value{font-size:28px;font-weight:600;letter-spacing:-.02em;margin-top:4px;color:var(--ink-100)}
-.kpi__sub{font-size:12px;color:var(--ink-30);margin-top:2px}
 
 /* ─── Отзывы ─── */
 .rev-field{width:100%;padding:10px 12px;border-radius:14px;border:0;
@@ -615,7 +652,7 @@ button.panel:active{transform:scale(.985)}
 
 /* ─── Модал статистики: люди + график, «Вся статистика» раскрывает подробности ─── */
 .modal__c--scroll{max-height:calc(100vh - 32px);max-height:calc(100dvh - 32px - env(safe-area-inset-bottom));
-  overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+  overflow-y:auto;overscroll-behavior:contain}
 .kpi3{display:grid;grid-template-columns:repeat(3,1fr);margin:16px 0 14px}
 .kpi3 > div{text-align:center;padding:2px 4px}
 .kpi3 > div + div{border-left:1px solid var(--sep)}
@@ -666,7 +703,7 @@ button.panel:active{transform:scale(.985)}
   background:var(--fill);color:var(--ink-60);font:400 12px var(--font);text-overflow:ellipsis}
 
 @media (min-width:900px){
-  .wrap{max-width:1080px}
+  .wrap--sched{max-width:1080px}
   #days{columns:2;column-gap:16px}
   #days .card{break-inside:avoid}
 }

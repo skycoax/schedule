@@ -12,6 +12,17 @@ __pycache__/
 !.env.example
 .claude/
 
+# Android (TWA): ключ загрузки Play и пароли к нему не покидают компьютер владельца; сборки — не исходник
+android/keystore.properties
+*.keystore
+*.jks
+android/local.properties
+android/.gradle/
+android/build/
+android/app/build/
+*.aab
+*.apk
+
 # Превью и скриншоты (генерируются инструментами, не исходник)
 .preview-*/
 .preview-*.png

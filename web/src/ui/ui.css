@@ -1,0 +1,236 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   Общие элементы интерфейса (web/src/ui/*). Только классы .ui-*
+   (и правила html.has-tabbar .ui-* — исключение из CONTRACT.md §D).
+   Цвета — из токенов index.css; запасные значения на случай, если токена ещё нет.
+   ───────────────────────────────────────────────────────────────────────── */
+
+html.ui-lock, html.ui-lock body{overflow:hidden}
+
+.ui-icon{display:block;flex:none}
+/* Текст только для экранных чтецов. */
+.ui-vh{position:absolute !important;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;
+  clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;border:0}
+
+/* ─── Лист ─── */
+.ui-layer{position:fixed;top:0;left:0;right:0;bottom:var(--kb);z-index:60;display:flex;flex-direction:column}
+.ui-layer--bottom{justify-content:flex-end;align-items:center}
+.ui-scrim{position:absolute;inset:0;background:var(--scrim);animation:ui-fade 200ms var(--ease);
+  -webkit-tap-highlight-color:transparent}
+.ui-sheet{position:relative;display:flex;flex-direction:column;min-height:0;outline:none;
+  color:var(--ink-100);font:400 15px/1.45 var(--font)}
+.ui-sheet--bottom{width:100%;max-width:640px;background:var(--surface);
+  border-radius:var(--r-sheet) var(--r-sheet) 0 0;
+  box-shadow:inset 0 1px 0 var(--glass-edge), 0 -1px 0 rgba(0,0,0,.02);
+  padding-bottom:env(safe-area-inset-bottom);
+  animation:ui-up 320ms cubic-bezier(.2,.85,.3,1);will-change:transform}
+.ui-sheet--large{max-height:calc(92vh - var(--kb));max-height:calc(92dvh - var(--kb))}
+.ui-sheet--medium{max-height:calc(55vh - var(--kb));max-height:calc(55dvh - var(--kb))}
+.ui-sheet--full{flex:1;width:100%;background:var(--bg);padding-top:env(safe-area-inset-top);
+  animation:ui-rise 280ms cubic-bezier(.2,.85,.3,1)}
+.ui-sheet__grab{flex:none;width:36px;height:5px;border-radius:3px;background:var(--ink-30);margin:6px auto 0}
+.ui-sheet__bar{flex:none;display:grid;grid-template-columns:minmax(64px,1fr) auto minmax(64px,1fr);
+  align-items:center;gap:8px;min-height:52px;padding:4px 8px}
+.ui-sheet__side{display:flex;align-items:center;min-width:0}
+.ui-sheet__side--r{justify-content:flex-end}
+.ui-sheet__title{font-size:17px;font-weight:600;letter-spacing:-.01em;text-align:center;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.ui-sheet__done{min-height:44px;min-width:44px;padding:0 10px;border-radius:12px;
+  color:var(--accent);font:600 17px var(--font)}
+.ui-sheet__done:active{opacity:.55}
+.ui-sheet__done:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.ui-sheet__body{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;
+  padding:4px 16px 20px}
+.ui-sheet--nobar .ui-sheet__body{padding-top:14px}
+.ui-sheet--full .ui-sheet__body{padding-bottom:max(24px, calc(env(safe-area-inset-bottom) + 16px))}
+.ui-sheet--full .ui-sheet__bar{max-width:672px;width:100%;margin:0 auto}
+/* На широком экране содержимое полного листа — колонка до 640 px по центру. */
+.ui-sheet--full .ui-sheet__body{padding-left:max(16px, calc((100% - 640px) / 2));padding-right:max(16px, calc((100% - 640px) / 2))}
+
+/* Уход: лист доигрывает анимацию от того места, где его отпустили (у ключевых кадров нет from). */
+.ui-layer.is-leaving{pointer-events:none}
+.ui-layer.is-leaving .ui-scrim{animation:ui-fade-out 230ms ease forwards}
+.ui-layer.is-leaving .ui-sheet--bottom{animation:ui-down 230ms cubic-bezier(.4,0,1,1) forwards}
+.ui-layer.is-leaving .ui-sheet--full{animation:ui-sink 200ms cubic-bezier(.4,0,1,1) forwards}
+
+@keyframes ui-fade{from{opacity:0}to{opacity:1}}
+@keyframes ui-fade-out{to{opacity:0}}
+@keyframes ui-up{from{transform:translateY(100%)}to{transform:none}}
+@keyframes ui-down{to{transform:translateY(100%)}}
+@keyframes ui-rise{from{transform:translateY(24px);opacity:0}to{transform:none;opacity:1}}
+@keyframes ui-sink{to{transform:translateY(24px);opacity:0}}
+@keyframes ui-pop{from{transform:scale(1.08);opacity:0}to{transform:none;opacity:1}}
+
+/* ─── Меню действий и подтверждения ─── */
+.ui-as-layer{position:fixed;top:0;left:0;right:0;bottom:var(--kb);z-index:70;
+  display:flex;flex-direction:column;justify-content:flex-end;align-items:center}
+.ui-as-layer.is-leaving{pointer-events:none}
+.ui-as-layer.is-leaving .ui-scrim{animation:ui-fade-out 180ms ease forwards}
+.ui-as{position:relative;outline:none;width:100%;max-width:460px;display:flex;flex-direction:column;gap:8px;
+  padding:0 8px max(8px, env(safe-area-inset-bottom));font-family:var(--font)}
+.ui-as--sheet{animation:ui-up 280ms cubic-bezier(.2,.85,.3,1);
+  max-height:calc(100% - max(8px, env(safe-area-inset-top)))}
+/* Низкий экран (телефон лёжа, открыта клавиатура): действия прокручиваются, «Отмена» всегда видна. */
+.ui-as--sheet > .ui-as__group{flex:none}
+.ui-as--sheet > .ui-as__group:first-child:not(:last-child){flex:0 1 auto;min-height:0;overflow-y:auto;
+  overscroll-behavior:contain}
+.ui-as-layer.is-leaving .ui-as--sheet{animation:ui-down 180ms cubic-bezier(.4,0,1,1) forwards}
+.ui-as--alert{align-self:center;margin:0 auto auto;top:max(14vh, calc(env(safe-area-inset-top) + 24px));
+  max-width:320px;padding:0 16px;animation:ui-pop 200ms var(--ease)}
+.ui-as-layer.is-leaving .ui-as--alert{animation:ui-fade-out 150ms ease forwards}
+.ui-as__group{display:flex;flex-direction:column;border-radius:14px;overflow:hidden;
+  background:var(--menu-bg);-webkit-backdrop-filter:blur(30px) saturate(180%);backdrop-filter:blur(30px) saturate(180%)}
+.ui-as__group--alert{background:var(--surface)}
+.ui-as__head{padding:14px 16px 12px;text-align:center}
+.ui-as__title{font-size:13px;font-weight:600;color:var(--ink-60);overflow-wrap:anywhere}
+.ui-as__msg{font-size:13px;line-height:1.4;color:var(--ink-60);margin-top:4px;overflow-wrap:anywhere}
+.ui-as--alert .ui-as__title{font-size:17px;color:var(--ink-100)}
+.ui-as--alert .ui-as__msg{font-size:13.5px}
+.ui-as__btn{min-height:56px;padding:8px 16px;font:400 17px/1.3 var(--font);color:var(--accent);
+  text-align:center;border-top:.5px solid var(--sep);overflow-wrap:anywhere}
+.ui-as__btn:first-child{border-top:0}
+.ui-as__btn:active{background:var(--fill)}
+.ui-as__btn:focus-visible{outline:2px solid var(--accent);outline-offset:-3px;border-radius:14px}
+.ui-as__btn:disabled{color:var(--ink-30)}
+.ui-as__btn--destructive{color:var(--red-ink)}
+.ui-as__btn--cancel{font-weight:600}
+.ui-as__group:last-child .ui-as__btn--cancel{background:var(--surface)}
+.ui-as__input{display:block;margin:0 16px 14px;width:calc(100% - 32px);height:40px;padding:0 12px;border-radius:10px;border:0;
+  background:var(--fill);color:var(--ink-100);font:400 16px var(--font);outline:none}
+.ui-as__input::placeholder{color:var(--ink-30)}
+.ui-as__input:focus-visible{box-shadow:0 0 0 2px var(--accent)}
+.ui-as__row{display:grid;grid-template-columns:1fr 1fr;border-top:.5px solid var(--sep)}
+.ui-as__row .ui-as__btn{border-top:0;min-height:48px}
+.ui-as__row .ui-as__btn + .ui-as__btn{border-left:.5px solid var(--sep)}
+.ui-as__row .ui-as__btn--cancel{font-weight:400}
+.ui-as__btn--accent{font-weight:600}
+
+/* ─── Всплывающее сообщение ─── */
+.ui-toasts{position:fixed;left:0;right:0;bottom:calc(env(safe-area-inset-bottom) + 16px + var(--kb));z-index:100;
+  display:flex;justify-content:center;pointer-events:none;padding:0 16px}
+html.has-tabbar .ui-toasts{bottom:calc(var(--tabbar-space) + 12px + var(--kb))}
+.ui-toast{display:flex;align-items:center;gap:12px;max-width:min(100%, 440px);min-height:40px;padding:10px 16px;
+  border-radius:20px;background:var(--ink-100);color:var(--bg);font:500 14px/1.35 var(--font);
+  box-shadow:0 6px 20px rgba(0,0,0,.18);pointer-events:auto;animation:ui-rise 200ms var(--ease)}
+.ui-toast.is-leaving{animation:ui-toast-out 180ms ease forwards}
+@keyframes ui-toast-out{to{opacity:0;transform:translateY(8px)}}
+.ui-toast__text{min-width:0;overflow-wrap:anywhere}
+.ui-toast--error .ui-toast__text::before{content:'';display:inline-block;width:7px;height:7px;border-radius:50%;
+  background:var(--red);margin-right:8px;vertical-align:1px}
+.ui-toast__action{flex:none;min-height:32px;padding:0 4px;color:var(--bg);font:600 14px var(--font);
+  text-decoration:underline;text-underline-offset:3px}
+.ui-toast__action:focus-visible{outline:2px solid var(--bg);outline-offset:2px;border-radius:6px}
+
+/* ─── Сегменты ─── */
+.ui-seg{position:relative;display:flex;align-items:stretch;min-width:0;font-family:var(--font);isolation:isolate}
+.ui-seg__thumb{position:absolute;left:0;z-index:0;pointer-events:none;
+  transition:transform 260ms cubic-bezier(.2,.8,.2,1), width 260ms cubic-bezier(.2,.8,.2,1)}
+.ui-seg__btn{position:relative;z-index:1;flex:1 1 0;min-width:0;display:flex;align-items:center;justify-content:center;gap:6px;
+  color:var(--ink-100);transition:background-color var(--dur) var(--ease)}
+.ui-seg__btn:disabled{color:var(--ink-30)}
+.ui-seg__btn:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.ui-seg__label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ui-seg__badge{flex:none;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--red);color:#fff;
+  font:600 11px/18px var(--font);text-align:center}
+.ui-seg.has-thumb .ui-seg__btn.is-sel{background:transparent;box-shadow:none}
+
+.ui-seg--glass{height:44px;padding:3px;border-radius:22px;background:var(--bar-glass);
+  -webkit-backdrop-filter:blur(24px) saturate(180%);backdrop-filter:blur(24px) saturate(180%);
+  box-shadow:inset 0 0 0 1px var(--glass-edge), var(--glass-shadow)}
+.ui-seg--glass .ui-seg__btn{height:38px;border-radius:19px;font:500 15px var(--font);padding:0 10px}
+/* Сегмент 38 px, зона нажатия — вся капсула (44 px). */
+.ui-seg--glass .ui-seg__btn::after{content:'';position:absolute;left:0;right:0;top:-3px;bottom:-3px}
+.ui-seg--glass .ui-seg__btn.is-sel{background:var(--tab-pill);font-weight:600}
+.ui-seg--glass .ui-seg__thumb{top:3px;bottom:3px;border-radius:19px;background:var(--tab-pill)}
+
+.ui-seg--inset{min-height:32px;padding:2px;border-radius:9px;background:var(--seg-track, rgba(118,118,128,.12))}
+.ui-seg--inset .ui-seg__btn{flex:1 0 auto;min-height:28px;border-radius:7px;font:500 13.5px var(--font);padding:4px 10px}
+.ui-seg--inset .ui-seg__btn.is-sel{background:var(--seg-active, #fff);font-weight:600;
+  box-shadow:0 3px 8px rgba(0,0,0,.12), 0 0 0 .5px rgba(0,0,0,.04)}
+.ui-seg--inset .ui-seg__thumb{top:2px;bottom:2px;border-radius:7px;background:var(--seg-active, #fff);
+  box-shadow:0 3px 8px rgba(0,0,0,.12), 0 0 0 .5px rgba(0,0,0,.04)}
+/* Сегмент 28 px, зона нажатия — 44 px. */
+.ui-seg--inset .ui-seg__btn::after{content:'';position:absolute;left:0;right:0;top:-8px;bottom:-8px}
+
+@media (prefers-reduced-transparency: reduce){
+  .ui-seg--glass, .ui-as__group{background:var(--surface);-webkit-backdrop-filter:none;backdrop-filter:none}
+}
+
+/* ─── Список (как в Настройках) ─── */
+.ui-list{margin:0 0 24px}
+.ui-list__head{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-60);
+  padding:0 16px 8px}
+.ui-list__body{background:var(--surface);border-radius:16px;overflow:hidden;box-shadow:inset 0 0 0 1px var(--glass-edge)}
+.ui-list__foot{font-size:13px;line-height:1.45;color:var(--ink-60);padding:8px 16px 0}
+.ui-list__foot a{color:var(--accent)}
+.ui-row{position:relative;display:flex;align-items:center;gap:12px;width:100%;min-height:48px;padding:8px 16px;
+  text-align:left;color:var(--ink-100);font:400 16px/1.3 var(--font);text-decoration:none;
+  transition:background-color var(--dur) var(--ease)}
+.ui-row + .ui-row::before{content:'';position:absolute;top:0;right:0;left:16px;border-top:.5px solid var(--sep)}
+.ui-row.has-icon + .ui-row::before, .ui-row + .ui-row.has-icon::before{left:57px}
+button.ui-row:active:not(:disabled), a.ui-row:active{background:var(--fill)}
+button.ui-row:focus-visible, a.ui-row:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.ui-row.is-disabled{opacity:.45}
+.ui-row__icon{flex:none;width:29px;height:29px;border-radius:7px;display:grid;place-items:center;color:#fff}
+.ui-row__main{flex:1 1 auto;min-width:0;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.ui-row__label{min-width:min-content;overflow-wrap:break-word}
+.ui-row__value{flex:0 50 auto;min-width:48px;max-width:60%;color:var(--ink-60);text-align:right;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ui-row--accent .ui-row__label{color:var(--accent)}
+.ui-row--destructive .ui-row__label{color:var(--red-ink)}
+.ui-row__badge{flex:none;min-width:22px;height:22px;padding:0 7px;border-radius:11px;background:var(--red);color:#fff;
+  font:600 13px/22px var(--font);text-align:center}
+.ui-row__chev{color:var(--ink-30)}
+.ui-row__ext{flex:none;color:var(--ink-30);font-size:15px;line-height:1}
+/* Справа — переключатель или сегменты. Не помещаются рядом с подписью — уходят на строку ниже. */
+.ui-row.has-trail{flex-wrap:wrap;row-gap:10px}
+/* Переключатель узкий — остаётся справа, а подпись переносится по словам. */
+.ui-row.has-trail:has(> .ui-row__trail > .ui-switch){flex-wrap:nowrap}
+.ui-row__trail{flex:0 1 auto;min-width:0;max-width:100%;margin-left:auto;display:flex;align-items:center}
+
+/* ─── Кнопки ─── */
+.ui-btn{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  padding:0 18px;border-radius:12px;font:600 15px var(--font);white-space:nowrap;
+  transition:opacity var(--dur) var(--ease), background-color var(--dur) var(--ease)}
+.ui-btn:active:not(:disabled){opacity:.72}
+.ui-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.ui-btn:disabled{opacity:.4;cursor:default}
+.ui-btn.is-busy:disabled{opacity:1}
+.ui-btn--32{height:32px;padding:0 14px;border-radius:16px;font-size:14px}
+.ui-btn--32::after{content:'';position:absolute;left:0;right:0;top:-6px;bottom:-6px}
+.ui-btn--44{min-height:44px;border-radius:13px}
+.ui-btn--50{min-height:50px;border-radius:15px;font-size:16px}
+.ui-btn--full{display:flex;width:100%;white-space:normal;text-align:center;padding-top:6px;padding-bottom:6px}
+.ui-btn--filled{background:var(--accent);color:#fff}
+.ui-btn--tinted{background:var(--accent-press);color:var(--accent)}
+.ui-btn--plain{background:none;color:var(--accent);padding:0 10px}
+.ui-btn--destructive{background:var(--red-dim);color:var(--red-ink)}
+.ui-btn--destructive-filled{background:var(--red);color:#fff}
+.ui-btn.is-busy .ui-btn__label{visibility:hidden}
+.ui-btn__spin{position:absolute;inset:0;display:grid;place-items:center}
+.ui-btn .ui-spin{color:inherit}
+
+/* ─── Переключатель ─── */
+.ui-switch{position:relative;flex:none;display:inline-block;width:51px;height:31px}
+.ui-switch__input{position:absolute;inset:-7px -2px;width:calc(100% + 4px);height:calc(100% + 14px);margin:0;opacity:0;
+  cursor:pointer;z-index:1}
+.ui-switch__input:disabled{cursor:default}
+.ui-switch__track{position:absolute;inset:0;border-radius:16px;background:var(--fill);
+  transition:background-color 200ms var(--ease)}
+.ui-switch__thumb{position:absolute;top:2px;left:2px;width:27px;height:27px;border-radius:50%;background:#fff;
+  box-shadow:0 3px 8px rgba(0,0,0,.15), 0 1px 1px rgba(0,0,0,.16);transition:transform 200ms var(--ease)}
+.ui-switch__input:checked + .ui-switch__track{background:var(--green)}
+.ui-switch__input:checked + .ui-switch__track .ui-switch__thumb{transform:translateX(20px)}
+.ui-switch__input:focus-visible + .ui-switch__track{box-shadow:0 0 0 2px var(--accent)}
+.ui-switch.is-disabled{opacity:.45}
+
+/* ─── Загрузка ─── */
+.ui-spin{display:block;color:var(--ink-60);animation:ui-spin 1s steps(8) infinite}
+@keyframes ui-spin{to{transform:rotate(360deg)}}
+
+@media (prefers-reduced-motion: reduce){
+  .ui-scrim, .ui-sheet--bottom, .ui-sheet--full, .ui-as--sheet, .ui-as--alert, .ui-toast{animation:ui-fade 120ms linear}
+  .ui-layer.is-leaving .ui-scrim, .ui-layer.is-leaving .ui-sheet--bottom, .ui-layer.is-leaving .ui-sheet--full,
+  .ui-as-layer.is-leaving .ui-scrim, .ui-as-layer.is-leaving .ui-as--sheet, .ui-as-layer.is-leaving .ui-as--alert,
+  .ui-toast.is-leaving{animation:ui-fade-out 120ms linear forwards}
+  .ui-switch__thumb, .ui-switch__track, .ui-seg__thumb, .ui-seg__btn{transition:none}
+}

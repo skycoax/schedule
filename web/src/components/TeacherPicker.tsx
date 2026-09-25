@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { TeacherRow } from '../api';
 import { brand } from '../brand';
 import { plural } from '../lib/format';
+import { useLayer } from '../ui/layers';
 
 // Ищем без учёта регистра и пунктуации в имени: «иванов ии» найдёт «Иванов И.И.».
 const searchKey = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
@@ -14,6 +15,8 @@ export function TeacherPicker({ teachers, selected, open, first, onPick, onClose
 }) {
   const [q, setQ] = useState('');
   const listRef = useRef<HTMLDivElement>(null);
+  // «Назад» закрывает выбор преподавателя (как у Picker); первый выбор — не слой.
+  useLayer(open && !first, onClose, 'sheet');
   const queryKey = searchKey(q.trim());
 
   const shown = useMemo(

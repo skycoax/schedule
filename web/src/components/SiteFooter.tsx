@@ -1,4 +1,16 @@
 // Нижний колонтитул — общий для режимов студента и преподавателя.
+// «Политика конфиденциальности» — обычная ссылка на страницу /policy: её ищут Google (проверка
+// приложения для входа) и Play. На старых адресах вузов этой страницы нет — ведём на адрес Para.
+import type { CSSProperties } from 'react';
+import { brand } from '../brand';
+
+const policyHref = brand.hub ? '/policy' : 'https://para.skycoax.uz/policy';
+
+// Строка ссылок: у каждой область нажатия не меньше 44 px в высоту, текст остаётся мелким. Разделитель —
+// просто отступ: на узком экране ссылки встают друг под другом без висящей точки.
+const row: CSSProperties = { display: 'flex', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', columnGap: 18 };
+const tap: CSSProperties = { display: 'inline-flex', alignItems: 'center', minHeight: 44, padding: '0 2px', color: 'var(--ink-60)' };
+
 export function SiteFooter({ onOpenDoc }: { onOpenDoc: () => void }) {
   return (
     <footer className="made">
@@ -11,7 +23,11 @@ export function SiteFooter({ onOpenDoc }: { onOpenDoc: () => void }) {
         <a href="tel:+998905391575" aria-label="Телефон"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M6.6 3h3l1.5 4-2 1.4a12.2 12.2 0 0 0 5.5 5.5l1.4-2 4 1.5v3a2 2 0 0 1-2.2 2A16.6 16.6 0 0 1 3.6 5.2 2 2 0 0 1 5.6 3Z" /></svg></a>
       </div>
       <div className="made__fine">
-        Неофициальное приложение · <button onClick={onOpenDoc}>Условия и данные</button>
+        <div>Неофициальное приложение</div>
+        <div style={row}>
+          <button type="button" style={tap} onClick={onOpenDoc}>Условия и данные</button>
+          <a href={policyHref} target="_blank" rel="noopener" style={tap}>Политика конфиденциальности</a>
+        </div>
       </div>
     </footer>
   );

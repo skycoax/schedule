@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "uz.skycoax.para",
+      "sha256_cert_fingerprints": [
+        "E3:28:CD:8F:B9:C9:44:C1:92:7F:67:7C:EA:DD:14:52:F6:F0:F8:12:BE:AA:92:D7:37:66:43:DD:89:4D:5C:00"
+      ]
+    }
+  }
+]

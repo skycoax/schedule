@@ -1,0 +1,154 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   Оболочка Para: верхняя строка экранов (NavBar), большой заголовок, нижние
+   вкладки (TabBar), подсказка про «Обсуждения», заглушки ленивых разделов.
+   Токены (--nav-*, --tabbar-*, --glass-shadow, --accent…) — в index.css.
+   Стиль — системные приложения iOS: круглые стеклянные кнопки над контентом,
+   без свечений и градиентов на элементах управления.
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* ─── Верхняя строка: [слева] · [центр] · [справа], закреплена всегда ─── */
+/* Ширина и поля — как у .wrap: кнопки стоят ровно над краями контента. */
+.navrow{position:fixed;left:0;right:0;top:var(--nav-top);z-index:16;
+  display:flex;align-items:center;gap:8px;height:var(--nav-h);max-width:640px;margin:0 auto;
+  padding:0 max(16px, env(safe-area-inset-right)) 0 max(16px, env(safe-area-inset-left));
+  pointer-events:none}
+/* На широком экране расписание шире (две колонки дней, index.css) — строка вместе с ним. */
+@media (min-width:900px){
+  html:not([data-tab]) .navrow,html[data-tab="schedule"] .navrow{max-width:1080px}
+}
+/* Боковые колонки делят свободное место поровну — центр остаётся по центру экрана.
+   Боковые не сжимаются меньше своих кнопок, сжимается центр (сегменты, короткий заголовок). */
+.navrow > div{display:flex;align-items:center;pointer-events:none}
+.navrow > div:first-child{flex:1 1 0;justify-content:flex-start;gap:8px}
+.navrow > div:nth-child(2){flex:0 1 auto;min-width:0;justify-content:center}
+.navrow > div:last-child{flex:1 1 0;justify-content:flex-end;gap:8px}
+.navrow > div > *{pointer-events:auto}
+
+/* Место под сегменты «Сегодня | Неделя» (сам переключатель — ui/Segmented variant="glass"). */
+.navseg{width:260px;max-width:100%;min-width:0}
+.navseg > *{width:100%}
+
+/* Короткий заголовок в строке (экраны второго уровня). Если на экране есть большой
+   заголовок, короткий проявляется, когда большой уехал вверх. */
+.navtitle{min-width:0;max-width:100%;padding:0 4px;font-size:17px;font-weight:600;letter-spacing:-.01em;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;
+  opacity:0;transition:opacity 180ms var(--ease)}
+.navtitle.is-on{opacity:1}
+
+/* ─── Круглая стеклянная кнопка 44×44 ─── */
+.navbtn{position:relative;flex:none;width:44px;height:44px;border-radius:99px;
+  display:inline-grid;place-items:center;color:var(--ink-100);
+  background:var(--bar-glass);-webkit-backdrop-filter:blur(20px) saturate(180%);backdrop-filter:blur(20px) saturate(180%);
+  box-shadow:inset 0 0 0 1px var(--glass-edge), var(--glass-shadow);
+  transition:opacity var(--dur) var(--ease), transform var(--dur) var(--ease)}
+.navbtn:active:not(:disabled){opacity:.7;transform:scale(.96)}
+.navbtn:focus-visible{outline:2px solid var(--c1);outline-offset:2px}
+.navbtn:disabled{opacity:.4;cursor:default}
+.navbtn svg{width:20px;height:20px}
+.navbtn .hdr__logo{width:22px;height:26px}
+/* Точка «есть новое» — оранжевая, как бейдж правки в строке пары. */
+.navbtn__dot{position:absolute;top:7px;right:7px;width:9px;height:9px;border-radius:99px;
+  background:var(--c2);box-shadow:0 0 0 2px var(--bar-glass-solid);pointer-events:none}
+/* Текстовая кнопка: «Готово», «Опубликовать». */
+.navbtn--text{width:auto;min-width:44px;padding:0 16px;font-size:16px;font-weight:600;white-space:nowrap}
+.navbtn--filled{background:var(--accent);color:#fff;-webkit-backdrop-filter:none;backdrop-filter:none}
+/* Пустое место 44×44 — чтобы центр не съезжал, когда кнопки справа нет. */
+.navbtn__ph{flex:none;display:block;width:44px;height:44px}
+
+/* ─── Большой заголовок экрана: имя группы, «Обсуждения», «Профиль» ─── */
+.ltitle{position:relative;display:block;width:100%;padding:4px 0 14px;text-align:left}
+/* Переносы — только в очень длинных словах («Информационные» на узком экране), обычные
+   слова («системы») целиком уходят на следующую строку. */
+.ltitle__h{margin:0;font:700 clamp(24px, 7.2vw, 30px)/1.15 var(--font);letter-spacing:-.022em;color:var(--ink-100);
+  overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
+  hyphens:auto;-webkit-hyphenate-limit-before:5;-webkit-hyphenate-limit-after:5;hyphenate-limit-chars:13 5 5;
+  overflow-wrap:anywhere;text-wrap:pretty}
+/* Кнопка — сам текст заголовка, а нажимается весь блок (вместе с подзаголовком). */
+.ltitle__btn{font:inherit;color:inherit;letter-spacing:inherit;text-align:left;cursor:pointer}
+.ltitle__btn::after{content:'';position:absolute;inset:0;border-radius:12px}
+.ltitle__btn:focus-visible{outline:none}
+.ltitle__btn:focus-visible::after{outline:2px solid var(--c1);outline-offset:2px}
+.ltitle--btn:active .ltitle__h,.ltitle--btn:active .ltitle__sub{opacity:.6}
+/* Шеврон приклеен к последнему слову — никогда не уходит на строку один. */
+.ltitle__last{white-space:nowrap}
+.ltitle__chev{display:inline-block;width:18px;height:18px;margin-left:4px;vertical-align:-1px;color:var(--ink-30)}
+.ltitle-wait .ltitle__h{color:var(--ink-30)}
+.ltitle__sub{margin-top:3px;font-size:13.5px;line-height:1.3;color:var(--ink-60);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* ─── Нижние вкладки: стеклянная капсула над краем экрана ─── */
+.tabbar{position:fixed;left:0;right:0;bottom:calc(var(--tabbar-gap) + env(safe-area-inset-bottom));z-index:25;
+  width:min(calc(100% - 40px), calc(var(--n, 3) * 124px + 8px));height:var(--tabbar-h);margin:0 auto;padding:4px;
+  border-radius:999px;background:var(--bar-glass);
+  -webkit-backdrop-filter:blur(24px) saturate(180%);backdrop-filter:blur(24px) saturate(180%);
+  box-shadow:inset 0 0 0 1px var(--glass-edge), var(--glass-shadow);
+  transition:transform 180ms var(--ease), opacity 180ms var(--ease)}
+.tabbar.is-hidden{transform:translateY(calc(100% + 24px));opacity:0;pointer-events:none}
+.tabbar__list{position:relative;display:grid;grid-template-columns:repeat(var(--n, 3), minmax(0, 1fr));height:100%}
+/* Тёмная «таблетка» под активной вкладкой — одна, переезжает между вкладками. */
+.tabbar__pill{position:absolute;top:0;bottom:0;left:0;width:calc(100% / var(--n, 3));border-radius:27px;
+  background:var(--tab-pill);transform:translateX(calc(100% * var(--i, 0)));
+  transition:transform 260ms cubic-bezier(.2,.8,.2,1);pointer-events:none}
+.tabbar__item{position:relative;z-index:1;min-width:0;height:54px;border-radius:27px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+  color:var(--tab-ink);font:600 10.5px/1.2 var(--font);letter-spacing:.01em;
+  transition:color var(--dur) var(--ease)}
+.tabbar__item.is-on{color:var(--accent)}
+.tabbar__item:active{opacity:.7}
+.tabbar__item:focus-visible{outline:2px solid var(--c1);outline-offset:-2px}
+.tabbar__ico{position:relative;display:grid;place-items:center;width:28px;height:26px}
+.tabbar__lbl{max-width:100%;padding:0 2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Точка: оранжевая — непросмотренные правки, красная — заявки в друзья. */
+.tabbar__dot{position:absolute;top:-1px;right:-3px;width:8px;height:8px;border-radius:99px;
+  background:var(--red);box-shadow:0 0 0 2px var(--bar-glass-solid)}
+.tabbar__dot--schedule{background:var(--c2)}
+
+/* Контент мягко уходит под капсулу, а не обрывается о неё (как .topfade сверху). */
+.tabfade{position:fixed;left:0;right:0;bottom:0;z-index:24;pointer-events:none;
+  height:calc(var(--tabbar-space) + 28px);
+  background:linear-gradient(to top, color-mix(in srgb, var(--bg) 88%, transparent), transparent);
+  transition:opacity 180ms var(--ease)}
+.tabfade.is-hidden{opacity:0}
+
+/* ─── Подсказка «Новое: обсуждения твоего вуза» над вкладкой ─── */
+.coach{position:fixed;left:0;right:0;bottom:calc(var(--tabbar-space) + 12px);z-index:28;
+  width:max-content;max-width:min(260px, calc(100% - 40px));margin:0 auto;
+  display:flex;align-items:center;border-radius:16px;background:var(--bar-glass-solid);
+  box-shadow:inset 0 0 0 1px var(--glass-edge), var(--glass-shadow);
+  animation:coach-in 220ms cubic-bezier(.2,.8,.2,1)}
+/* Хвостик вниз — к вкладке «Обсуждения» (она по центру капсулы). */
+.coach::after{content:'';position:absolute;left:50%;bottom:-6px;width:12px;height:12px;margin-left:-6px;
+  background:var(--bar-glass-solid);transform:rotate(45deg);border-radius:0 0 3px 0;
+  box-shadow:1px 1px 0 0 var(--glass-edge)}
+.coach__main{position:relative;z-index:1;min-height:44px;padding:10px 4px 10px 16px;text-align:left;
+  font:500 14px/1.3 var(--font);color:var(--ink-100);text-wrap:balance}
+.coach__x{position:relative;z-index:1;flex:none;width:44px;height:44px;display:grid;place-items:center;color:var(--ink-60)}
+.coach__main:active,.coach__x:active{opacity:.6}
+.coach__main:focus-visible,.coach__x:focus-visible{outline:2px solid var(--c1);outline-offset:-2px;border-radius:14px}
+@keyframes coach-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+/* Приглашение оценить и всплывающие сообщения стоят на том же месте над вкладками —
+   пока они на экране, подсказку не видно. */
+html:has(.nudge) .coach,html:has(.ui-toast) .coach{visibility:hidden}
+
+/* ─── Раздел не загрузился (нет сети) ─── */
+.chunk-err{display:flex;flex-direction:column;align-items:center;gap:10px;margin-top:8px;padding:28px 20px 22px;
+  border-radius:var(--r-card);background:var(--surface);box-shadow:inset 0 0 0 1px var(--glass-edge);text-align:center}
+.chunk-err__ico{width:52px;height:52px;border-radius:99px;display:grid;place-items:center;
+  background:var(--fill);color:var(--ink-60)}
+.chunk-err__t{max-width:260px;font-size:15px;line-height:1.4;color:var(--ink-60);text-wrap:balance}
+.chunk-err__btn{min-width:120px;height:44px;padding:0 20px;border-radius:99px;background:var(--fill);
+  color:var(--accent);font-size:15px;font-weight:600}
+.chunk-err__btn:active{opacity:.7}
+.chunk-err__btn:focus-visible{outline:2px solid var(--c1);outline-offset:2px}
+
+/* ─── Оформление внизу расписания (ThemeSection; сам переключатель — ui/Segmented inset) ─── */
+.themesec{margin-top:28px}
+
+/* ─── «Правки»: лист с журналом ChangesView — фон как у страницы, карточки читаются группой ─── */
+.ui-sheet.sheet--changes{background:var(--bg)}
+
+/* Переходы при «уменьшении движения» выключает общее правило в index.css. */
+@media (prefers-reduced-motion: reduce){
+  .navbtn:active:not(:disabled){transform:none}
+  .coach{animation:none}
+}

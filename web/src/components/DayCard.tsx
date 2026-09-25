@@ -1,8 +1,44 @@
 // Карточка одного дня: полоса пар + строки. Перенос dayCard/strip/rowOf.
+import { useState } from 'react';
 import type { Group } from '../types';
 import type { ChangeItem } from '../types';
 import { parseCell, pairsOf, pairState, pairCount } from '../lib/parse';
 import { minutesOf, hhmm, dur, plural, FULL } from '../lib/format';
+
+// Код направления («09.03.02») в хвосте названия группы КФУ — в списке соседей лишний.
+const withName = (name: string) => name.replace(/\s*\d{2}\.\d{2}\.\d{2}\s*$/, '').trim();
+const WITH_SHOWN = 12;
+
+/** «Вместе с 2 группами» — совместная пара; по нажатию раскрывается список групп. */
+function Together({ names }: { names: string[] }) {
+  const [open, setOpen] = useState(false);
+  const n = names.length;
+  const shown = names.slice(0, WITH_SHOWN);
+  const people = (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="9" cy="8" r="3.2" /><path d="M3.5 19a5.5 5.5 0 0 1 11 0" />
+      <path d="M15.5 5.2a3.2 3.2 0 0 1 0 5.6" /><path d="M17 13.8a5.5 5.5 0 0 1 3.5 5.2" />
+    </svg>
+  );
+  // Одна соседняя группа с коротким названием — пишем его сразу, раскрывать нечего.
+  const one = n === 1 ? withName(names[0]) : '';
+  if (one && one.length <= 24) return <div className="with">{people}<span>Вместе с {one}</span></div>;
+  return (
+    <>
+      <button className={'with' + (open ? ' is-open' : '')} aria-expanded={open} onClick={() => setOpen(!open)}>
+        {people}
+        <span>Вместе с {n} {plural(n, 'группой', 'группами', 'группами')}</span>
+        <svg className="with__chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>
+      </button>
+      {open && (
+        <div className="with__list">
+          {shown.map((x) => <span key={x} className="with__g">{withName(x)}</span>)}
+          {n > shown.length && <span className="with__more">и ещё {n - shown.length}</span>}
+        </div>
+      )}
+    </>
+  );
+}
 
 interface Ctx {
   colorOf: (s: string) => string;
@@ -32,6 +68,7 @@ function Row({ g, day, i, txt, ch, ctx }: { g: Group; day: string; i: number; tx
   const st = pairState(g, i, day, ctx.nowDay, ctx.nowMin);
   const time = (g.times || [])[i] || '';
   const col = ctx.colorOf(info.subj);
+  const mates = (g.with || {})[day + '#' + (i + 1)];
   return (
     <div className={'row' + (st ? ' is-' + st : '')} style={{ ['--c' as string]: col }}>
       <div className="row__top">
@@ -49,6 +86,7 @@ function Row({ g, day, i, txt, ch, ctx }: { g: Group; day: string; i: number; tx
           {info.who && <span className="who">{info.who}</span>}
         </div>
       )}
+      {mates && mates.length > 0 && <Together names={mates} />}
     </div>
   );
 }

@@ -1,0 +1,28 @@
+/* Аватар (social/ui/Avatar.tsx). Только классы .av*: файл попадает в основной бандл. */
+.av{position:relative;flex:none;display:inline-grid;place-items:center;border-radius:50%;overflow:hidden;
+  background:var(--fill);color:var(--ink-60);font-family:var(--font);font-weight:600;line-height:1;
+  -webkit-user-select:none;user-select:none;vertical-align:middle}
+.av--none{background:var(--fill)}
+/* Монограмма: буква цвета палитры на мягкой подложке того же цвета. */
+.av--mono{color:var(--av-c, var(--c1));background:var(--av-c, var(--c1))}
+.av--mono::before{content:'';position:absolute;inset:0;border-radius:inherit;background:var(--surface);opacity:.8}
+.av__img{width:100%;height:100%;object-fit:cover;display:block;background:var(--media-bg)}
+.av__mono{position:relative;display:block;transform:translateY(.02em)}
+.av--24{width:24px;height:24px;font-size:10px}
+.av--26{width:26px;height:26px;font-size:11px}
+.av--32{width:32px;height:32px;font-size:13.5px}
+.av--40{width:40px;height:40px;font-size:17px}
+.av--44{width:44px;height:44px;font-size:18.5px}
+.av--56{width:56px;height:56px;font-size:23.5px}
+.av--88{width:88px;height:88px;font-size:37px}
+.av--96{width:96px;height:96px;font-size:40px}
+.av--ring{box-shadow:0 0 0 2px var(--accent)}
+button.av--btn{cursor:pointer}
+button.av--btn:active{opacity:.75}
+button.av--btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+/* Маленькие аватары-кнопки: зона нажатия не меньше 44×44. */
+button.av--24::after, button.av--26::after, button.av--32::after, button.av--40::after{
+  content:'';position:absolute;left:50%;top:50%;width:44px;height:44px;transform:translate(-50%,-50%)}
+button.av--24, button.av--26, button.av--32, button.av--40{overflow:visible}
+button.av--24 .av__img, button.av--26 .av__img, button.av--32 .av__img, button.av--40 .av__img,
+button.av--24.av--mono::before, button.av--26.av--mono::before, button.av--32.av--mono::before, button.av--40.av--mono::before{border-radius:50%}

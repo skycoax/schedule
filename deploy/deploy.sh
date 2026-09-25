@@ -5,17 +5,18 @@
 set -euo pipefail
 
 # При переезде: DEPLOY_HOST=ubuntu@185.217.131.245 bash deploy/deploy.sh
-HOST="${DEPLOY_HOST:-ubuntu@46.8.195.171}"
+HOST="${DEPLOY_HOST:-skycoax@46.8.195.171}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
 echo "== сборка сайта =="
+for f in "$ROOT"/server/src/*.js "$ROOT"/server/src/social/*.js; do node --check "$f"; done
 (cd "$ROOT/web" && npm run build)
 
 echo "== упаковка =="
 tar --force-local -czf "$TMP/web.tgz" -C "$ROOT/web/dist" .
-tar --force-local -czf "$TMP/server.tgz" -C "$ROOT/server" --exclude=node_modules --exclude=data --exclude=.env .
+tar --force-local -czf "$TMP/server.tgz" -C "$ROOT/server" --exclude=node_modules --exclude=data --exclude=.env --exclude=test .
 
 echo "== выкладка =="
 scp "$TMP/web.tgz" "$TMP/server.tgz" "$HOST:/tmp/"
@@ -35,6 +36,11 @@ ssh "$HOST" 'set -e
   sudo systemctl restart schedule-api
   sleep 3
   systemctl is-active schedule-api
-  curl -fsS -H "Host: kfu.skycoax.uz" http://127.0.0.1:8792/api/health'
+  curl -fsS -H "Host: kfu.skycoax.uz" http://127.0.0.1:8792/api/health >/dev/null
+  curl -fsS -o /dev/null -w "Para: %{http_code}
+" -H "Host: para.skycoax.uz" http://127.0.0.1:8792/
+  curl -fsS -H "Host: para.skycoax.uz" http://127.0.0.1:8792/api/auth/me | grep -o "\"google\":[a-z]*"
+  curl -fsS -o /dev/null -w "rules: %{http_code}
+" -H "Host: para.skycoax.uz" http://127.0.0.1:8792/rules'
 echo
 echo "Готово"

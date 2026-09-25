@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Group } from '../types';
 import { iconSvg, iconColor } from '../lib/parse';
 import { brand } from '../brand';
+import { useLayer } from '../ui/layers';
 
 interface Section { sheet: string; subs: { sub: string; items: Group[] }[] }
 
@@ -33,6 +34,9 @@ export function Picker({ groups, selected, open, first, onPick, onClose, onTeach
   const [q, setQ] = useState('');
   const [section, setSection] = useState('');
   const listRef = useRef<HTMLDivElement>(null);
+  // «Назад» закрывает выбор группы (открытый из шапки или из «Профиля»). Первый выбор — не слой:
+  // закрыть его нельзя, «Назад» там работает как обычно.
+  useLayer(open && !first, onClose, 'sheet');
 
   const sheets = useMemo(() => [...new Set(groups.map((g) => g.sheet))], [groups]);
   const selectedSheet = groups.find((g) => g.key === selected)?.sheet || '';

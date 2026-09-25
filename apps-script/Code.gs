@@ -392,7 +392,11 @@ function redirectPage_(url) {
     'line-height:50px;padding:0 28px;border-radius:15px;background:#007AFF;color:#fff;' +
     'font-size:16px;font-weight:600;text-decoration:none">Перейти на новый сайт</a>' +
     '</body></html>';
+  // <meta viewport> внутри html не работает: страница сидит в iframe Google, и масштаб
+  // задаёт внешняя страница. Без addMetaTag на телефоне всё мелкое, как на десктопе.
   return HtmlService.createHtmlOutput(html)
+    .setTitle('Расписание')
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 

@@ -1,0 +1,251 @@
+// База «Обсуждений»: один файл <DATA_DIR>/social.db на все вузы (аккаунты, друзья и блокировки
+// общие; публикации помечены вузом). Лежит рядом с базами вузов <id>.db; deploy.sh папку data/ не трогает.
+// Схема — CONTRACT.md §C.2 дословно. Новая версия схемы = новый элемент MIGRATIONS (user_version).
+import { DatabaseSync } from 'node:sqlite';
+import { mkdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { config } from '../config.js';
+
+export const SCHEMA_V1 = `
+-- Аккаунты. Один на человека для всех вузов. Почта — только для входа и ролей, наружу не отдаётся (кроме своей, замаскированной).
+CREATE TABLE IF NOT EXISTS users (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  google_sub      TEXT    NOT NULL UNIQUE,                 -- 'dev:<name>' у входа для разработки
+  email           TEXT    NOT NULL,
+  email_verified  INTEGER NOT NULL DEFAULT 0,
+  age_group       TEXT    NOT NULL DEFAULT 'adult' CHECK (age_group IN ('minor','adult')),
+  username        TEXT    UNIQUE COLLATE NOCASE,           -- NULL до SetupSheet; хранится в нижнем регистре
+  username_at     TEXT,
+  name            TEXT    NOT NULL DEFAULT '',
+  name_fold       TEXT    NOT NULL DEFAULT '',             -- toLocaleLowerCase('ru'), ё→е — для поиска
+  bio             TEXT    NOT NULL DEFAULT '',
+  tg              TEXT    NOT NULL DEFAULT '',
+  ig              TEXT    NOT NULL DEFAULT '',
+  links_vis       TEXT    NOT NULL DEFAULT 'friends' CHECK (links_vis IN ('friends','signed')),
+  searchable      INTEGER NOT NULL DEFAULT 1 CHECK (searchable IN (0,1)),          -- INSERT: 0 для minor
+  friend_req      TEXT    NOT NULL DEFAULT 'all' CHECK (friend_req IN ('all','none')), -- INSERT: 'none' для minor
+  avatar_id       TEXT    REFERENCES media(id) ON DELETE SET NULL,
+  uni             TEXT,                                    -- «мой вуз»
+  status          TEXT    NOT NULL DEFAULT 'active' CHECK (status IN ('active','banned')),
+  banned_until    TEXT,                                    -- NULL при status='banned' — бессрочно
+  ban_reason      TEXT    NOT NULL DEFAULT '',
+  rules_version   INTEGER NOT NULL DEFAULT 0,
+  policy_version  INTEGER NOT NULL DEFAULT 0,
+  rules_at        TEXT,
+  created_at      TEXT    NOT NULL,
+  CHECK (age_group = 'adult' OR links_vis = 'friends')
+);
+CREATE INDEX IF NOT EXISTS idx_users_uni       ON users (uni);
+CREATE INDEX IF NOT EXISTS idx_users_name_fold ON users (name_fold);
+CREATE INDEX IF NOT EXISTS idx_users_banned    ON users (banned_until) WHERE status = 'banned';
+CREATE INDEX IF NOT EXISTS idx_users_avatar    ON users (avatar_id)    WHERE avatar_id IS NOT NULL;  -- is_avatar при выдаче и SET NULL
+
+CREATE TABLE IF NOT EXISTS sessions (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  token_hash  TEXT    NOT NULL UNIQUE,                     -- sha256(token) hex; сам токен только в куке
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at  TEXT    NOT NULL,
+  seen_at     TEXT    NOT NULL,                            -- 'YYYY-MM-DD'
+  expires_at  TEXT    NOT NULL,
+  device      TEXT    NOT NULL DEFAULT ''                  -- «Android · Chrome 131», без сырого UA
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions (user_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_exp  ON sessions (expires_at);
+
+CREATE TABLE IF NOT EXISTS oauth_states (
+  state       TEXT PRIMARY KEY,                            -- 43 знака base64url
+  bind_hash   TEXT NOT NULL,                               -- sha256(значение куки para_oauth)
+  verifier    TEXT NOT NULL,                               -- PKCE code_verifier
+  nonce       TEXT NOT NULL,
+  return_to   TEXT NOT NULL DEFAULT '/',
+  uni         TEXT,
+  intent      TEXT NOT NULL DEFAULT 'signin' CHECK (intent IN ('signin','delete')),
+  age_group   TEXT CHECK (age_group IS NULL OR age_group IN ('minor','adult')),
+  accepted    INTEGER NOT NULL DEFAULT 0,
+  created_at  TEXT NOT NULL
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS idx_oauth_created ON oauth_states (created_at);
+
+-- Публикации и ответы в одной таблице. Ветка плоская: root_id — публикация, parent_id — на какой ответ отвечают.
+CREATE TABLE IF NOT EXISTS posts (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  uni           TEXT    NOT NULL,
+  author_id     INTEGER REFERENCES users(id) ON DELETE SET NULL,   -- страховка; удаление аккаунта сначала чистит посты кодом
+  root_id       INTEGER REFERENCES posts(id) ON DELETE CASCADE,
+  parent_id     INTEGER REFERENCES posts(id) ON DELETE SET NULL,
+  category      TEXT CHECK (category IS NULL OR category IN ('study','schedule','events','company','lost','other')),
+  text          TEXT    NOT NULL DEFAULT '',                        -- как написал автор; мат маскируется при выдаче
+  media_count   INTEGER NOT NULL DEFAULT 0,
+  like_count    INTEGER NOT NULL DEFAULT 0,
+  reply_count   INTEGER NOT NULL DEFAULT 0,                         -- живые ответы
+  report_count  INTEGER NOT NULL DEFAULT 0,                         -- учитываемые жалобщики (открытые)
+  hidden        INTEGER NOT NULL DEFAULT 0,
+  hidden_reason TEXT CHECK (hidden_reason IS NULL OR hidden_reason IN ('reports','admin')),
+  created_at    TEXT    NOT NULL,
+  last_reply_at TEXT,
+  deleted_at    TEXT,
+  deleted_by    TEXT CHECK (deleted_by IS NULL OR deleted_by IN ('self','admin','account')),
+  CHECK ((root_id IS NULL) = (category IS NOT NULL))
+);
+-- Условия в запросах должны повторять WHERE частичного индекса дословно.
+CREATE INDEX IF NOT EXISTS idx_posts_feed     ON posts (uni, id DESC)           WHERE root_id IS NULL AND deleted_at IS NULL AND hidden = 0;
+CREATE INDEX IF NOT EXISTS idx_posts_feed_cat ON posts (uni, category, id DESC) WHERE root_id IS NULL AND deleted_at IS NULL AND hidden = 0;
+CREATE INDEX IF NOT EXISTS idx_posts_thread   ON posts (root_id, id)            WHERE root_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_posts_parent   ON posts (parent_id)              WHERE parent_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_posts_author   ON posts (author_id, id DESC);
+CREATE INDEX IF NOT EXISTS idx_posts_hidden   ON posts (id)                     WHERE hidden = 1;
+
+CREATE TABLE IF NOT EXISTS likes (
+  post_id    INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TEXT    NOT NULL,
+  PRIMARY KEY (post_id, user_id)
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS idx_likes_user ON likes (user_id);
+
+CREATE TABLE IF NOT EXISTS media (
+  id          TEXT    PRIMARY KEY,                         -- 22 знака base64url (128 бит)
+  owner_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind        TEXT    NOT NULL CHECK (kind IN ('post','avatar')),
+  post_id     INTEGER REFERENCES posts(id) ON DELETE CASCADE,
+  position    INTEGER NOT NULL DEFAULT 0,
+  width       INTEGER NOT NULL,
+  height      INTEGER NOT NULL,
+  bytes       INTEGER NOT NULL,
+  thumb_bytes INTEGER NOT NULL DEFAULT 0,                  -- 0 — миниатюры нет (thumb = url)
+  sha256      TEXT    NOT NULL,
+  created_at  TEXT    NOT NULL,
+  attached_at TEXT
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS idx_media_post    ON media (post_id, position) WHERE post_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_media_owner   ON media (owner_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_media_orphans ON media (created_at)        WHERE post_id IS NULL;
+
+-- Жалобы. Одна от человека на цель (target_key = 'p:<id>' | 'u:<id>'). Снимок — текст на момент жалобы.
+CREATE TABLE IF NOT EXISTS reports (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  reporter_id  INTEGER REFERENCES users(id) ON DELETE SET NULL,     -- обезличивается при удалении аккаунта жалобщика
+  target_key   TEXT    NOT NULL,
+  post_id      INTEGER REFERENCES posts(id) ON DELETE SET NULL,
+  user_id      INTEGER REFERENCES users(id) ON DELETE SET NULL,     -- автор публикации или сам пользователь
+  uni          TEXT,
+  reason       TEXT    NOT NULL CHECK (reason IN ('spam','abuse','sexual','violence','privacy','scam','impersonation','child','other')),
+  note         TEXT    NOT NULL DEFAULT '',
+  snapshot     TEXT    NOT NULL DEFAULT '{}',                       -- JSON {kind, rootId, text, name, username, media:[id…], mediaCount, at}
+  counts       INTEGER NOT NULL DEFAULT 1,                          -- 1 — учитывается для автоскрытия
+  status       TEXT    NOT NULL DEFAULT 'open' CHECK (status IN ('open','dismissed','actioned')),
+  created_at   TEXT    NOT NULL,
+  resolved_at  TEXT,
+  resolved_by  INTEGER                                              -- без FK: переживает удаление модератора
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_reports_once   ON reports (reporter_id, target_key) WHERE reporter_id IS NOT NULL;
+CREATE INDEX        IF NOT EXISTS idx_reports_open   ON reports (status, target_key);
+CREATE INDEX        IF NOT EXISTS idx_reports_target ON reports (target_key);
+CREATE INDEX        IF NOT EXISTS idx_reports_user   ON reports (user_id);
+CREATE INDEX        IF NOT EXISTS idx_reports_post   ON reports (post_id) WHERE post_id IS NOT NULL;
+CREATE INDEX        IF NOT EXISTS idx_reports_child  ON reports (reporter_id) WHERE reason = 'child' AND status = 'dismissed';
+
+CREATE TABLE IF NOT EXISTS blocks (
+  blocker_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  blocked_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TEXT    NOT NULL,
+  PRIMARY KEY (blocker_id, blocked_id),
+  CHECK (blocker_id <> blocked_id)
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS idx_blocks_blocked ON blocks (blocked_id);
+
+-- Друзья: одна строка на пару (меньший id, больший id).
+CREATE TABLE IF NOT EXISTS friends (
+  user_lo      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  user_hi      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  requester_id INTEGER NOT NULL,
+  status       TEXT    NOT NULL CHECK (status IN ('pending','accepted')),
+  created_at   TEXT    NOT NULL,
+  updated_at   TEXT    NOT NULL,
+  PRIMARY KEY (user_lo, user_hi),
+  CHECK (user_lo < user_hi),
+  CHECK (requester_id IN (user_lo, user_hi))
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS idx_friends_hi ON friends (user_hi, status);
+
+-- Имена, которые нельзя занять 30 дней (после смены или удаления аккаунта).
+CREATE TABLE IF NOT EXISTS held_usernames (
+  username TEXT PRIMARY KEY COLLATE NOCASE,
+  user_id  INTEGER,                                        -- кто держит (NULL — аккаунт удалён); свой можно вернуть
+  until    TEXT NOT NULL
+) WITHOUT ROWID;
+
+-- Отпечаток заблокированного и удалённого аккаунта: бан не снимается удалением и повторным входом.
+CREATE TABLE IF NOT EXISTS ban_marks (
+  sub_hash   TEXT PRIMARY KEY,                             -- sha256(SOCIAL_SALT + '|' + google_sub)
+  until      TEXT,                                         -- NULL — бессрочно (всё равно стирается через 365 дней)
+  reason     TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL
+) WITHOUT ROWID;
+
+-- Журнал модерации и важных событий. Без текста публикаций, почты, IP и токенов.
+CREATE TABLE IF NOT EXISTS audit (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts        TEXT    NOT NULL,
+  actor_id  INTEGER,                                       -- без FK; NULL — система
+  action    TEXT    NOT NULL,
+  target    TEXT,                                          -- 'p:123' | 'u:45'
+  uni       TEXT,
+  info      TEXT    NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit (ts);
+`;
+
+const MIGRATIONS = [SCHEMA_V1];
+
+/** Открыть (и при необходимости создать) social.db и довести схему до последней версии. */
+export function openSocialDb(dir = config.dataDir) {
+  mkdirSync(dir, { recursive: true });
+  const db = new DatabaseSync(join(dir, 'social.db'));
+  db.exec('PRAGMA journal_mode = WAL');
+  db.exec('PRAGMA foreign_keys = ON');
+  db.exec('PRAGMA busy_timeout = 5000');
+  db.exec('PRAGMA synchronous = NORMAL');
+  migrate(db);
+  return db;
+}
+
+function migrate(db) {
+  let version = Number(db.prepare('PRAGMA user_version').get().user_version) || 0;
+  while (version < MIGRATIONS.length) {
+    const next = version + 1;
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      db.exec(MIGRATIONS[version]);
+      db.exec(`PRAGMA user_version = ${next}`);
+      db.exec('COMMIT');
+    } catch (err) {
+      try { db.exec('ROLLBACK'); } catch { /* уже откатилось */ }
+      throw err;
+    }
+    version = next;
+  }
+}
+
+/**
+ * Транзакция: BEGIN IMMEDIATE → fn(db) → COMMIT, при исключении ROLLBACK и исключение дальше.
+ * Внутри fn — никаких await: файлы пишем и удаляем до или после транзакции.
+ */
+export function tx(db, fn) {
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const out = fn(db);
+    db.exec('COMMIT');
+    return out;
+  } catch (err) {
+    try { db.exec('ROLLBACK'); } catch { /* уже откатилось */ }
+    throw err;
+  }
+}
+
+/** Время для базы: ISO-8601 UTC (сравнивается как текст). */
+export const nowIso = (ms = Date.now()) => new Date(ms).toISOString();
+/** День для sessions.seen_at: 'YYYY-MM-DD' (UTC). */
+export const today = (ms = Date.now()) => new Date(ms).toISOString().slice(0, 10);
+export const HOUR = 3600_000;
+export const DAY = 24 * HOUR;
