@@ -147,8 +147,25 @@ html:has(.nudge) .coach,html:has(.ui-toast) .coach{visibility:hidden}
 /* ─── «Правки»: лист с журналом ChangesView — фон как у страницы, карточки читаются группой ─── */
 .ui-sheet.sheet--changes{background:var(--bg)}
 
+/* ─── Плавность ─── */
+/* Смена вкладки: панель проявляется. Только прозрачность — transform сделал бы панель «рамкой»
+   для закреплённой строки навигации внутри неё, и строка прыгнула бы. overflow-x:clip — экран,
+   въезжающий справа (is-push), не растягивает страницу вбок. */
+[role="tabpanel"][id^="panel-"]{overflow-x:clip}
+[role="tabpanel"][id^="panel-"]:not([hidden]){animation:tab-in 200ms var(--ease)}
+@keyframes tab-in{from{opacity:0}to{opacity:1}}
+/* Экран стека (ui/screen-anim.ts): открытие — мягко справа, возврат «Назад» — проявление. */
+.is-push{animation:screen-push 320ms cubic-bezier(.2,.8,.2,1)}
+.is-back{animation:screen-back 220ms var(--ease)}
+@keyframes screen-push{from{opacity:0;transform:translateX(36px)}to{opacity:1;transform:none}}
+@keyframes screen-back{from{opacity:.35}to{opacity:1}}
+/* «Сегодня | Неделя», раскрытый список групп: содержимое появляется, а не подменяется. */
+.view-in{animation:view-in 240ms cubic-bezier(.2,.8,.2,1)}
+@keyframes view-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
 /* Переходы при «уменьшении движения» выключает общее правило в index.css. */
 @media (prefers-reduced-motion: reduce){
   .navbtn:active:not(:disabled){transform:none}
   .coach{animation:none}
+  [role="tabpanel"][id^="panel-"]:not([hidden]),.is-push,.is-back,.view-in{animation:none}
 }

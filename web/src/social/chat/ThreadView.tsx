@@ -8,6 +8,7 @@ import { plural } from '../../lib/plural';
 import { BackButton, NavBar, NavButton, NavPlaceholder } from '../../shell/NavBar';
 import { useHideTabBar } from '../../ui/bar';
 import { Icon } from '../../ui/icons';
+import { popOnce } from '../../ui/screen-anim';
 import { Spinner } from '../../ui/Spinner';
 import { useOnline } from '../../ui/online';
 import { isApiError, socialApi } from '../api';
@@ -113,7 +114,8 @@ function ThreadMain(p: {
       {post.media.length > 0 && <div className="thr__media"><PhotoGrid media={post.media} onOpen={setViewer} /></div>}
       <div className="thr__acts">
         <button type="button" className={'post__act post__act--like' + (post.liked ? ' is-on' : '')} disabled={ro}
-          aria-pressed={post.liked} aria-label="Нравится" onClick={like}>
+          aria-pressed={post.liked} aria-label="Нравится"
+          onClick={(e) => { if (!post.liked) popOnce(e.currentTarget); like(); }}>
           <Icon name={post.liked ? 'heartFill' : 'heart'} size={22} />
         </button>
         <button type="button" className="post__act" disabled={ro} aria-label="Ответить" onClick={p.onReply}>

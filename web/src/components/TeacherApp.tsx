@@ -300,7 +300,9 @@ export function TeacherApp({ active, command, onContext, theme, onSwitchRole }: 
         {sched?.savedAt && <OfflineNote at={sched.savedAt} />}
 
         <div id="sched-view" role="tabpanel" aria-label={view === 'today' ? 'Сегодня' : 'Неделя'}>
-          {!sched ? <><div className="skel" /><div className="skel" /></> : (view === 'today' ? today() : week())}
+          {!sched ? <><div className="skel" /><div className="skel" /></> : (
+            <div key={view} className="view-in">{view === 'today' ? today() : week()}</div>
+          )}
         </div>
 
         {sched && (

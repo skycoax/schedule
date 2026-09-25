@@ -6,6 +6,7 @@ import { createContext, useCallback, useLayoutEffect, useRef, useState, useSyncE
 import type { JSX } from 'react';
 import { brand } from '../../brand';
 import { Icon } from '../../ui/icons';
+import { popOnce } from '../../ui/screen-anim';
 import { toast } from '../../ui/Toast';
 import { isApiError, socialApi } from '../api';
 import { emit } from '../events';
@@ -231,7 +232,8 @@ export function PostCard(p: {
         <div className="post__acts">
           <button
             type="button" className={'post__act post__act--like' + (post.liked ? ' is-on' : '')} disabled={ro}
-            aria-pressed={post.liked} aria-label={`Нравится, ${post.likes}`} onClick={like}
+            aria-pressed={post.liked} aria-label={`Нравится, ${post.likes}`}
+            onClick={(e) => { if (!post.liked) popOnce(e.currentTarget); like(); }}
           >
             <Icon name={post.liked ? 'heartFill' : 'heart'} size={21} />
             {post.likes > 0 && <span>{fmtCount(post.likes)}</span>}

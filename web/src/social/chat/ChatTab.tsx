@@ -9,6 +9,8 @@ import { useUniversityMenu } from '../../shell/useUniversityMenu';
 import { RESELECT_EVENT } from '../../tabs';
 import type { ChatLink, ChatTabProps, TabId } from '../../tabs';
 import { Icon } from '../../ui/icons';
+import { StackScreen } from '../../ui/StackScreen';
+import { useScreenAnim } from '../../ui/screen-anim';
 import { banText } from '../format';
 import { currentReturnTo, useSession } from '../session';
 import { useStack } from '../stack';
@@ -36,6 +38,7 @@ export default function ChatTab(p: ChatTabProps): JSX.Element {
   const [composer, setComposer] = useState(false);
   const top = nav.top;
   const short = uniShort();
+  const rootAnim = useScreenAnim(!!top, false);
 
   const openThread = useCallback((id: number, focus?: boolean) => {
     push(focus ? { kind: 'thread', id, focus: true } : { kind: 'thread', id });
@@ -110,7 +113,7 @@ export default function ChatTab(p: ChatTabProps): JSX.Element {
             )}
         />
       )}
-      <div className="wrap wrap--chat chat-root" hidden={!!top}>
+      <div className={'wrap wrap--chat chat-root' + rootAnim.className} hidden={!!top} onAnimationEnd={rootAnim.onAnimationEnd}>
         <LargeTitle title="Обсуждения" subtitle={`Неофициальное сообщество · ${short}`} />
         {off ? (
           <EmptyState icon="bubbles" title="Обсуждения скоро откроются" text="Мы готовим место для общения внутри вуза. Загляни чуть позже." />
@@ -138,7 +141,7 @@ export default function ChatTab(p: ChatTabProps): JSX.Element {
       {nav.stack.map((s, i) => {
         const shown = active && i === nav.stack.length - 1;
         return (
-          <div key={i + (s.kind === 'thread' ? ':t' + s.id : ':u' + s.username)} className="chat-screen" hidden={i !== nav.stack.length - 1}>
+          <StackScreen key={i + (s.kind === 'thread' ? ':t' + s.id : ':u' + s.username)} className="chat-screen" hidden={i !== nav.stack.length - 1}>
             <ScreenVisible.Provider value={shown}>
               {s.kind === 'thread'
                 ? <ThreadView postId={s.id} focusComposer={s.focus} onBack={() => void pop()} onOpenUser={(u) => push({ kind: 'user', username: u })} />
@@ -149,7 +152,7 @@ export default function ChatTab(p: ChatTabProps): JSX.Element {
                   />
                 )}
             </ScreenVisible.Provider>
-          </div>
+          </StackScreen>
         );
       })}
 

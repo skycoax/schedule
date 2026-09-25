@@ -76,6 +76,14 @@ html .wrap.wrap--chat.thr{padding-bottom:calc(var(--rcmp-h, 64px) + 24px)}
 .post__act:disabled{opacity:.4}
 .post__act:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 .post__act--like.is-on, .post__act--like.is-on span{color:var(--like)}
+/* «Нравится»: сердце подпрыгивает (ui/screen-anim.ts popOnce), значки чуть сжимаются при нажатии. */
+.post__act svg{transition:transform 120ms var(--ease)}
+.post__act:active:not(:disabled) svg{transform:scale(.88)}
+.post__act.is-pop svg{animation:like-pop 380ms cubic-bezier(.2,.9,.3,1.4)}
+@keyframes like-pop{0%{transform:scale(.85)}45%{transform:scale(1.3)}100%{transform:scale(1)}}
+/* Посты и ответы появляются мягко — при загрузке, догрузке и показе ленты. */
+.post, .rrow, .thr__main{animation:row-in 240ms var(--ease)}
+@keyframes row-in{from{opacity:0}to{opacity:1}}
 
 /* Удалён / жалоба отправлена */
 .post--gone{display:block;padding:14px 16px}
@@ -261,5 +269,6 @@ button.rrow__to:active{opacity:.6}
 @media (prefers-reduced-motion: reduce){
   .post__skav, .post__skl i{animation:none}
   .newpill{animation:none}
+  .post, .rrow, .thr__main, .post__act.is-pop svg{animation:none}
   .rrow.is-hl{animation:none;background:var(--accent-press)}
 }

@@ -408,10 +408,12 @@ function StudentApp({ active, command, onContext, theme, setRole }: ScheduleSlot
         {sched.savedAt && <OfflineNote at={sched.savedAt} />}
 
         <div id="sched-view" role="tabpanel" aria-label={view === 'today' ? 'Сегодня' : 'Неделя'}>
-          {!groupLoaded ? <><div className="skel" /><div className="skel" /></> : <>
-            {view === 'today' && today()}
-            {view === 'week' && <WeekView group={group} ctx={ctx} week={sched.week} />}
-          </>}
+          {/* key: при смене «Сегодня | Неделя» содержимое появляется заново (.view-in), а не подменяется. */}
+          {!groupLoaded ? <><div className="skel" /><div className="skel" /></> : (
+            <div key={view} className="view-in">
+              {view === 'today' ? today() : <WeekView group={group} ctx={ctx} week={sched.week} />}
+            </div>
+          )}
         </div>
 
         {group.link && (

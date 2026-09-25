@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react';
 import type { JSX } from 'react';
 import { Icon } from '../../ui/icons';
+import { popOnce } from '../../ui/screen-anim';
 import { fmtCount, fullTime, relTime } from '../format';
 import { useSocialActions } from '../actions';
 import type { Post } from '../types';
@@ -87,7 +88,8 @@ export function ReplyRow(p: {
         <div className="rrow__acts">
           <button
             type="button" className={'post__act post__act--like' + (r.liked ? ' is-on' : '')} disabled={p.readonly}
-            aria-pressed={r.liked} aria-label={`Нравится, ${r.likes}`} onClick={like}
+            aria-pressed={r.liked} aria-label={`Нравится, ${r.likes}`}
+            onClick={(e) => { if (!r.liked) popOnce(e.currentTarget); like(); }}
           >
             <Icon name={r.liked ? 'heartFill' : 'heart'} size={20} />
             {r.likes > 0 && <span>{fmtCount(r.likes)}</span>}

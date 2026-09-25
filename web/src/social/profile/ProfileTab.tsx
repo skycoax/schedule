@@ -10,6 +10,8 @@ import { RESELECT_EVENT } from '../../tabs';
 import type { ProfileLink, ProfileTabProps } from '../../tabs';
 import { Button } from '../../ui/Button';
 import { Icon } from '../../ui/icons';
+import { StackScreen } from '../../ui/StackScreen';
+import { useScreenAnim } from '../../ui/screen-anim';
 import { Spinner } from '../../ui/Spinner';
 import { toast } from '../../ui/Toast';
 import { useSocialActions, userLink } from '../actions';
@@ -277,6 +279,7 @@ export default function ProfileTab(p: ProfileTabProps): JSX.Element {
   }
 
   const top = stack.stack.length - 1;
+  const rootAnim = useScreenAnim(top >= 0, false);
   // Профиль как в Threads — когда он заполнен и сервер ответил; иначе карточка и настройки прямо на корне.
   const threads = !!username && !stale;
   const canWrite = s.mode === 'on' && !me?.banned;
@@ -286,7 +289,7 @@ export default function ProfileTab(p: ProfileTabProps): JSX.Element {
 
   return (
     <>
-      <div className="wrap wrap--prof" hidden={top >= 0}>
+      <div className={'wrap wrap--prof' + rootAnim.className} hidden={top >= 0} onAnimationEnd={rootAnim.onAnimationEnd}>
         {active && top < 0 && (
           threads
             ? <NavBar title={me!.name} right={
@@ -333,12 +336,12 @@ export default function ProfileTab(p: ProfileTabProps): JSX.Element {
       </div>
 
       {stack.stack.map((sc, i) => (
-        <div key={i + ':' + JSON.stringify(sc)} className="prof-layer" hidden={i !== top}>
+        <StackScreen key={i + ':' + JSON.stringify(sc)} className="prof-layer" hidden={i !== top}>
           {/* Ветка прячет панель вкладок, только пока она сверху и вкладка открыта. */}
           <ScreenVisible.Provider value={active && i === top}>
             {renderScreen(sc, active && i === top)}
           </ScreenVisible.Provider>
-        </div>
+        </StackScreen>
       ))}
 
       {onboarded && <EditProfileSheet open={editOpen} onClose={() => setEditOpen(false)} />}
