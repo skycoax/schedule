@@ -205,8 +205,13 @@ button.rrow__to:active{opacity:.6}
   font-size:15px;font-weight:500;color:var(--ink-100)}
 
 /* ─── Новый пост (лист во весь экран) ─── */
-.cmp__col{display:flex;flex-direction:column;height:100%;min-height:0;
-  padding-bottom:max(0px, calc(var(--kb, 0px) - 24px))}
+/* Лист уже поднят над клавиатурой (.ui-layer: bottom = --kb), второй раз её не вычитаем — иначе полю
+   текста на iPhone не оставалось места. */
+.cmp__col{display:flex;flex-direction:column;height:100%;min-height:0}
+/* Пока клавиатура открыта, нижнее поле листа (место под полосой «Домой») не нужно: строка «Фото»
+   встаёт почти вплотную к клавиатуре. Без клавиатуры (--kb 0) поле обычное. */
+.ui-sheet--full.cmp .ui-sheet__body{
+  padding-bottom:max(8px, calc(max(24px, calc(env(safe-area-inset-bottom) + 16px)) - var(--kb, 0px)))}
 .cmp__bar{flex:none;display:flex;align-items:center;justify-content:space-between;gap:8px;height:52px;margin:0 0 0 -8px}
 .cmp__title{flex:1;min-width:0;font-size:17px;font-weight:600;letter-spacing:-.01em;text-align:center;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

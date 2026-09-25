@@ -10,8 +10,11 @@
 //
 // Антиспам: не чаще одного отзыва с этого браузера за 10 минут, не больше
 // 5 отзывов в час с одного IP (IP не хранится сырым - см. analytics.js).
+// Мат в имени и тексте скрывается при выдаче («х•••»), как в «Обсуждениях» (social/text.js):
+// в базе остаётся как написано.
 // Функции берут t — вуз: у каждого вуза свои отзывы в своей базе.
 import { ipParts } from './analytics.js';
+import { maskProfanity } from './social/text.js';
 
 var CTRL_RE = new RegExp(
   '[' +
@@ -59,7 +62,7 @@ export function addReview(t, { cid, name, rating, text, ip }) {
     INSERT INTO reviews (ts, cid, name, rating, text, ip_hash) VALUES (?,?,?,?,?,?)
   `).run(new Date().toISOString(), cidClean, nameClean, r, textClean, ipHash);
 
-  return { name: nameClean, rating: r, text: textClean };
+  return { name: maskProfanity(nameClean), rating: r, text: maskProfanity(textClean) };
 }
 
 export function listReviews(t, limit = 50) {
@@ -73,6 +76,6 @@ export function listReviews(t, limit = 50) {
     average: agg.n ? Math.round(agg.a * 10) / 10 : 0,
     count: agg.n,
     dist,
-    items: rows,
+    items: rows.map((x) => ({ ...x, name: maskProfanity(x.name), text: maskProfanity(x.text) })),
   };
 }
