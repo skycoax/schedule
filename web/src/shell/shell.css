@@ -154,6 +154,21 @@ html:has(.nudge) .coach,html:has(.ui-toast) .coach{visibility:hidden}
 [role="tabpanel"][id^="panel-"]{overflow-x:clip}
 [role="tabpanel"][id^="panel-"]:not([hidden]){animation:tab-in 200ms var(--ease)}
 @keyframes tab-in{from{opacity:0}to{opacity:1}}
+/* Смена вкладки через View Transitions (AppShell switchTo): старая страница уезжает, новая въезжает
+   со стороны нажатой вкладки; панель вкладок — отдельный слой и стоит на месте (её «пилюля» едет сама). */
+@supports (view-transition-name: none){
+  [role="tabpanel"][id^="panel-"]:not([hidden]){animation:none}
+  .tabbar{view-transition-name:tabbar}
+  html[data-vt="fwd"]{--vt-dx:56px}
+  html[data-vt="back"]{--vt-dx:-56px}
+  html[data-vt]::view-transition-old(root){animation:vt-out 300ms cubic-bezier(.3,.7,.2,1) both}
+  html[data-vt]::view-transition-new(root){animation:vt-in 300ms cubic-bezier(.3,.7,.2,1) both}
+  html[data-vt]::view-transition-old(tabbar){animation:none;opacity:0}
+  html[data-vt]::view-transition-new(tabbar){animation:none}
+  html[data-vt]::view-transition-group(tabbar){animation:none}
+}
+@keyframes vt-out{to{opacity:0;transform:translateX(calc(-1 * var(--vt-dx, 56px)))}}
+@keyframes vt-in{from{opacity:0;transform:translateX(var(--vt-dx, 56px))}}
 /* Экран стека (ui/screen-anim.ts): открытие — мягко справа, возврат «Назад» — проявление. */
 .is-push{animation:screen-push 320ms cubic-bezier(.2,.8,.2,1)}
 .is-back{animation:screen-back 220ms var(--ease)}

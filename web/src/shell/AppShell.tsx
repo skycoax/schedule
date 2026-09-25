@@ -8,6 +8,7 @@
 // «Обсуждений» или «Профиля» ведёт на «Расписание», а с «Расписания» — из приложения.
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ComponentType, JSX, LazyExoticComponent, ReactNode } from 'react';
+import { flushSync } from 'react-dom';
 import { brand, hasSocial } from '../brand';
 import { ls, store } from '../lib/store';
 import {
@@ -39,6 +40,11 @@ export interface AppShellProps {
 
 /** Аварийный выключатель вкладок на фронте: false — Para снова только расписание. */
 const SOCIAL_TABS = true;
+/** Порядок вкладок слева направо — в какую сторону уезжает страница при переходе. */
+const TAB_ORDER: readonly TabId[] = ['schedule', 'chat', 'profile'];
+const reducedMotion = (): boolean => {
+  try { return matchMedia('(prefers-reduced-motion: reduce)').matches; } catch { return false; }
+};
 /** Последняя вкладка восстанавливается, только если ей пользовались меньше 30 минут назад (D26). */
 const TAB_TTL = 30 * 60e3;
 const COACH_DELAY = 2000;
@@ -222,11 +228,26 @@ function HubShell({ theme, role, setRole, renderSchedule, dl }: AppShellProps & 
     if (cur === t) return;
     scrolls.current[cur] = window.scrollY;
     tabRef.current = t;
-    setTab(t);
-    setCoach(false);
     // Сам нашёл «Обсуждения» — подсказка больше не нужна.
     if (t === 'chat') ls('coach_chat', '1');
-    if (t !== 'schedule') setMounted((m) => (m[t] ? m : { ...m, [t]: true }));
+    const apply = () => {
+      setTab(t);
+      setCoach(false);
+      if (t !== 'schedule') setMounted((m) => (m[t] ? m : { ...m, [t]: true }));
+    };
+    // Переход между вкладками (View Transitions, shell.css): страница уезжает в сторону новой вкладки,
+    // панель вкладок стоит на месте. Браузер сравнивает два готовых кадра, поэтому закреплённая строка
+    // навигации не прыгает. Нет поддержки или «уменьшить движение» — просто проявление (tab-in).
+    const doc = document as Document & { startViewTransition?: (cb: () => void) => { finished: Promise<void> } };
+    if (!doc.startViewTransition || reducedMotion()) { apply(); return; }
+    const root = document.documentElement;
+    root.dataset.vt = TAB_ORDER.indexOf(t) > TAB_ORDER.indexOf(cur) ? 'fwd' : 'back';
+    try {
+      doc.startViewTransition(() => flushSync(apply)).finished.finally(() => { delete root.dataset.vt; });
+    } catch {
+      delete root.dataset.vt;
+      apply();
+    }
   }, []);
 
   const pushTabLayer = useCallback(() => {

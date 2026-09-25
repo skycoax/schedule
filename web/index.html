@@ -43,35 +43,19 @@
   <script id="brand" type="application/json">{{BRAND_JSON}}</script>
 </head>
 <body>
-  <!-- Экран запуска. Рисуется до загрузки сборки, поэтому вся разметка и стили — здесь.
-       Цвет и знак те же, что на заставке Android-приложения (android/app/.../splash.png),
-       поэтому переход из заставки в приложение не виден: кольцо просто начинает крутиться.
-       Убирает его lib/boot.ts, когда на экране появляется расписание. -->
+  <!-- Экран запуска. Рисуется до загрузки основной сборки: разметка и стили — здесь, а орбиту (тот же орб,
+       что при «потянуть, чтобы обновить») рисует маленький src/boot-orb.ts — он грузится раньше основного файла.
+       Убирает экран lib/boot.ts, когда на экране появляется расписание. -->
   <style>
     html{background:#000}
     #boot{position:fixed;inset:0;z-index:9999;background:#000;display:grid;place-items:center;
       transition:opacity .3s ease}
     #boot.is-done{opacity:0;pointer-events:none}
-    /* Ширина знака подогнана под заставку Android: она рисует иконку 300dp,
-       сам знак внутри неё — примерно 140dp. Тогда переход не «прыгает». */
-    #boot svg{width:min(40vw,140px);height:auto}
-    #boot .boot__ring{transform-box:view-box;transform-origin:500px 440px;
-      animation:boot-spin 1.6s linear infinite}
-    @keyframes boot-spin{to{transform:rotate(360deg)}}
-    @media (prefers-reduced-motion:reduce){#boot .boot__ring{animation:none}}
+    #boot canvas{display:block;width:112px;height:112px}
   </style>
-  <div id="boot" aria-hidden="true">
-    <svg viewBox="188 128 624 758" fill="none">
-      <rect x="188" y="440" width="119" height="446" rx="59.5" fill="#fff" />
-      <rect x="188" y="440" width="119" height="70" fill="#fff" />
-      <circle cx="500" cy="440" r="252.5" stroke="#fff" stroke-width="119" />
-      <g class="boot__ring">
-        <circle cx="500" cy="440" r="252.5" stroke="#0A84FF" stroke-width="119" stroke-linecap="round"
-          stroke-dasharray="489 1098" transform="rotate(-100 500 440)" />
-      </g>
-    </svg>
-  </div>
+  <div id="boot" aria-hidden="true"><canvas width="112" height="112"></canvas></div>
   <div id="root"></div>
+  <!--boot-orb-->
   <script type="module" src="/src/main.tsx"></script>
 </body>
 </html>
