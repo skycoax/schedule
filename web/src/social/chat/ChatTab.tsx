@@ -4,8 +4,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { JSX } from 'react';
 import { PullRefresh } from '../../components/PullRefresh';
-import { LargeTitle, NavBar, NavButton, NavPlaceholder, UniLogoButton } from '../../shell/NavBar';
-import { useUniversityMenu } from '../../shell/useUniversityMenu';
+import { LargeTitle, NavBar, NavButton } from '../../shell/NavBar';
 import { RESELECT_EVENT } from '../../tabs';
 import type { ChatLink, ChatTabProps, TabId } from '../../tabs';
 import { Icon } from '../../ui/icons';
@@ -20,7 +19,7 @@ import { UserProfileView } from '../profile/UserProfileView';
 import { Composer } from './Composer';
 import { Feed } from './Feed';
 import type { FeedHandle } from './Feed';
-import { ScreenVisible, reducedMotion, uniShort } from './PostCard';
+import { ScreenVisible, reducedMotion } from './PostCard';
 import { ThreadView } from './ThreadView';
 import { WhatsNew } from './WhatsNew';
 import './chat.css';
@@ -33,11 +32,9 @@ export default function ChatTab(p: ChatTabProps): JSX.Element {
   const { ensure, mode, status } = session;
   const nav = useStack<ChatScreen>();
   const { push, pop, popToRoot } = nav;
-  const umenu = useUniversityMenu();
   const feed = useRef<FeedHandle>(null);
   const [composer, setComposer] = useState(false);
   const top = nav.top;
-  const short = uniShort();
   const rootAnim = useScreenAnim(!!top, false);
 
   const openThread = useCallback((id: number, focus?: boolean) => {
@@ -100,21 +97,18 @@ export default function ChatTab(p: ChatTabProps): JSX.Element {
     <>
       {/* Строка навигации — вне .chat-root: «потянуть, чтобы обновить» сдвигает .chat-root, а строка
           fixed и должна оставаться на месте (внутри сдвинутого блока она поехала бы вместе с лентой). */}
-      {active && !top && (
-        <NavBar
-          left={<UniLogoButton onOpen={umenu.open} />}
-          title="Обсуждения"
-          right={off
-            ? <NavPlaceholder />
-            : (
-              <NavButton label="Новый пост" haspopup="dialog" disabled={mode !== 'on'} onClick={() => void compose()}>
-                <Icon name="compose" />
-              </NavButton>
-            )}
-        />
-      )}
+      {active && !top && <NavBar title="Обсуждения" />}
       <div className={'wrap wrap--chat chat-root' + rootAnim.className} hidden={!!top} onAnimationEnd={rootAnim.onAnimationEnd}>
-        <LargeTitle title="Обсуждения" subtitle={`Неофициальное сообщество · ${short}`} />
+        {/* Заголовок и «Новый пост» в одной строке; строка навигации сверху пустая — в ней только
+            короткий заголовок, когда лента прокручена. */}
+        <div className="chat-head">
+          <LargeTitle title="Обсуждения" />
+          {!off && (
+            <NavButton label="Новый пост" haspopup="dialog" disabled={mode !== 'on'} onClick={() => void compose()}>
+              <Icon name="compose" />
+            </NavButton>
+          )}
+        </div>
         {off ? (
           <EmptyState icon="bubbles" title="Обсуждения скоро откроются" text="Мы готовим место для общения внутри вуза. Загляни чуть позже." />
         ) : (
@@ -156,7 +150,6 @@ export default function ChatTab(p: ChatTabProps): JSX.Element {
         );
       })}
 
-      {umenu.element}
       {composer && <Composer onClose={() => setComposer(false)} onPublished={onPublished} />}
       <PullRefresh onRefresh={refresh} enabled={active && !top && !off} target=".chat-root" />
     </>

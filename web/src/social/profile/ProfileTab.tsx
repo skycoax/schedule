@@ -262,7 +262,7 @@ export default function ProfileTab(p: ProfileTabProps): JSX.Element {
   } else {
     head = (
       <ProfileHeader
-        user={me}
+        user={me} withNav
         onFriends={social ? () => stack.push({ kind: 'friends' }) : undefined}
         note={me.banned ? (
           <p className="prof-ban prof-ban--me">{banText(me.banned)} Читать можно. Если это ошибка — напиши @skycoax.</p>
@@ -289,7 +289,8 @@ export default function ProfileTab(p: ProfileTabProps): JSX.Element {
 
   return (
     <>
-      <div className={'wrap wrap--prof' + rootAnim.className} hidden={top >= 0} onAnimationEnd={rootAnim.onAnimationEnd}>
+      <div className={'wrap wrap--prof' + (threads ? ' prof-root' : '') + rootAnim.className} hidden={top >= 0}
+        onAnimationEnd={rootAnim.onAnimationEnd}>
         {active && top < 0 && (
           threads
             ? <NavBar title={me!.name} right={

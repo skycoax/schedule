@@ -191,7 +191,6 @@ export function PostCard(p: {
   const nameId = `p-${post.id}-name`;
   const otherUni = post.uni !== brand.id && !!post.uniShort;
   const ro = session.mode !== 'on';
-  const openUser = () => { if (author) p.onOpenUser(author.username); };
   const menu = async () => {
     const r = await actions.postMenu(postRef.current);
     if (r === 'deleted' || r === 'blocked' || r === 'hidden') onChangeRef.current(null);
@@ -199,16 +198,18 @@ export function PostCard(p: {
   };
 
   // Как в Threads: аватар слева, в строке — имя и время справа; ниже текст, фото и значки с числами.
+  // Аватар и имя здесь не ссылки: нажатие в любом месте строки открывает ветку, а профиль — уже из ветки
+  // (иначе, целясь в пост, попадали в профиль автора).
   return (
     <article className={'post' + (post.hidden ? ' is-hidden' : '')} aria-labelledby={nameId}>
       <button type="button" className="post__open" aria-label="Открыть ветку" onClick={() => p.onOpen()} />
       <div className="post__av">
-        <Avatar user={author} size={36} onClick={author ? openUser : undefined} label={author ? author.name : undefined} />
+        <Avatar user={author} size={36} />
       </div>
       <div className="post__main">
         <div className="post__head">
           {author
-            ? <button type="button" className="post__name" id={nameId} onClick={openUser}>{author.name}</button>
+            ? <span className="post__name post__name--static" id={nameId}>{author.name}</span>
             : <span className="post__name post__name--gone" id={nameId}>Удалённый аккаунт</span>}
           {author?.team && <TeamBadge />}
           {otherUni && <UniBadge short={post.uniShort as string} />}

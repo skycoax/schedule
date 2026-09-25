@@ -7,6 +7,11 @@
 
 /* ─── Страница вкладки и экраны стека ─── */
 .wrap.wrap--chat{padding-top:var(--nav-space, calc(env(safe-area-inset-top) + 66px))}
+/* Лента: сверху кнопок нет — заголовок «Обсуждения» и «Новый пост» сразу под строкой состояния. */
+.wrap.wrap--chat.chat-root{padding-top:calc(env(safe-area-inset-top) + 20px)}
+.chat-head{display:flex;align-items:flex-start;gap:12px}
+.chat-head .ltitle{flex:1;min-width:0}
+.chat-head .navbtn{margin-top:-2px}
 @media (min-width:900px){ .wrap.wrap--chat{max-width:640px} }
 /* Ветка: внизу — строка ответа, а не панель вкладок. */
 html .wrap.wrap--chat.thr{padding-bottom:calc(var(--rcmp-h, 64px) + 24px)}
@@ -41,7 +46,7 @@ html .wrap.wrap--chat.thr{padding-bottom:calc(var(--rcmp-h, 64px) + 24px)}
 .post__open{position:absolute;inset:0;z-index:0;background:transparent;transition:background-color var(--dur) var(--ease)}
 .post__open:active{background:var(--fill)}
 .post__open:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
-.post__av{position:relative;z-index:1;width:36px;height:36px;margin-top:1px}
+.post__av{position:relative;z-index:1;width:36px;height:36px;margin-top:1px;pointer-events:none}
 .post__main{min-width:0}
 /* Строка автора: имя сжимается с многоточием; значки, время и «•••» — никогда. */
 .post__head{display:flex;align-items:center;gap:5px;min-width:0;height:20px}
@@ -51,7 +56,9 @@ html .wrap.wrap--chat.thr{padding-bottom:calc(var(--rcmp-h, 64px) + 24px)}
 .post__name:active{opacity:.6}
 .post__name:focus-visible{outline:2px solid var(--accent);outline-offset:-8px;border-radius:6px}
 .post__name--gone{padding:0;margin:0;font-weight:500;color:var(--ink-60)}
-.post__head .badge-team,.post__head .badge-uni{position:relative;z-index:1}
+/* В ленте имя — не ссылка: нажатие проходит к строке и открывает ветку. */
+.post__name--static{padding:0;margin:0;pointer-events:none}
+.post__head .badge-team,.post__head .badge-uni{pointer-events:none}
 .post__time{flex:none;margin-left:auto;padding-left:8px;font-size:14px;line-height:20px;color:var(--ink-30);white-space:nowrap}
 .post__more{position:relative;z-index:1;flex:none;display:grid;place-items:center;width:40px;height:40px;
   margin:-10px -12px -10px -4px;border-radius:20px;color:var(--ink-60)}

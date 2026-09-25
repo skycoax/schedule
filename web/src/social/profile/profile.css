@@ -54,15 +54,18 @@
 .prof-finish__p{margin:6px 0 16px;font-size:14.5px;line-height:1.45;color:var(--ink-60)}
 .prof-finish__p:last-child{margin-bottom:0}
 
-/* ── Шапка профиля — как в Threads: имя и @имя слева, фото справа, ниже «О себе», ссылки, счётчики и кнопки ── */
+/* ── Шапка профиля: фото слева, рядом имя и @имя; ниже «О себе», ссылки, счётчики и кнопки ── */
 .prof-hd{display:flex;flex-direction:column;align-items:stretch;text-align:left;padding:4px 0 16px}
-.prof-hd__top{display:flex;align-items:center;gap:16px}
+.prof-hd__top{display:flex;align-items:center;gap:14px}
+/* Свой профиль: строка с фото и именем — на одной линии с закреплённой кнопкой ≡ (справа, 44 px). */
+.prof-hd--nav{padding-top:0}
+.prof-hd--nav .prof-hd__top{min-height:56px;padding-right:52px}
 .prof-hd__who{flex:1;min-width:0}
 .prof-hd__name{display:flex;align-items:center;gap:6px;max-width:100%;
-  font:700 24px/1.2 var(--font);letter-spacing:-.02em}
+  font:700 22px/1.2 var(--font);letter-spacing:-.02em}
 .prof-hd__name-t{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .prof-hd__name .badge-team{width:20px;height:20px}
-.prof-hd__meta{max-width:100%;margin-top:4px;font-size:15px;color:var(--ink-100);
+.prof-hd__meta{max-width:100%;margin-top:2px;font-size:15px;color:var(--ink-100);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .prof-hd__uni{color:var(--ink-60)}
 .prof-hd__bio{margin-top:12px;width:100%}
@@ -93,7 +96,7 @@
 .prof-btn-in{display:inline-flex;align-items:center;gap:6px}
 .prof-hd__rel-note{font-size:14px;color:var(--ink-60);padding:8px 0}
 .prof-hd--skel{min-height:150px}
-.prof-hd__skav{flex:none;width:72px;height:72px;border-radius:50%;background:var(--fill);animation:skel 1.2s ease-in-out infinite}
+.prof-hd__skav{flex:none;width:56px;height:56px;border-radius:50%;background:var(--fill);animation:skel 1.2s ease-in-out infinite}
 .prof-ban{display:flex;flex-direction:column;align-items:flex-start;gap:10px;width:100%;margin-top:14px;
   padding:12px 14px;border-radius:14px;background:var(--red-dim)}
 .prof-ban__t{font-size:14px;line-height:1.4;color:var(--red-ink)}
@@ -355,3 +358,7 @@ button.mod-who__btn:active{opacity:.6}
   .prof-bar, .prof-skel-circle{animation:none}
   .frd-list{transition:none}
 }
+
+/* Свой профиль (вкладка): сверху нет отдельной строки кнопок — шапка сразу под строкой состояния,
+   напротив закреплённой кнопки ≡ (центр строки шапки 56 px = центр кнопки 44 px). */
+.wrap.wrap--prof.prof-root{padding-top:calc(var(--nav-top) - 6px)}
