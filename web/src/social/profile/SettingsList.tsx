@@ -46,6 +46,7 @@ export interface SettingsNav {
   blocked: () => void;
   hidden: () => void;
   moderation: () => void;
+  users: () => void;
   deleteAccount: () => void;
 }
 
@@ -180,6 +181,7 @@ export function SettingsList(p: {
         <ListSection header="Модерация">
           <ListRow label="Жалобы" icon={{ name: 'flag', color: 'var(--c2)' }} badge={me.modQueue} onClick={p.nav.moderation}
             ariaLabel={me.modQueue > 0 ? `Жалобы, открытых: ${me.modQueue}` : undefined} />
+          <ListRow label="Пользователи" icon={{ name: 'people', color: 'var(--c1)' }} onClick={p.nav.users} />
         </ListSection>
       )}
 

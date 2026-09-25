@@ -1,14 +1,14 @@
 // Модерация: журнал действий, жалобы и автоскрытие, очередь и действия модератора, статистика
 // (CONTRACT.md §B.5 #32–#36, §C.4). Модератор — подтверждённая почта из SOCIAL_ADMIN_EMAILS.
 import { social } from '../config.js';
-import { tx, nowIso, HOUR, DAY } from './db.js';
+import { tx, nowIso, today, HOUR, DAY } from './db.js';
 import {
   ok, invalid, notFound, forbidden, guard, isAdmin, banOf, bodyOf, TEXT, intField, cursorParam,
 } from './http.js';
 import { limit, keyOf, dailyCap, dayAgo } from './limits.js';
-import { cleanText, tooLong } from './text.js';
-import { mediaRefsByIds, mediaUrl, unlinkMedia } from './media.js';
-import { usersByIds, userCardOf } from './users.js';
+import { cleanText, tooLong, fold } from './text.js';
+import { mediaRefsByIds, mediaUrl, thumbUrl, unlinkMedia } from './media.js';
+import { usersByIds, userCardOf, uniShortOf, friendCount } from './users.js';
 import { postOut, deletePost, viewerOf } from './posts.js';
 
 /**
@@ -399,6 +399,63 @@ export function adminRoutes(inst, ctx) {
       bannedUsers: n("SELECT COUNT(*) n FROM users WHERE status = 'banned'"),
       mediaBytes: n('SELECT COALESCE(SUM(bytes + thumb_bytes), 0) n FROM media'),
     });
+  });
+
+  // ─── #37 пользователи: список со сводкой (только модераторам) ───
+  // Почты, Google ID, возрастной группы, списка друзей и того, кто на кого жаловался, здесь нет:
+  // их модераторы не видят (политика, «Модерация»). Имя — как написано (модератор видит без маскировки).
+  // ?q= — поиск по имени и @имени; страницы по 30, новые сверху.
+  const USERS_PAGE = 30;
+  const USER_COLS = `u.id, u.username, u.name, u.avatar_id, u.uni, u.email, u.email_verified, u.status,
+    u.banned_until, u.ban_reason, u.created_at, u.rules_version, m.thumb_bytes AS av_thumb,
+    (SELECT COUNT(*) FROM posts p WHERE p.author_id = u.id AND p.root_id IS NULL AND p.deleted_at IS NULL) AS n_posts,
+    (SELECT COUNT(*) FROM posts p WHERE p.author_id = u.id AND p.root_id IS NOT NULL AND p.deleted_at IS NULL) AS n_replies,
+    (SELECT COALESCE(SUM(p.like_count), 0) FROM posts p WHERE p.author_id = u.id AND p.deleted_at IS NULL) AS n_likes,
+    (SELECT COUNT(*) FROM reports r WHERE r.user_id = u.id AND r.status = 'open') AS rep_open,
+    (SELECT COUNT(*) FROM reports r WHERE r.user_id = u.id) AS rep_all`;
+  const usersAll = db.prepare(`SELECT ${USER_COLS} FROM users u LEFT JOIN media m ON m.id = u.avatar_id
+    WHERE u.id < ? ORDER BY u.id DESC LIMIT ?`);
+  const usersFound = db.prepare(`SELECT ${USER_COLS} FROM users u LEFT JOIN media m ON m.id = u.avatar_id
+    WHERE u.id < ? AND (u.name_fold LIKE ? ESCAPE '\\' OR u.username LIKE ? ESCAPE '\\') ORDER BY u.id DESC LIMIT ?`);
+  const likeEsc = (s) => s.replace(/[\\%_]/g, (c) => '\\' + c);
+  inst.get('/api/social/admin/users', async (req) => {
+    guard(req, 'SA');
+    const q0 = (req.query || {}).q;
+    const q = fold(cleanText(typeof q0 === 'string' ? q0 : '', { multiline: false })).replace(/^@/, '').slice(0, 40);
+    const cursor = cursorParam((req.query || {}).cursor);
+    limit('read', keyOf(req));
+    const rows = q
+      ? usersFound.all(cursor ?? 9e15, `%${likeEsc(q)}%`, `${likeEsc(q)}%`, USERS_PAGE + 1)
+      : usersAll.all(cursor ?? 9e15, USERS_PAGE + 1);
+    const page = rows.slice(0, USERS_PAGE);
+    const items = page.map((u) => ({
+      id: u.id,
+      username: u.username,
+      name: u.name,
+      avatar: u.avatar_id ? thumbUrl(u.avatar_id, u.av_thumb) : null,
+      uni: u.uni || null,
+      uniShort: uniShortOf(ctx, u.uni),
+      createdAt: u.created_at,
+      team: isAdmin(u),
+      rulesAccepted: Number(u.rules_version) === social.rulesVersion,
+      banned: banOf(u),
+      counts: { posts: u.n_posts, replies: u.n_replies, likes: u.n_likes, friends: friendCount(db, u.id) },
+      reports: { open: u.rep_open, total: u.rep_all },
+    }));
+    // Сводка — с первой страницей общего списка. «Заходили за неделю» — только число, без имён.
+    let stats = null;
+    if (!q && cursor === null) {
+      const n = (sql, ...args) => Number(db.prepare(sql).get(...args).n) || 0;
+      stats = {
+        total: n('SELECT COUNT(*) n FROM users'),
+        today: n('SELECT COUNT(*) n FROM users WHERE created_at >= ?', tashkentDayStart()),
+        week: n('SELECT COUNT(*) n FROM users WHERE created_at >= ?', nowIso(Date.now() - 7 * DAY)),
+        active: n('SELECT COUNT(DISTINCT user_id) n FROM sessions WHERE seen_at >= ?', today(Date.now() - 7 * DAY)),
+        noProfile: n('SELECT COUNT(*) n FROM users WHERE username IS NULL'),
+        banned: n("SELECT COUNT(*) n FROM users WHERE status = 'banned'"),
+      };
+    }
+    return ok({ items, next: rows.length > USERS_PAGE ? String(page[page.length - 1].id) : null, stats });
   });
 
   // ─── #36 журнал ───

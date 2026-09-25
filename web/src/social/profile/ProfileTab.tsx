@@ -45,6 +45,7 @@ type Screen =
   | { kind: 'blocked' }
   | { kind: 'hidden' }
   | { kind: 'moderation' }
+  | { kind: 'users' }
   | { kind: 'user'; username: string }
   | { kind: 'thread'; id: number };
 
@@ -53,6 +54,12 @@ let modMod: Promise<ModComp> | null = null;
 const loadModeration = () => {
   modMod ??= import('./ModerationView').then((m) => m.ModerationView, (e) => { modMod = null; throw e; });
   return modMod;
+};
+type UsersComp = typeof import('./AdminUsersView').AdminUsersView;
+let usersMod: Promise<UsersComp> | null = null;
+const loadUsers = () => {
+  usersMod ??= import('./AdminUsersView').then((m) => m.AdminUsersView, (e) => { usersMod = null; throw e; });
+  return usersMod;
 };
 
 export default function ProfileTab(p: ProfileTabProps): JSX.Element {
@@ -64,6 +71,7 @@ export default function ProfileTab(p: ProfileTabProps): JSX.Element {
   const [delOpen, setDelOpen] = useState(false);
   const [composer, setComposer] = useState(false);
   const [Mod, setMod] = useState<ModComp | null>(null);
+  const [Users, setUsers] = useState<UsersComp | null>(null);
   const [slow, setSlow] = useState(false);
 
   const loading = s.status === 'loading';
@@ -91,6 +99,16 @@ export default function ProfileTab(p: ProfileTabProps): JSX.Element {
       const M = await loadModeration();
       setMod(() => M);
       stack.push({ kind: 'moderation' });
+    } catch {
+      toast(navigator.onLine ? OPEN_FAIL : 'Нет интернета', { kind: 'error' });
+    }
+  }, [stack]);
+
+  const openUsers = useCallback(async () => {
+    try {
+      const U = await loadUsers();
+      setUsers(() => U);
+      stack.push({ kind: 'users' });
     } catch {
       toast(navigator.onLine ? OPEN_FAIL : 'Нет интернета', { kind: 'error' });
     }
@@ -199,6 +217,7 @@ export default function ProfileTab(p: ProfileTabProps): JSX.Element {
         blocked: () => stack.push({ kind: 'blocked' }),
         hidden: () => stack.push({ kind: 'hidden' }),
         moderation: () => void openModeration(),
+        users: () => void openUsers(),
         deleteAccount: () => setDelOpen(true),
       }}
     />
@@ -225,6 +244,10 @@ export default function ProfileTab(p: ProfileTabProps): JSX.Element {
       case 'moderation':
         return Mod
           ? <Mod active={on} onBack={back} onOpenUser={(u) => void openUser(u)} onOpenThread={(id) => stack.push({ kind: 'thread', id })} />
+          : <div className="wrap wrap--prof prof-screen prof-center"><Spinner size={24} /></div>;
+      case 'users':
+        return Users
+          ? <Users active={on} onBack={back} onOpenUser={(u) => void openUser(u)} />
           : <div className="wrap wrap--prof prof-screen prof-center"><Spinner size={24} /></div>;
       case 'user':
         return (
@@ -262,7 +285,8 @@ export default function ProfileTab(p: ProfileTabProps): JSX.Element {
   } else {
     head = (
       <ProfileHeader
-        user={me} withNav
+        user={me}
+        action={<NavButton label="Настройки" onClick={() => stack.push({ kind: 'settings' })}><Icon name="menu" /></NavButton>}
         onFriends={social ? () => stack.push({ kind: 'friends' }) : undefined}
         note={me.banned ? (
           <p className="prof-ban prof-ban--me">{banText(me.banned)} Читать можно. Если это ошибка — напиши @skycoax.</p>
@@ -293,9 +317,7 @@ export default function ProfileTab(p: ProfileTabProps): JSX.Element {
         onAnimationEnd={rootAnim.onAnimationEnd}>
         {active && top < 0 && (
           threads
-            ? <NavBar title={me!.name} right={
-                <NavButton label="Настройки" onClick={() => stack.push({ kind: 'settings' })}><Icon name="menu" /></NavButton>
-              } />
+            ? <NavBar title={me!.name} />
             : <NavBar />
         )}
         {!threads && <LargeTitle title="Профиль" />}
@@ -309,7 +331,7 @@ export default function ProfileTab(p: ProfileTabProps): JSX.Element {
 
         {threads && (
           <section className="prof-mine" aria-labelledby="prof-mine-t">
-            <div className="prof-tabs"><h2 className="prof-tab" id="prof-mine-t">Ветки</h2></div>
+            <div className="prof-tabs"><h2 className="prof-tab" id="prof-mine-t"><span>Ветки</span></h2></div>
             {canWrite && <WhatsNew me={me} guest={false} onCompose={() => void compose()} onSignIn={() => {}} />}
             {!posts || (posts.loading && !posts.items.length) ? (
               <div className="skel prof-skel-post" aria-busy="true" aria-label="Загрузка постов" />

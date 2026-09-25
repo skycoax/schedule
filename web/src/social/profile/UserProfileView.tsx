@@ -324,7 +324,7 @@ export function UserProfileView(p: UserProfileViewProps): JSX.Element {
     body = (
       <>
         <ProfileHeader user={user} note={banNote}>{buttons}</ProfileHeader>
-        <div className="prof-tabs"><h2 className="prof-tab">Ветки</h2></div>
+        <div className="prof-tabs"><h2 className="prof-tab"><span>Ветки</span></h2></div>
         {page.posts.length ? (
           <PostList
             posts={page.posts} next={page.next} loadMore={loadMore}

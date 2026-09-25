@@ -1,6 +1,6 @@
 // Шапка профиля — своего («Профиль») и чужого (UserProfileView): фото слева, рядом имя и @имя с «моим вузом»;
 // ниже «О себе», Telegram и Instagram строкой, счётчики. Кнопки под шапкой передаёт владелец экрана (children).
-// withNav — строка стоит на одной линии с закреплённой кнопкой ≡ справа (свой профиль): под неё оставлено место.
+// action — кнопка в конце строки с фото и именем (≡ «Настройки» в своём профиле); прокручивается вместе со страницей.
 import { useLayoutEffect, useRef, useState } from 'react';
 import type { JSX, ReactNode } from 'react';
 import { plural } from '../../lib/plural';
@@ -97,8 +97,8 @@ export function ProfileHeader(p: {
   bare?: boolean;
   /** Строка под счётчиками (например, ограничение — для модератора). */
   note?: ReactNode;
-  /** Справа в этой же строке — закреплённая кнопка (≡ в своём профиле). */
-  withNav?: boolean;
+  /** Кнопка в конце строки с фото и именем (≡ в своём профиле). */
+  action?: ReactNode;
   children?: ReactNode;
 }): JSX.Element {
   const u = p.user;
@@ -109,9 +109,9 @@ export function ProfileHeader(p: {
   const since = p.bare ? '' : sinceText(u.since);
 
   return (
-    <header className={'prof-hd' + (p.withNav ? ' prof-hd--nav' : '')} data-nav-hero="">
+    <header className="prof-hd" data-nav-hero="">
       <div className="prof-hd__top">
-        <Avatar user={u} size={56} onClick={full ? () => setViewer(true) : undefined}
+        <Avatar user={u} size={64} onClick={full ? () => setViewer(true) : undefined}
           label={full ? 'Фото профиля ' + u.name : undefined} />
         <div className="prof-hd__who">
           <h2 className="prof-hd__name">
@@ -126,6 +126,7 @@ export function ProfileHeader(p: {
             </p>
           )}
         </div>
+        {p.action}
       </div>
       {!p.bare && u.bio && <Bio text={u.bio} />}
       {!p.bare && u.links && <LinkChips links={u.links} />}
@@ -154,15 +155,14 @@ export function ProfileHeader(p: {
 export function ProfileHeaderSkeleton(p: {
   user?: { id: number; name: string; avatar: string | null; username?: string | null } | null;
   still?: boolean;
-  withNav?: boolean;
 }): JSX.Element {
   const u = p.user;
   const still = !!p.still && !!u;
   return (
-    <div className={'prof-hd' + (still ? '' : ' prof-hd--skel') + (p.withNav ? ' prof-hd--nav' : '')}
+    <div className={'prof-hd' + (still ? '' : ' prof-hd--skel')}
       aria-busy={still ? undefined : true} aria-label={still ? undefined : 'Загрузка профиля'}>
       <div className="prof-hd__top">
-        {u ? <Avatar user={{ id: u.id, name: u.name, avatar: u.avatar }} size={56} /> : <span className="prof-hd__skav" />}
+        {u ? <Avatar user={{ id: u.id, name: u.name, avatar: u.avatar }} size={64} /> : <span className="prof-hd__skav" />}
         <div className="prof-hd__who">
           {u && u.name
             ? <p className="prof-hd__name"><span className="prof-hd__name-t">{u.name}</span></p>

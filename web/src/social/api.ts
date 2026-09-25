@@ -4,7 +4,7 @@
 // web/src/api.ts (расписание) сюда не импортируем и не меняем.
 import { brand } from '../brand';
 import type {
-  AdminActionBody, AdminStats, AgeGroup, AuditItem, AuthIntent, AuthOutcome, AuthState, CategoryId, ErrorCode, FriendLists,
+  AdminActionBody, AdminStats, AdminUsersPage, AgeGroup, AuditItem, AuthIntent, AuthOutcome, AuthState, CategoryId, ErrorCode, FriendLists,
   LikeState, Me, MePatch, MediaRef, NewPost, NewReply, Page, Post, ProfilePage, Relation, ReportBody, ReportCase,
   ReportResult, Thread, UploadedMedia, UserCard, UsernameCheck,
 } from './types';
@@ -368,6 +368,10 @@ export const socialApi = {
     return call<AdminStats>('GET', '/api/social/admin/stats', { signal });
   },
 
+  /** Пользователи для модератора: q — поиск по имени и @имени; сводка приходит с первой страницей без поиска. */
+  adminUsers(q: string, cursor?: string | null, signal?: AbortSignal): Promise<AdminUsersPage> {
+    return call<AdminUsersPage>('GET', '/api/social/admin/users', { params: { q: q || null, cursor }, signal });
+  },
   adminAudit(cursor?: string | null, signal?: AbortSignal): Promise<Page<AuditItem>> {
     return call<Page<AuditItem>>('GET', '/api/social/admin/audit', { params: { cursor }, signal });
   },

@@ -57,9 +57,8 @@
 /* ── Шапка профиля: фото слева, рядом имя и @имя; ниже «О себе», ссылки, счётчики и кнопки ── */
 .prof-hd{display:flex;flex-direction:column;align-items:stretch;text-align:left;padding:4px 0 16px}
 .prof-hd__top{display:flex;align-items:center;gap:14px}
-/* Свой профиль: строка с фото и именем — на одной линии с закреплённой кнопкой ≡ (справа, 44 px). */
-.prof-hd--nav{padding-top:0}
-.prof-hd--nav .prof-hd__top{min-height:56px;padding-right:52px}
+/* Кнопка в конце строки (≡ «Настройки» в своём профиле) — обычная, прокручивается вместе со страницей. */
+.prof-hd__top > .navbtn{flex:none;align-self:center}
 .prof-hd__who{flex:1;min-width:0}
 .prof-hd__name{display:flex;align-items:center;gap:6px;max-width:100%;
   font:700 22px/1.2 var(--font);letter-spacing:-.02em}
@@ -76,10 +75,10 @@
 /* Ссылки — строкой текста, как в Threads (t.me/имя), без плашек. */
 .prof-hd__links{display:flex;flex-wrap:wrap;gap:4px 16px;margin-top:10px;max-width:100%}
 .prof-chip{position:relative;display:inline-flex;align-items:center;gap:5px;max-width:100%;min-height:24px;
-  color:var(--ink-100);font-size:15px;font-weight:600;text-decoration:none}
+  color:var(--accent);font-size:15px;font-weight:500;text-decoration:none}
 .prof-chip::after{content:"";position:absolute;left:-4px;right:-4px;top:-10px;bottom:-10px}
 .prof-chip:active{opacity:.6}
-.prof-chip svg{flex:none;color:var(--ink-60)}
+.prof-chip svg{flex:none;color:var(--accent)}
 .prof-chip__t{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .prof-hd__hidden{display:inline-flex;align-items:center;gap:6px;margin-top:10px;font-size:13.5px;color:var(--ink-60)}
 .prof-hd__counts{margin-top:12px;font-size:14.5px;color:var(--ink-60)}
@@ -91,7 +90,7 @@
 .prof-hd__acts > *{flex:1 1 0;min-width:0}
 .prof-hd__acts .ui-btn{min-height:36px;height:36px;padding:0 8px;border-radius:10px;font-size:14.5px;font-weight:600;white-space:nowrap}
 .prof-hd__acts .ui-btn::after{content:"";position:absolute;left:0;right:0;top:-4px;bottom:-4px}
-.prof-hd__acts .ui-btn--tinted{background:transparent;color:var(--ink-100);box-shadow:inset 0 0 0 1px var(--sep)}
+.prof-hd__acts .ui-btn--tinted{background:var(--fill);color:var(--ink-100)}
 .prof-hd__acts .ui-btn--filled{background:var(--ink-100);color:var(--bg)}
 .prof-btn-in{display:inline-flex;align-items:center;gap:6px}
 .prof-hd__rel-note{font-size:14px;color:var(--ink-60);padding:8px 0}
@@ -106,8 +105,9 @@
 
 /* ── Вкладка «Ветки» под шапкой и посты профиля ── */
 .prof-tabs{display:flex;margin:4px -16px 0;border-bottom:.5px solid var(--sep)}
-.prof-tab{flex:1;display:grid;place-items:center;height:44px;font-size:15px;font-weight:600;color:var(--ink-100);
-  box-shadow:inset 0 -1px 0 var(--ink-100)}
+/* Как вкладка в Threads, но спокойнее: короткая черта только под словом. */
+.prof-tab{flex:1;display:flex;justify-content:center;font-size:15px;font-weight:600;color:var(--ink-100)}
+.prof-tab > span{display:inline-block;padding:12px 4px 10px;box-shadow:inset 0 -2px 0 var(--ink-100)}
 .prof-mine{margin:0 0 8px}
 .prof-mine .whatsnew{padding-top:12px}
 .prof-posts{display:flex;flex-direction:column}
@@ -359,6 +359,31 @@ button.mod-who__btn:active{opacity:.6}
   .frd-list{transition:none}
 }
 
-/* Свой профиль (вкладка): сверху нет отдельной строки кнопок — шапка сразу под строкой состояния,
-   напротив закреплённой кнопки ≡ (центр строки шапки 56 px = центр кнопки 44 px). */
-.wrap.wrap--prof.prof-root{padding-top:calc(var(--nav-top) - 6px)}
+/* Свой профиль (вкладка): сверху нет отдельной строки кнопок — шапка (фото, имя и ≡) на той же высоте,
+   что заголовок «Обсуждений». */
+.wrap.wrap--prof.prof-root{padding-top:calc(env(safe-area-inset-top) + 20px)}
+
+/* ── Админка: пользователи (AdminUsersView, только модераторам) ── */
+.adm-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:0 0 16px}
+.adm-stats--skel{height:124px;border-radius:14px;background:var(--fill);animation:skel 1.2s ease-in-out infinite}
+.adm-stat{display:flex;flex-direction:column;gap:3px;min-width:0;padding:10px 12px;border-radius:14px;background:var(--surface);
+  box-shadow:inset 0 0 0 1px var(--glass-edge)}
+.adm-stat__v{font:700 22px/1.1 var(--font);font-variant-numeric:tabular-nums;color:var(--ink-100)}
+.adm-stat__l{font-size:12px;line-height:1.25;color:var(--ink-60)}
+.adm-note{margin:-6px 4px 12px;font-size:12.5px;line-height:1.4;color:var(--ink-30)}
+.adm-list{list-style:none;margin:0 -16px 16px;padding:0;border-top:.5px solid var(--sep)}
+.adm-row{border-bottom:.5px solid var(--sep)}
+.adm-row__btn{display:flex;align-items:flex-start;gap:12px;width:100%;padding:12px 16px;text-align:left;color:inherit;font:inherit;
+  transition:background-color var(--dur) var(--ease)}
+button.adm-row__btn:active{background:var(--fill)}
+.adm-row__main{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.adm-row__top{display:flex;align-items:center;gap:5px;min-width:0}
+.adm-row__name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:15px;font-weight:600;color:var(--ink-100)}
+.adm-row__date{flex:none;margin-left:auto;padding-left:8px;font-size:13px;color:var(--ink-30)}
+.adm-row__meta{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13.5px;color:var(--ink-60)}
+.adm-row__counts{font-size:13px;line-height:1.35;color:var(--ink-60)}
+.adm-row__tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.adm-tag{display:inline-block;padding:3px 8px;border-radius:8px;background:var(--fill);font-size:12px;line-height:1.3;color:var(--ink-60)}
+.adm-tag--warn{background:color-mix(in srgb, var(--c2) 18%, transparent);color:var(--c2)}
+.adm-tag--bad{background:var(--red-dim);color:var(--red-ink)}
+.adm-row__chev{flex:none;align-self:center;color:var(--ink-30)}

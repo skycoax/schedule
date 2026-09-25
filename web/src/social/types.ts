@@ -196,6 +196,15 @@ export interface AdminStats {
   users: number; usersToday: number; postsToday: number; repliesToday: number;
   openReports: number; hiddenPosts: number; bannedUsers: number; mediaBytes: number;
 }
+/** Пользователь в админке (GET /api/social/admin/users). Без почты, Google ID, возраста и списка друзей. */
+export interface AdminUser {
+  id: number; username: string | null; name: string; avatar: string | null; uni: string | null; uniShort: string | null;
+  createdAt: string; team: boolean; rulesAccepted: boolean; banned: Ban | null;
+  counts: { posts: number; replies: number; likes: number; friends: number };
+  reports: { open: number; total: number };
+}
+export interface AdminUsersStats { total: number; today: number; week: number; active: number; noProfile: number; banned: number }
+export interface AdminUsersPage { items: AdminUser[]; next: string | null; stats: AdminUsersStats | null }
 export interface AuditItem {
   id: number; ts: string; actor: { id: number; username: string | null } | null;
   action: string; target: string | null; uni: string | null; info: Record<string, unknown>;

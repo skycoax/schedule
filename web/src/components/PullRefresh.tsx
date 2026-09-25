@@ -12,8 +12,11 @@ type Orbs = typeof import('../lib/orbs');
 let orbs: Promise<Orbs> | null = null;
 const loadOrbs = () => (orbs ??= import('../lib/orbs').catch((e: unknown) => { orbs = null; throw e; }));
 
-export function PullRefresh({ onRefresh, enabled = true, target = '.wrap' }: {
+export function PullRefresh({ onRefresh, enabled = true, target = '.wrap', top }: {
   onRefresh: () => Promise<void>; enabled?: boolean; target?: string;
+  /** Где начинается содержимое страницы (CSS): орб встаёт посередине открывшегося над ним промежутка.
+   *  По умолчанию — под строкой навигации; «Обсуждения» без кнопок сверху начинаются выше. */
+  top?: string;
 }) {
   const ptrRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -120,7 +123,7 @@ export function PullRefresh({ onRefresh, enabled = true, target = '.wrap' }: {
   }, [enabled, target]);
 
   return (
-    <div className="ptr" ref={ptrRef} aria-hidden="true">
+    <div className="ptr" ref={ptrRef} aria-hidden="true" style={top ? { paddingTop: top } : undefined}>
       <span className="ptr__spin"><canvas ref={canvasRef} className="ptr__orb" width={64} height={64} /></span>
     </div>
   );

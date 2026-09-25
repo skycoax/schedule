@@ -151,7 +151,9 @@ export default function ChatTab(p: ChatTabProps): JSX.Element {
       })}
 
       {composer && <Composer onClose={() => setComposer(false)} onPublished={onPublished} />}
-      <PullRefresh onRefresh={refresh} enabled={active && !top && !off} target=".chat-root" />
+      {/* Заголовок «Обсуждения» начинается сразу под строкой состояния (chat.css, .chat-root) — там и орб. */}
+      <PullRefresh onRefresh={refresh} enabled={active && !top && !off} target=".chat-root"
+        top="calc(env(safe-area-inset-top) + 20px)" />
     </>
   );
 }

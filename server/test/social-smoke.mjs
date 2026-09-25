@@ -1153,6 +1153,24 @@ async function runMain() {
   assert.ok(stats.users > 0 && stats.mediaBytes > 0 && stats.bannedUsers >= 1);
   ok('журнал (все действия, без почты и текстов) и сводка модератора');
 
+  // Пользователи в админке: только модератору; без почты, Google ID и возраста; поиск по @имени.
+  expect(await call(guest, 'GET', '/api/social/admin/users'), 401, 'пользователи гостю', 'auth');
+  expect(await call(B.jar, 'GET', '/api/social/admin/users'), 403, 'пользователи не модератору', 'forbidden');
+  const users = expect(await call(boss.jar, 'GET', '/api/social/admin/users'), 200, 'пользователи');
+  assert.ok(users.items.length > 0 && users.stats && users.stats.total >= users.items.length);
+  for (const k of ['total', 'today', 'week', 'active', 'noProfile', 'banned']) assert.equal(typeof users.stats[k], 'number', 'сводка: ' + k);
+  const usersText = JSON.stringify(users);
+  assert.ok(!usersText.includes('@dev.local') && !usersText.includes('"email') && !usersText.includes('dev:')
+    && !/"age/.test(usersText), 'в админке нет почты, Google ID и возраста');
+  const u0 = users.items[0];
+  assert.deepEqual(Object.keys(u0.counts).sort(), ['friends', 'likes', 'posts', 'replies']);
+  assert.ok(users.items.every((x, i, a) => i === 0 || a[i - 1].id > x.id), 'новые сверху');
+  const aNow = await meOf(A.jar);
+  const foundU = expect(await call(boss.jar, 'GET', `/api/social/admin/users?q=${encodeURIComponent('@' + aNow.username)}`), 200, 'поиск');
+  assert.ok(foundU.items.some((x) => x.id === aNow.id) && foundU.stats === null, 'поиск по @имени, без сводки');
+  expect(await call(boss.jar, 'GET', '/api/social/admin/users?cursor=abc'), 400, 'кривой курсор', 'invalid');
+  ok('админка «Пользователи»: только модератору, без почты и возраста, поиск и страницы');
+
   const B2 = await login(`sm_${RUN}_b`);
   expect(await call(A.jar, 'POST', '/api/auth/logout', { json: {}, headers: W }), 200, 'выход');
   assert.equal(await meOf(A.jar), null);

@@ -19,7 +19,7 @@ function firstGrapheme(name: string): string {
 
 export function Avatar(p: {
   user: { id: number; name: string; avatar: string | null } | null;
-  size: 24 | 26 | 32 | 36 | 40 | 44 | 56 | 72 | 88 | 96;
+  size: 24 | 26 | 32 | 36 | 40 | 44 | 56 | 64 | 72 | 88 | 96;
   onClick?: () => void; label?: string; ring?: boolean;
 }): JSX.Element {
   const [failed, setFailed] = useState<string | null>(null);
