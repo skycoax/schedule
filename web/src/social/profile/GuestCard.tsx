@@ -12,7 +12,7 @@ export function GuestCard(): JSX.Element {
   const noGoogle = s.google === false && !s.dev;
   const caption = off ? 'Обсуждения временно недоступны' : !s.online ? OFFLINE_SIGNIN : noGoogle ? GOOGLE_OFF : undefined;
   return (
-    <section className="panel prof-guest" aria-labelledby="prof-guest-t">
+    <section className="prof-guest" aria-labelledby="prof-guest-t">
       <span className="prof-guest__ico" aria-hidden="true"><Icon name="person" size={56} /></span>
       <h2 className="prof-guest__t" id="prof-guest-t">Гостевой режим</h2>
       <p className="prof-guest__p">
@@ -29,7 +29,7 @@ export function GuestCard(): JSX.Element {
 /** Пока /api/auth/me не ответил и в кэше никого: круг и две полосы. */
 export function GuestCardSkeleton(): JSX.Element {
   return (
-    <div className="panel prof-guest prof-guest--skel" aria-busy="true" aria-label="Загрузка профиля">
+    <div className="prof-guest prof-guest--skel" aria-busy="true" aria-label="Загрузка профиля">
       <span className="prof-skel-circle" />
       <span className="prof-bar prof-bar--name" />
       <span className="prof-bar prof-bar--line" />

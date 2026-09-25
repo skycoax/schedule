@@ -1,5 +1,5 @@
-// Шапка профиля — своего («Профиль») и чужого (UserProfileView): фото, имя, @имя, «мой вуз», «О себе»,
-// Telegram и Instagram, счётчики. Кнопки под шапкой передаёт владелец экрана (children).
+// Шапка профиля — своего («Профиль») и чужого (UserProfileView), как в Threads: слева имя и @имя с «моим вузом»,
+// справа фото; ниже «О себе», Telegram и Instagram строкой, счётчики. Кнопки под шапкой передаёт владелец экрана (children).
 import { useLayoutEffect, useRef, useState } from 'react';
 import type { JSX, ReactNode } from 'react';
 import { plural } from '../../lib/plural';
@@ -73,14 +73,14 @@ export function LinkChips({ links }: { links: Links }): JSX.Element | null {
       {links.tg && (
         <a className="prof-chip" href={'https://t.me/' + encodeURIComponent(links.tg)} target="_blank"
           rel="noopener noreferrer nofollow" aria-label={'Telegram: ' + links.tg}>
-          <Icon name="telegram" size={17} />
-          <span className="prof-chip__t">{links.tg}</span>
+          <Icon name="telegram" size={16} />
+          <span className="prof-chip__t">t.me/{links.tg}</span>
         </a>
       )}
       {links.ig && (
         <a className="prof-chip" href={'https://instagram.com/' + encodeURIComponent(links.ig)} target="_blank"
           rel="noopener noreferrer nofollow" aria-label={'Instagram: ' + links.ig}>
-          <Icon name="instagram" size={17} />
+          <Icon name="instagram" size={16} />
           <span className="prof-chip__t">{links.ig}</span>
         </a>
       )}
@@ -102,18 +102,28 @@ export function ProfileHeader(p: {
   const [viewer, setViewer] = useState(false);
   const full = u.avatarFull || u.avatar;
   const media: MediaRef[] = full ? [{ id: 'avatar-' + u.id, url: full, thumb: u.avatar || full, w: 512, h: 512 }] : [];
-  const meta = [u.username ? '@' + u.username : '', p.bare ? '' : u.uniShort || ''].filter(Boolean).join(' · ');
+  const uni = p.bare ? '' : u.uniShort || '';
   const since = p.bare ? '' : sinceText(u.since);
 
   return (
     <header className="prof-hd" data-nav-hero="">
-      <Avatar user={u} size={88} onClick={full ? () => setViewer(true) : undefined}
-        label={full ? 'Фото профиля ' + u.name : undefined} />
-      <h2 className="prof-hd__name">
-        <span className="prof-hd__name-t">{u.name}</span>
-        {u.team && <TeamBadge />}
-      </h2>
-      {meta && <p className="prof-hd__meta">{meta}</p>}
+      <div className="prof-hd__top">
+        <div className="prof-hd__who">
+          <h2 className="prof-hd__name">
+            <span className="prof-hd__name-t">{u.name}</span>
+            {u.team && <TeamBadge />}
+          </h2>
+          {(u.username || uni) && (
+            <p className="prof-hd__meta">
+              {u.username && <span>@{u.username}</span>}
+              {u.username && uni && <span className="prof-hd__uni"> · </span>}
+              {uni && <span className="prof-hd__uni">{uni}</span>}
+            </p>
+          )}
+        </div>
+        <Avatar user={u} size={72} onClick={full ? () => setViewer(true) : undefined}
+          label={full ? 'Фото профиля ' + u.name : undefined} />
+      </div>
       {!p.bare && u.bio && <Bio text={u.bio} />}
       {!p.bare && u.links && <LinkChips links={u.links} />}
       {!p.bare && !u.links && u.linksHidden === 'friends' && (
@@ -126,9 +136,9 @@ export function ProfileHeader(p: {
             : <span>{friendsText(u.counts.friends)}</span>}
           <span aria-hidden="true"> · </span>
           <span>{postsText(u.counts.posts)}</span>
+          {since && <><span aria-hidden="true"> · </span><span>{since}</span></>}
         </p>
       )}
-      {since && <p className="prof-hd__since">{since}</p>}
       {p.note}
       {p.children && <div className="prof-hd__acts">{p.children}</div>}
       <PhotoViewer media={media} index={0} open={viewer && media.length > 0} onClose={() => setViewer(false)} />
@@ -147,11 +157,15 @@ export function ProfileHeaderSkeleton(p: {
   return (
     <div className={'prof-hd' + (still ? '' : ' prof-hd--skel')} aria-busy={still ? undefined : true}
       aria-label={still ? undefined : 'Загрузка профиля'}>
-      <Avatar user={u ? { id: u.id, name: u.name, avatar: u.avatar } : null} size={88} />
-      {u && u.name
-        ? <p className="prof-hd__name"><span className="prof-hd__name-t">{u.name}</span></p>
-        : <span className="prof-bar prof-bar--name" />}
-      {u && u.username ? <p className="prof-hd__meta">@{u.username}</p> : !still && <span className="prof-bar prof-bar--meta" />}
+      <div className="prof-hd__top">
+        <div className="prof-hd__who">
+          {u && u.name
+            ? <p className="prof-hd__name"><span className="prof-hd__name-t">{u.name}</span></p>
+            : <span className="prof-bar prof-bar--name" />}
+          {u && u.username ? <p className="prof-hd__meta">@{u.username}</p> : !still && <span className="prof-bar prof-bar--meta" />}
+        </div>
+        {u ? <Avatar user={{ id: u.id, name: u.name, avatar: u.avatar }} size={72} /> : <span className="prof-hd__skav" />}
+      </div>
       {!still && <span className="prof-bar prof-bar--line" />}
     </div>
   );

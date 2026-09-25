@@ -7,7 +7,7 @@ export type IconName =
   | 'calendar' | 'calendarFill' | 'bubbles' | 'bubblesFill' | 'person' | 'personFill' | 'history' | 'compose'
   | 'back' | 'chevronRight' | 'chevronDown' | 'ellipsis' | 'heart' | 'heartFill' | 'reply' | 'share' | 'photo'
   | 'send' | 'close' | 'search' | 'check' | 'globe' | 'lock' | 'flag' | 'hand' | 'trash' | 'people' | 'shield'
-  | 'plus' | 'link' | 'telegram' | 'instagram' | 'wifiOff' | 'warning';
+  | 'plus' | 'link' | 'telegram' | 'instagram' | 'wifiOff' | 'warning' | 'plane' | 'menu' | 'comment';
 
 interface Def { s?: string; f?: string; a?: string; e?: 1 }
 
@@ -30,6 +30,10 @@ const ICONS: Record<IconName, Def> = {
   share: { s: 'M12 14.5v-11M8 7.5l4-4 4 4M8.5 10.5H7A2.5 2.5 0 0 0 4.5 13v5A2.5 2.5 0 0 0 7 20.5h10a2.5 2.5 0 0 0 2.5-2.5v-5a2.5 2.5 0 0 0-2.5-2.5h-1.5' },
   photo: { s: 'M6.25 4.75h11.5a3 3 0 0 1 3 3v8.5a3 3 0 0 1 -3 3h-11.5a3 3 0 0 1 -3 -3v-8.5a3 3 0 0 1 3 -3ZM7 9.75a1.75 1.75 0 1 0 3.5 0a1.75 1.75 0 1 0 -3.5 0M3.5 17l5-4.5 3.5 3 3-2.5 5.5 4.5' },
   send: { s: 'M12 19.5v-15M5.5 11l6.5-6.5 6.5 6.5' },
+  // Бумажный самолётик «Поделиться», ≡ «Меню», облачко «Ответить» — как в Threads.
+  plane: { s: 'M20.5 3.5 3.5 10.2l6.9 3.3 3.3 6.9L20.5 3.5ZM10.4 13.5l4.4-4.4' },
+  menu: { s: 'M4 8h16M4 16h16' },
+  comment: { s: 'M20.2 15.4A8.6 8.6 0 1 0 17 19l3.7 1.2-1.2-3.6c.3-.4.5-.8.7-1.2Z' },
   close: { s: 'M6 6l12 12M18 6 6 18' },
   search: { s: 'M4 10.75a6.75 6.75 0 1 0 13.5 0a6.75 6.75 0 1 0 -13.5 0M15.75 15.75l4.5 4.5' },
   check: { s: 'M4.5 12.5l5 5 10-11' },

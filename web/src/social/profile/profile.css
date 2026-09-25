@@ -43,7 +43,7 @@
 .prof-skel-post{height:112px;border-radius:var(--r-post,20px)}
 
 /* ── Гость и «Заверши профиль» ── */
-.prof-guest{display:flex;flex-direction:column;align-items:center;text-align:center;padding:24px 20px 20px;margin-bottom:28px}
+.prof-guest{display:flex;flex-direction:column;align-items:center;text-align:center;padding:12px 8px 8px;margin-bottom:24px}
 .prof-guest__ico{color:var(--ink-30);line-height:0}
 .prof-guest__t{margin-top:10px;font-size:20px;font-weight:700;letter-spacing:-.02em}
 .prof-guest__p{margin:6px 0 18px;font-size:14.5px;line-height:1.45;color:var(--ink-60);max-width:340px}
@@ -54,51 +54,62 @@
 .prof-finish__p{margin:6px 0 16px;font-size:14.5px;line-height:1.45;color:var(--ink-60)}
 .prof-finish__p:last-child{margin-bottom:0}
 
-/* ── Шапка профиля ── */
-.prof-hd{display:flex;flex-direction:column;align-items:center;text-align:center;padding:4px 0 24px}
-.prof-hd__name{display:flex;align-items:center;justify-content:center;gap:8px;max-width:100%;margin-top:12px;
-  font:700 22px/1.2 var(--font);letter-spacing:-.02em}
+/* ── Шапка профиля — как в Threads: имя и @имя слева, фото справа, ниже «О себе», ссылки, счётчики и кнопки ── */
+.prof-hd{display:flex;flex-direction:column;align-items:stretch;text-align:left;padding:4px 0 16px}
+.prof-hd__top{display:flex;align-items:center;gap:16px}
+.prof-hd__who{flex:1;min-width:0}
+.prof-hd__name{display:flex;align-items:center;gap:6px;max-width:100%;
+  font:700 24px/1.2 var(--font);letter-spacing:-.02em}
 .prof-hd__name-t{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.prof-hd__meta{max-width:100%;margin-top:3px;font-size:15px;color:var(--ink-60);
+.prof-hd__name .badge-team{width:20px;height:20px}
+.prof-hd__meta{max-width:100%;margin-top:4px;font-size:15px;color:var(--ink-100);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.prof-hd__bio{margin-top:10px;max-width:440px;width:100%}
+.prof-hd__uni{color:var(--ink-60)}
+.prof-hd__bio{margin-top:12px;width:100%}
 .prof-hd__bio-t{font-size:15px;line-height:1.4;white-space:pre-wrap;overflow-wrap:anywhere}
 .prof-hd__bio-t.is-clamped{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
-.prof-hd__more{position:relative;min-height:32px;padding:0 8px;color:var(--accent,var(--c1));font-size:15px}
-.prof-hd__more::after{content:'';position:absolute;left:-4px;right:-4px;top:-6px;bottom:-6px}
-.prof-hd__links{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:12px;max-width:100%}
-.prof-chip{position:relative;display:inline-flex;align-items:center;gap:6px;max-width:100%;height:36px;padding:0 14px 0 11px;
-  border-radius:18px;background:var(--fill);color:var(--ink-100);font-size:14.5px;font-weight:500;text-decoration:none}
-.prof-chip::after{content:'';position:absolute;left:0;right:0;top:-4px;bottom:-4px}
-.prof-chip:active{opacity:.65}
-.prof-chip svg{flex:none;color:var(--accent,var(--c1))}
+.prof-hd__more{position:relative;min-height:32px;padding:0;color:var(--ink-60);font-size:15px}
+.prof-hd__more::after{content:"";position:absolute;left:-4px;right:-4px;top:-6px;bottom:-6px}
+/* Ссылки — строкой текста, как в Threads (t.me/имя), без плашек. */
+.prof-hd__links{display:flex;flex-wrap:wrap;gap:4px 16px;margin-top:10px;max-width:100%}
+.prof-chip{position:relative;display:inline-flex;align-items:center;gap:5px;max-width:100%;min-height:24px;
+  color:var(--ink-100);font-size:15px;font-weight:600;text-decoration:none}
+.prof-chip::after{content:"";position:absolute;left:-4px;right:-4px;top:-10px;bottom:-10px}
+.prof-chip:active{opacity:.6}
+.prof-chip svg{flex:none;color:var(--ink-60)}
 .prof-chip__t{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.prof-hd__hidden{display:inline-flex;align-items:center;gap:6px;margin-top:12px;font-size:13.5px;color:var(--ink-60)}
-.prof-hd__counts{margin-top:12px;font-size:13.5px;color:var(--ink-60)}
-.prof-hd__cnt{position:relative;color:var(--ink-100);font:inherit;font-weight:500}
-.prof-hd__cnt::after{content:'';position:absolute;left:-6px;right:-6px;top:-13px;bottom:-13px}
+.prof-hd__hidden{display:inline-flex;align-items:center;gap:6px;margin-top:10px;font-size:13.5px;color:var(--ink-60)}
+.prof-hd__counts{margin-top:12px;font-size:14.5px;color:var(--ink-60)}
+.prof-hd__cnt{position:relative;color:var(--ink-60);font:inherit}
+.prof-hd__cnt::after{content:"";position:absolute;left:-6px;right:-6px;top:-13px;bottom:-13px}
 .prof-hd__cnt:active{opacity:.6}
-.prof-hd__since{margin-top:4px;font-size:13px;color:var(--ink-60)}
-.prof-hd__acts{display:flex;gap:10px;width:100%;max-width:420px;margin-top:18px}
+/* Кнопки — две в ряд, с тонкой рамкой; главная (заявка в друзья) — сплошная, как «Подписаться» в Threads. */
+.prof-hd__acts{display:flex;gap:8px;width:100%;margin-top:16px}
 .prof-hd__acts > *{flex:1 1 0;min-width:0}
-.prof-hd__acts .ui-btn{padding:0 8px}
+.prof-hd__acts .ui-btn{min-height:36px;height:36px;padding:0 8px;border-radius:10px;font-size:14.5px;font-weight:600;white-space:nowrap}
+.prof-hd__acts .ui-btn::after{content:"";position:absolute;left:0;right:0;top:-4px;bottom:-4px}
+.prof-hd__acts .ui-btn--tinted{background:transparent;color:var(--ink-100);box-shadow:inset 0 0 0 1px var(--sep)}
+.prof-hd__acts .ui-btn--filled{background:var(--ink-100);color:var(--bg)}
 .prof-btn-in{display:inline-flex;align-items:center;gap:6px}
-.prof-hd__rel-note{font-size:14px;color:var(--ink-60);padding:12px 0}
-.prof-hd--skel{min-height:200px}
-@media (max-width:359px){ .prof-hd__acts{flex-direction:column} }
-.prof-ban{display:flex;flex-direction:column;align-items:center;gap:10px;width:100%;max-width:440px;margin-top:14px;
+.prof-hd__rel-note{font-size:14px;color:var(--ink-60);padding:8px 0}
+.prof-hd--skel{min-height:150px}
+.prof-hd__skav{flex:none;width:72px;height:72px;border-radius:50%;background:var(--fill);animation:skel 1.2s ease-in-out infinite}
+.prof-ban{display:flex;flex-direction:column;align-items:flex-start;gap:10px;width:100%;margin-top:14px;
   padding:12px 14px;border-radius:14px;background:var(--red-dim)}
 .prof-ban__t{font-size:14px;line-height:1.4;color:var(--red-ink)}
 .prof-ban--me{display:block;font-size:14px;line-height:1.4;color:var(--ink-100)}
-.prof-blocked{display:flex;flex-direction:column;align-items:center;gap:12px;width:100%}
+.prof-blocked{display:flex;flex-direction:column;align-items:stretch;gap:12px;width:100%}
 .prof-blocked__t{font-size:15px;color:var(--ink-60)}
 
-/* ── Мои посты и посты профиля ── */
-.prof-mine{margin:0 0 28px}
-/* «Все посты»: ссылка в строку заголовка, место нажатия — не меньше 44×44 (§0.8). */
-.prof-all{position:relative}
-.prof-all::after{content:'';position:absolute;left:-12px;right:-12px;top:50%;height:44px;margin-top:-22px}
-.prof-posts{display:flex;flex-direction:column;gap:12px}
+/* ── Вкладка «Ветки» под шапкой и посты профиля ── */
+.prof-tabs{display:flex;margin:4px -16px 0;border-bottom:.5px solid var(--sep)}
+.prof-tab{flex:1;display:grid;place-items:center;height:44px;font-size:15px;font-weight:600;color:var(--ink-100);
+  box-shadow:inset 0 -1px 0 var(--ink-100)}
+.prof-mine{margin:0 0 8px}
+.prof-mine .whatsnew{padding-top:12px}
+.prof-posts{display:flex;flex-direction:column}
+.prof-mine .prof-empty, .prof-user .prof-empty{padding:28px 4px 8px;text-align:center}
+.prof-mine .prof-skel-post{margin-top:12px}
 
 /* ── Настройки ── */
 .set{margin-top:4px}

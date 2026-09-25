@@ -1,5 +1,5 @@
-// Ответ в ветке (.rrow): аватар 32, имя, «в ответ @u» (нажатие — прокрутка к тому ответу),
-// текст целиком, одно фото, «Ответить» и «нравится». «•••» — меню ответа (без «Скопировать ссылку»).
+// Ответ в ветке (.rrow), как в Threads: аватар, имя и время, «в ответ @u» (нажатие — прокрутка к тому ответу),
+// текст целиком, одно фото, «нравится» и «Ответить». «•••» — меню ответа (без «Скопировать ссылку»).
 import { useRef, useState } from 'react';
 import type { JSX } from 'react';
 import { Icon } from '../../ui/icons';
@@ -11,7 +11,7 @@ import { TeamBadge } from '../ui/Badges';
 import { PhotoGrid } from '../ui/PhotoGrid';
 import { PhotoViewer } from '../ui/PhotoViewer';
 import { RichText } from '../ui/RichText';
-import { BubbleIcon, hiddenText, useLike, useMinute } from './PostCard';
+import { hiddenText, useLike, useMinute } from './PostCard';
 import './chat.css';
 
 export function ReplyRow(p: {
@@ -63,19 +63,15 @@ export function ReplyRow(p: {
   return (
     <article className={'rrow' + hl + (r.hidden ? ' is-hidden' : '')} data-rid={r.id} aria-labelledby={nameId}>
       <div className="rrow__av">
-        <Avatar user={author} size={32} onClick={author ? openUser : undefined} label={author ? author.name : undefined} />
+        <Avatar user={author} size={36} onClick={author ? openUser : undefined} label={author ? author.name : undefined} />
       </div>
       <div className="rrow__main">
-        <div className={'post__head' + (author?.team ? ' post__head--team' : '')}>
+        <div className="post__head">
           {author
             ? <button type="button" className="post__name" id={nameId} onClick={openUser}>{author.name}</button>
             : <span className="post__name post__name--gone" id={nameId}>Удалённый аккаунт</span>}
-          {author?.team && <span className="post__badge"><TeamBadge /></span>}
-          {author && <span className="post__meta"><span className="post__user">@{author.username}</span></span>}
-          <span className="post__time">
-            {author ? '\u00a0· ' : ''}
-            <time dateTime={r.createdAt} title={fullTime(r.createdAt)}>{relTime(r.createdAt)}</time>
-          </span>
+          {author?.team && <TeamBadge />}
+          <time className="post__time" dateTime={r.createdAt} title={fullTime(r.createdAt)}>{relTime(r.createdAt)}</time>
           <button type="button" className="post__more" aria-label="Действия с ответом" aria-haspopup="menu" onClick={() => void menu()}>
             <Icon name="ellipsis" size={20} />
           </button>
@@ -89,15 +85,15 @@ export function ReplyRow(p: {
         {r.text && <RichText className="rrow__text" text={r.text} onMention={p.onOpenUser} />}
         {r.media.length > 0 && <div className="rrow__media"><PhotoGrid media={r.media.slice(0, 1)} onOpen={setViewer} /></div>}
         <div className="rrow__acts">
-          <button type="button" className="post__act post__act--label" disabled={p.readonly} onClick={() => p.onReply(ref.current)}>
-            <BubbleIcon size={17} /><span>Ответить</span>
-          </button>
           <button
             type="button" className={'post__act post__act--like' + (r.liked ? ' is-on' : '')} disabled={p.readonly}
             aria-pressed={r.liked} aria-label={`Нравится, ${r.likes}`} onClick={like}
           >
-            <Icon name={r.liked ? 'heartFill' : 'heart'} size={17} />
+            <Icon name={r.liked ? 'heartFill' : 'heart'} size={20} />
             {r.likes > 0 && <span>{fmtCount(r.likes)}</span>}
+          </button>
+          <button type="button" className="post__act" disabled={p.readonly} aria-label="Ответить" onClick={() => p.onReply(ref.current)}>
+            <Icon name="comment" size={20} />
           </button>
         </div>
       </div>

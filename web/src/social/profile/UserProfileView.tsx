@@ -251,7 +251,7 @@ export function UserProfileView(p: UserProfileViewProps): JSX.Element {
         buttons = (
           <>
             <Button variant="tinted" size={44} full disabled={offline} onClick={() => void openEdit()}>Изменить профиль</Button>
-            <Button variant="tinted" size={44} full onClick={() => void actions.share(userLink(user.username), user.name)}>Поделиться</Button>
+            <Button variant="tinted" size={44} full onClick={() => void actions.share(userLink(user.username), user.name)}>Поделиться профилем</Button>
           </>
         );
         break;
@@ -284,6 +284,16 @@ export function UserProfileView(p: UserProfileViewProps): JSX.Element {
     }
   }
 
+  // Рядом с главной кнопкой (кроме своего профиля и блокировки) — «Поделиться», две в ряд, как в Threads.
+  if (buttons && user && user.relation !== 'self' && user.relation !== 'blocked' && user.relation !== 'incoming') {
+    buttons = (
+      <>
+        {buttons}
+        <Button variant="tinted" size={44} full onClick={() => void actions.share(userLink(user.username), user.name)}>Поделиться</Button>
+      </>
+    );
+  }
+
   const banNote = user && user.banned && s.me?.isAdmin ? (
     <div className="prof-ban">
       <p className="prof-ban__t">{banText(user.banned)}</p>
@@ -314,7 +324,7 @@ export function UserProfileView(p: UserProfileViewProps): JSX.Element {
     body = (
       <>
         <ProfileHeader user={user} note={banNote}>{buttons}</ProfileHeader>
-        <h2 className="sec__t prof-sec">Посты</h2>
+        <div className="prof-tabs"><h2 className="prof-tab">Ветки</h2></div>
         {page.posts.length ? (
           <PostList
             posts={page.posts} next={page.next} loadMore={loadMore}

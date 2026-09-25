@@ -1,4 +1,5 @@
-// Новый пост (лист во весь экран): текст, до 4 фото, обязательная тема, черновик на телефоне.
+// Новый пост (лист во весь экран): текст, до 4 фото, черновик на телефоне. Тем нет — как в Threads
+// (сервер по-прежнему ждёт тему: посты уходят с темой «Разное»).
 // Фото: подготовка по одному (lib/image: JPEG без метаданных), загрузка по два сразу, сразу после выбора —
 // к нажатию «Опубликовать» они уже на сервере. Здесь же usePhotoTiles — общий для строки ответа в ветке.
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
@@ -9,14 +10,12 @@ import { Icon } from '../../ui/icons';
 import { Sheet } from '../../ui/Sheet';
 import { Spinner } from '../../ui/Spinner';
 import { toast } from '../../ui/Toast';
-import { isApiError, socialApi } from '../api';
+import { socialApi } from '../api';
 import { emit } from '../events';
 import { countLinks, hasPhone, textLength, textTooLong } from '../format';
 import { useSession } from '../session';
-import { categoryOf } from '../types';
 import type { CategoryId, Post, UploadedMedia } from '../types';
 import { Avatar } from '../ui/Avatar';
-import { CategoryChips } from './CategoryChips';
 import { clearDraft, draftWriter, readDraft } from './drafts';
 import { errText, handledBySession, isAbortError, uniShort } from './PostCard';
 import './chat.css';
@@ -271,7 +270,6 @@ function Ring({ len, limit, over }: { len: number; limit: number; over: boolean 
 // ─── Лист ───
 
 export function Composer(p: {
-  initialCategory: CategoryId | null;
   onClose: () => void;
   onPublished: (post: Post) => void;
 }): JSX.Element {
@@ -281,11 +279,9 @@ export function Composer(p: {
   const LIM = { text: lim?.text ?? 1000, lines: lim?.lines ?? 30, links: lim?.links ?? 3, media: lim?.media ?? 4 };
   const [draft0] = useState(readDraft);
   const [text, setText] = useState(draft0?.text ?? '');
-  const [category, setCategory] = useState<CategoryId | null>(draft0?.category ?? p.initialCategory);
+  const category: CategoryId = 'other';
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
-  const [catError, setCatError] = useState(false);
-  const [shake, setShake] = useState(0);
   // Ошибка фото показывается, пока на экране есть плитка с этой ошибкой (убрали плитку — ушла и строка).
   const tiles = usePhotoTiles({ initial: draft0?.media, cleanupRemote: false });
   const writer = useMemo(draftWriter, []);
@@ -295,7 +291,6 @@ export function Composer(p: {
   const bodyRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
   const hintId = useId();
-  const catHintId = useId();
 
   // Черновик: через 500 мс после изменения; сразу — при уходе со страницы и при закрытии.
   const doneKey = tiles.done.map((m) => m.id).join(',');
@@ -351,13 +346,10 @@ export function Composer(p: {
   const tooLong = textTooLong(text, LIM.text);
   const tooManyLines = text.split('\n').length > LIM.lines;
   const tooManyLinks = countLinks(text) > LIM.links;
-  const company = category === 'company';
-  const cat = categoryOf(category);
   const count = tiles.tiles.length;
   const hasContent = text.trim().length > 0 || tiles.done.length > 0;
-  const photosInCompany = company && count > 0;
   const canPublish = hasContent && !tooLong && !tooManyLines && !tooManyLinks && !tiles.busy && !tiles.failed
-    && !photosInCompany && session.online && session.mode === 'on' && !sending;
+    && session.online && session.mode === 'on' && !sending;
   const dirty = text.trim().length > 0 || count > 0;
 
   const hint = tooLong ? `Слишком длинный текст — максимум ${LIM.text} символов`
@@ -397,11 +389,6 @@ export function Composer(p: {
 
   const publish = async () => {
     if (!canPublish) return;
-    if (!category) {
-      setCatError(true);
-      setShake((n) => n + 1);
-      return;
-    }
     const body = text.trim();
     if (hasPhone(body)) {
       const ok = await confirmDialog({
@@ -426,7 +413,6 @@ export function Composer(p: {
     } catch (e) {
       setSending(false);
       if (handledBySession(e)) return;
-      if (isApiError(e, 'invalid') && e.field === 'category') setCatError(true);
       setError(errText(e));
       bodyRef.current?.scrollTo({ top: 0 });
     }
@@ -472,7 +458,7 @@ export function Composer(p: {
             <Avatar user={me} size={40} />
             <textarea
               ref={taRef} className="cmp__text" value={text} rows={1} aria-label="Текст поста"
-              placeholder="Что происходит в вузе?" aria-describedby={hint ? hintId : undefined} aria-invalid={!!hint || undefined}
+              placeholder="Что нового?" aria-describedby={hint ? hintId : undefined} aria-invalid={!!hint || undefined}
               onChange={(e) => { setText(e.currentTarget.value); if (error) setError(''); }}
             />
           </div>
@@ -487,28 +473,13 @@ export function Composer(p: {
           )}
           {shown && <p className="cmp__warn">{shown}</p>}
 
-          <div className="cmp__sec">
-            <p className="cmp__label">Тема</p>
-            <div key={shake} className={'cmp__cats' + (shake ? ' is-shake' : '')}>
-              <CategoryChips
-                value={category} label="Тема поста" invalid={catError} describedBy={catHintId}
-                onChange={(v) => { setCategory(v || null); setCatError(false); }}
-              />
-            </div>
-            <div id={catHintId}>
-              {catError && <p className="cmp__warn cmp__warn--flat">Выбери тему поста</p>}
-              {cat && <p className="cmp__hint">{cat.hint}</p>}
-              {company && <p className="cmp__hint cmp__hint--em">В теме «Компания» — только текст</p>}
-            </div>
-          </div>
-
           <p className="cmp__aud"><Icon name="globe" size={16} />Увидят все в {uniShort()}</p>
         </div>
 
         <div className="cmp__tools">
           <button
             type="button" className="cmp__photo" aria-label={`Добавить фото, ${count} из ${LIM.media}`}
-            disabled={count >= LIM.media || company} onClick={() => fileRef.current?.click()}
+            disabled={count >= LIM.media} onClick={() => fileRef.current?.click()}
           >
             <Icon name="photo" size={22} />
             <span aria-hidden="true">Фото</span>

@@ -1,4 +1,4 @@
-// Карточка публикации (.post): лента «Обсуждений», «Мои посты» и посты в чужом профиле.
+// Публикация (.post) в стиле Threads: лента «Обсуждений», посты в своём и чужом профиле.
 // Нажатие на карточку открывает ветку через прозрачную кнопку .post__open под текстом; аватар, имя,
 // ссылки, упоминания, фото и действия — отдельные кнопки поверх неё (вложенных кнопок нет).
 // Здесь же общие для чата помощники: минутный тик, отметка «нравится», тексты ошибок.
@@ -12,7 +12,6 @@ import { emit } from '../events';
 import { fmtCount, fullTime, relTime } from '../format';
 import { postLink, useSocialActions } from '../actions';
 import { useSession } from '../session';
-import { categoryOf } from '../types';
 import type { Me, Post } from '../types';
 import { Avatar } from '../ui/Avatar';
 import { TeamBadge, UniBadge } from '../ui/Badges';
@@ -115,16 +114,6 @@ export function useLike(post: Post, onChange: (p: Post) => void, returnTo?: stri
   }, [ensure, returnTo]);
 }
 
-/** Одно облачко «ответы» (в наборе значков его нет: там два облачка — значок вкладки). */
-export function BubbleIcon({ size = 18 }: { size?: number }): JSX.Element {
-  return (
-    <svg className="ui-icon" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
-      <path d="M12 4c4.97 0 9 3.36 9 7.5S16.97 19 12 19c-1.1 0-2.15-.16-3.12-.46L4.5 20l1.2-3.6C4.02 15.06 3 13.36 3 11.5 3 7.36 7.03 4 12 4Z" />
-    </svg>
-  );
-}
-
 /** После смены своего имени или фото: функция, обновляющая автора в своих постах (null — нечего менять). */
 export function withMe(me: Me | null): ((p: Post) => Post) | null {
   if (!me || !me.username) return null;
@@ -199,7 +188,6 @@ export function PostCard(p: {
 
   const author = post.author;
   const nameId = `p-${post.id}-name`;
-  const cat = categoryOf(post.category);
   const otherUni = post.uni !== brand.id && !!post.uniShort;
   const ro = session.mode !== 'on';
   const openUser = () => { if (author) p.onOpenUser(author.username); };
@@ -209,23 +197,21 @@ export function PostCard(p: {
     else if (r === 'reported') onChangeRef.current({ ...postRef.current, reported: true });
   };
 
+  // Как в Threads: аватар слева, в строке — имя и время справа; ниже текст, фото и значки с числами.
   return (
     <article className={'post' + (post.hidden ? ' is-hidden' : '')} aria-labelledby={nameId}>
-      <button type="button" className="post__open" aria-label="Открыть обсуждение" onClick={() => p.onOpen()} />
+      <button type="button" className="post__open" aria-label="Открыть ветку" onClick={() => p.onOpen()} />
       <div className="post__av">
-        <Avatar user={author} size={40} onClick={author ? openUser : undefined} label={author ? author.name : undefined} />
+        <Avatar user={author} size={36} onClick={author ? openUser : undefined} label={author ? author.name : undefined} />
       </div>
       <div className="post__main">
-        <div className={'post__head' + (author?.team ? ' post__head--team' : '')}>
+        <div className="post__head">
           {author
             ? <button type="button" className="post__name" id={nameId} onClick={openUser}>{author.name}</button>
             : <span className="post__name post__name--gone" id={nameId}>Удалённый аккаунт</span>}
-          {author?.team && <span className="post__badge"><TeamBadge /></span>}
-          {author && <span className="post__meta"><span className="post__user">@{author.username}</span></span>}
-          <span className="post__time">
-            {author ? '\u00a0· ' : ''}
-            <time dateTime={post.createdAt} title={fullTime(post.createdAt)}>{relTime(post.createdAt)}</time>
-          </span>
+          {author?.team && <TeamBadge />}
+          {otherUni && <UniBadge short={post.uniShort as string} />}
+          <time className="post__time" dateTime={post.createdAt} title={fullTime(post.createdAt)}>{relTime(post.createdAt)}</time>
           <button type="button" className="post__more" aria-label="Действия с постом" aria-haspopup="menu" onClick={() => void menu()}>
             <Icon name="ellipsis" size={20} />
           </button>
@@ -242,29 +228,23 @@ export function PostCard(p: {
         {post.media.length > 0 && (
           <div className="post__media"><PhotoGrid media={post.media} onOpen={setViewer} /></div>
         )}
-        {(cat || otherUni) && (
-          <div className="post__cat">
-            {cat && <span>{cat.label}</span>}
-            {otherUni && <UniBadge short={post.uniShort as string} />}
-          </div>
-        )}
         <div className="post__acts">
-          <button
-            type="button" className="post__act" disabled={ro}
-            aria-label={post.replies ? `Ответить, ${post.replies}` : 'Ответить'} onClick={() => p.onOpen(true)}
-          >
-            <BubbleIcon />
-            {post.replies > 0 && <span>{fmtCount(post.replies)}</span>}
-          </button>
           <button
             type="button" className={'post__act post__act--like' + (post.liked ? ' is-on' : '')} disabled={ro}
             aria-pressed={post.liked} aria-label={`Нравится, ${post.likes}`} onClick={like}
           >
-            <Icon name={post.liked ? 'heartFill' : 'heart'} size={18} />
+            <Icon name={post.liked ? 'heartFill' : 'heart'} size={21} />
             {post.likes > 0 && <span>{fmtCount(post.likes)}</span>}
           </button>
-          <button type="button" className="post__act post__act--end" aria-label="Поделиться" onClick={() => void actions.share(postLink(post))}>
-            <Icon name="share" size={18} />
+          <button
+            type="button" className="post__act" disabled={ro}
+            aria-label={post.replies ? `Ответить, ${post.replies}` : 'Ответить'} onClick={() => p.onOpen(true)}
+          >
+            <Icon name="comment" size={21} />
+            {post.replies > 0 && <span>{fmtCount(post.replies)}</span>}
+          </button>
+          <button type="button" className="post__act" aria-label="Поделиться" onClick={() => void actions.share(postLink(post))}>
+            <Icon name="plane" size={21} />
           </button>
         </div>
       </div>

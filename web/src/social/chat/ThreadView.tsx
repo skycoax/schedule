@@ -13,10 +13,9 @@ import { useOnline } from '../../ui/online';
 import { isApiError, socialApi } from '../api';
 import { useSocialEvents } from '../events';
 import { hiddenUsers } from '../local';
-import { fullTime } from '../format';
+import { fullTime, relTime } from '../format';
 import { postLink, useSocialActions } from '../actions';
 import { currentReturnTo, useSession } from '../session';
-import { categoryOf } from '../types';
 import type { Post } from '../types';
 import { Avatar } from '../ui/Avatar';
 import { TeamBadge, UniBadge } from '../ui/Badges';
@@ -24,7 +23,7 @@ import { EmptyState } from '../ui/EmptyState';
 import { PhotoGrid } from '../ui/PhotoGrid';
 import { PhotoViewer } from '../ui/PhotoViewer';
 import { RichText } from '../ui/RichText';
-import { BubbleIcon, ScreenVisible, errText, hiddenText, isAbortError, reducedMotion, useLike, useMinute, withMe } from './PostCard';
+import { ScreenVisible, errText, hiddenText, isAbortError, reducedMotion, useLike, useMinute, withMe } from './PostCard';
 import { ReplyComposer } from './ReplyComposer';
 import { ReplyRow } from './ReplyRow';
 import './chat.css';
@@ -43,13 +42,13 @@ function Skeleton(): JSX.Element {
   return (
     <div aria-hidden="true">
       <div className="thr__main is-skel">
-        <span className="thr__skhead"><span className="post__skav post__skav--44" /><span className="post__skl"><i style={{ width: '40%' }} /><i style={{ width: '28%' }} /></span></span>
+        <span className="thr__skhead"><span className="post__skav post__skav--36" /><span className="post__skl"><i style={{ width: '40%' }} /><i style={{ width: '28%' }} /></span></span>
         <span className="post__skl"><i style={{ width: '96%' }} /><i style={{ width: '88%' }} /><i style={{ width: '52%' }} /></span>
       </div>
       <div className="thr__list">
         {[0, 1].map((i) => (
           <div key={i} className="rrow is-skel">
-            <span className="post__skav post__skav--32" />
+            <span className="post__skav post__skav--36" />
             <span className="post__skl"><i style={{ width: '38%' }} /><i style={{ width: i ? '64%' : '84%' }} /></span>
           </div>
         ))}
@@ -58,7 +57,7 @@ function Skeleton(): JSX.Element {
   );
 }
 
-/** Публикация наверху ветки: крупнее, текст целиком, полное время, счётчики и подписанные действия. */
+/** Публикация наверху ветки: текст целиком, значки действий и счётчики строкой ниже. */
 function ThreadMain(p: {
   post: Post;
   returnTo: string;
@@ -87,7 +86,6 @@ function ThreadMain(p: {
   }
 
   const author = post.author;
-  const cat = categoryOf(post.category);
   const otherUni = post.uni !== brand.id && !!post.uniShort;
   const ro = session.mode !== 'on';
   const openUser = () => { if (author) p.onOpenUser(author.username); };
@@ -96,40 +94,36 @@ function ThreadMain(p: {
     post.likes > 0 ? `${post.likes} ${plural(post.likes, ['отметка «нравится»', 'отметки «нравится»', 'отметок «нравится»'])}` : '',
   ].filter(Boolean);
 
+  // Как в Threads: строка автора, текст во всю ширину, значки без чисел, числа — строкой ниже.
   return (
     <article className={'thr__main' + (post.hidden ? ' is-hidden' : '')} aria-labelledby={`t-${post.id}-name`}>
       <div className="thr__head">
-        <Avatar user={author} size={44} onClick={author ? openUser : undefined} label={author ? author.name : undefined} />
+        <Avatar user={author} size={36} onClick={author ? openUser : undefined} label={author ? author.name : undefined} />
         <div className="thr__who">
-          <div className="thr__nm">
-            {author
-              ? <button type="button" className="thr__name" id={`t-${post.id}-name`} onClick={openUser}>{author.name}</button>
-              : <span className="thr__name post__name--gone" id={`t-${post.id}-name`}>Удалённый аккаунт</span>}
-            {author?.team && <span className="post__badge"><TeamBadge /></span>}
-          </div>
-          {author && <span className="thr__user">@{author.username}</span>}
+          {author
+            ? <button type="button" className="thr__name" id={`t-${post.id}-name`} onClick={openUser}>{author.name}</button>
+            : <span className="thr__name post__name--gone" id={`t-${post.id}-name`}>Удалённый аккаунт</span>}
+          {author?.team && <TeamBadge />}
+          {otherUni && <UniBadge short={post.uniShort as string} />}
         </div>
+        <time className="thr__time" dateTime={post.createdAt} title={fullTime(post.createdAt)}>{relTime(post.createdAt)}</time>
       </div>
       {post.hidden && <p className="post__flag"><Icon name="lock" size={14} />{hiddenText(post)}</p>}
       {post.text && <RichText className="thr__text" text={post.text} onMention={p.onOpenUser} />}
       {post.media.length > 0 && <div className="thr__media"><PhotoGrid media={post.media} onOpen={setViewer} /></div>}
-      <p className="thr__meta">
-        <time dateTime={post.createdAt}>{fullTime(post.createdAt)}</time>
-        {cat && <span>· {cat.label}</span>}
-        {otherUni && <UniBadge short={post.uniShort as string} />}
-      </p>
-      {counts.length > 0 && <p className="thr__counts">{counts.join(' · ')}</p>}
       <div className="thr__acts">
-        <button type="button" className="thr__act" disabled={ro} onClick={p.onReply}>
-          <BubbleIcon size={20} /><span>Ответить</span>
+        <button type="button" className={'post__act post__act--like' + (post.liked ? ' is-on' : '')} disabled={ro}
+          aria-pressed={post.liked} aria-label="Нравится" onClick={like}>
+          <Icon name={post.liked ? 'heartFill' : 'heart'} size={22} />
         </button>
-        <button type="button" className={'thr__act post__act--like' + (post.liked ? ' is-on' : '')} disabled={ro} aria-pressed={post.liked} onClick={like}>
-          <Icon name={post.liked ? 'heartFill' : 'heart'} size={20} /><span>Нравится</span>
+        <button type="button" className="post__act" disabled={ro} aria-label="Ответить" onClick={p.onReply}>
+          <Icon name="comment" size={22} />
         </button>
-        <button type="button" className="thr__act thr__act--icon" aria-label="Поделиться" onClick={() => void actions.share(postLink(post))}>
-          <Icon name="share" size={20} />
+        <button type="button" className="post__act" aria-label="Поделиться" onClick={() => void actions.share(postLink(post))}>
+          <Icon name="plane" size={22} />
         </button>
       </div>
+      {counts.length > 0 && <p className="thr__counts">{counts.join(' · ')}</p>}
       <PhotoViewer media={post.media} index={viewer ?? 0} open={viewer !== null} onClose={() => setViewer(null)} />
     </article>
   );
@@ -477,7 +471,7 @@ export function ThreadView(p: {
 
   return (
     <div ref={rootEl} className="wrap wrap--chat thr">
-      <NavBar left={<BackButton onClick={p.onBack} />} title="Обсуждение" right={right} />
+      <NavBar left={<BackButton onClick={p.onBack} />} title="Ветка" right={right} />
       {body}
       {live && root && (
         <ReplyComposer

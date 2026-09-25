@@ -78,9 +78,7 @@
 .empty-st__act{margin-top:18px;width:100%;max-width:260px}
 
 /* ─── Значки ─── */
-.badge-team{display:inline-flex;align-items:center;flex:none;height:18px;padding:0 6px;border-radius:5px;
-  font:600 11px/1 var(--font);letter-spacing:.04em;text-transform:uppercase;white-space:nowrap;
-  color:var(--accent);background:var(--accent-press)}
+.badge-team{display:inline-block;flex:none;width:16px;height:16px;color:var(--accent);line-height:0}
 .badge-uni{display:inline-flex;align-items:center;flex:none;height:18px;padding:0 6px;border-radius:5px;
   font:600 11px/1 var(--font);letter-spacing:.02em;color:var(--ink-60);background:var(--fill);white-space:nowrap}
 

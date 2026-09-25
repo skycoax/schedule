@@ -1,9 +1,11 @@
-// Вкладка «Профиль» (только на Para, после выбора вуза). Грузится лениво (AppShell) и после первого показа
-// остаётся смонтированной (скрыта, когда неактивна). Корень — карточка гостя или шапка профиля, «Мои посты»
-// и настройки; поверх корня — стек экранов (друзья, поиск, чужой профиль, ветка, жалобы…) на ui/layers.
+// Вкладка «Профиль» (Para и адреса вузов). Грузится лениво (AppShell) и после первого показа остаётся
+// смонтированной (скрыта, когда неактивна). Вошедший с заполненным профилем видит профиль как в Threads:
+// шапка, «Что нового?», вкладка «Ветки» и свои посты; настройки — отдельным экраном за кнопкой ≡.
+// Гость и незаполненный профиль — карточка и настройки прямо на корне. Поверх корня — стек экранов
+// (настройки, друзья, поиск, чужой профиль, ветка, жалобы…) на ui/layers.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { JSX } from 'react';
-import { NavBar, LargeTitle } from '../../shell/NavBar';
+import { BackButton, LargeTitle, NavBar, NavButton } from '../../shell/NavBar';
 import { RESELECT_EVENT } from '../../tabs';
 import type { ProfileLink, ProfileTabProps } from '../../tabs';
 import { Button } from '../../ui/Button';
@@ -17,8 +19,10 @@ import { banText } from '../format';
 import { currentReturnTo, useSession } from '../session';
 import { useStack } from '../stack';
 import type { Post } from '../types';
+import { Composer } from '../chat/Composer';
 import { ScreenVisible } from '../chat/PostCard';
 import { ThreadView } from '../chat/ThreadView';
+import { WhatsNew } from '../chat/WhatsNew';
 import { BlockedView } from './BlockedView';
 import { DeleteAccountSheet } from './DeleteAccountSheet';
 import { EditProfileSheet } from './EditProfileSheet';
@@ -33,6 +37,7 @@ import { OPEN_FAIL, failText, isAbort } from './UsernameField';
 import './profile.css';
 
 type Screen =
+  | { kind: 'settings' }
   | { kind: 'friends' }
   | { kind: 'search' }
   | { kind: 'blocked' }
@@ -48,8 +53,6 @@ const loadModeration = () => {
   return modMod;
 };
 
-const MY_POSTS = 3;
-
 export default function ProfileTab(p: ProfileTabProps): JSX.Element {
   const { active } = p;
   const s = useSession();
@@ -57,6 +60,7 @@ export default function ProfileTab(p: ProfileTabProps): JSX.Element {
   const stack = useStack<Screen>();
   const [editOpen, setEditOpen] = useState(false);
   const [delOpen, setDelOpen] = useState(false);
+  const [composer, setComposer] = useState(false);
   const [Mod, setMod] = useState<ModComp | null>(null);
   const [slow, setSlow] = useState(false);
 
@@ -125,8 +129,8 @@ export default function ProfileTab(p: ProfileTabProps): JSX.Element {
     if (s.status === 'guest' && stack.stack.some((x) => x.kind !== 'hidden' && x.kind !== 'thread')) void popToRoot();
   }, [s.status, stack.stack, popToRoot]);
 
-  // ─── Мои посты: первые три публикации ───
-  const [posts, setPosts] = useState<{ items: Post[]; error: string; loading: boolean } | null>(null);
+  // ─── Свои посты: все, страницами (как «Ветки» в Threads) ───
+  const [posts, setPosts] = useState<{ items: Post[]; next: string | null; error: string; loading: boolean } | null>(null);
   const postsCtrl = useRef<AbortController | null>(null);
   const username = onboarded && social ? me!.username! : null;
   const loadPosts = useCallback(() => {
@@ -134,12 +138,24 @@ export default function ProfileTab(p: ProfileTabProps): JSX.Element {
     if (!username) { setPosts(null); return; }
     const c = new AbortController();
     postsCtrl.current = c;
-    setPosts((x) => ({ items: x?.items || [], error: '', loading: true }));
+    setPosts((x) => ({ items: x?.items || [], next: x?.next ?? null, error: '', loading: true }));
     socialApi.user(username, c.signal).then(
-      (pg) => { if (!c.signal.aborted) setPosts({ items: pg.posts.slice(0, MY_POSTS), error: '', loading: false }); },
-      (e) => { if (!c.signal.aborted && !isAbort(e)) setPosts((x) => ({ items: x?.items || [], error: failText(e), loading: false })); },
+      (pg) => { if (!c.signal.aborted) setPosts({ items: pg.posts, next: pg.next, error: '', loading: false }); },
+      (e) => {
+        if (!c.signal.aborted && !isAbort(e)) {
+          setPosts((x) => ({ items: x?.items || [], next: x?.next ?? null, error: failText(e), loading: false }));
+        }
+      },
     );
   }, [username]);
+  const loadMorePosts = useCallback(async () => {
+    const cur = posts;
+    if (!username || !cur?.next) return;
+    const more = await socialApi.userPosts(username, cur.next);
+    setPosts((x) => x && {
+      ...x, next: more.next, items: [...x.items, ...more.items.filter((y) => !x.items.some((z) => z.id === y.id))],
+    });
+  }, [username, posts]);
 
   const seenPosts = useRef(false);
   const online = s.online;
@@ -155,9 +171,9 @@ export default function ProfileTab(p: ProfileTabProps): JSX.Element {
   useSocialEvents((e) => {
     if (!username) return;
     if (e.type === 'post-created' && e.post.rootId === null && e.post.author?.id === me?.id) {
-      setPosts((x) => ({ items: [e.post, ...(x?.items || []).filter((y) => y.id !== e.post.id)].slice(0, MY_POSTS), error: '', loading: false }));
+      setPosts((x) => ({ items: [e.post, ...(x?.items || []).filter((y) => y.id !== e.post.id)], next: x?.next ?? null, error: '', loading: false }));
     } else if (e.type === 'post-deleted' && posts?.items.some((y) => y.id === e.id)) {
-      loadPosts();
+      setPosts((x) => x && { ...x, items: x.items.filter((y) => y.id !== e.id) });
     } else if (e.type === 'like') {
       setPosts((x) => x && { ...x, items: x.items.map((y) => (y.id === e.id ? { ...y, likes: e.likes, liked: e.liked } : y)) });
     } else if (e.type === 'me-changed' && e.me && e.me.username) {
@@ -172,8 +188,30 @@ export default function ProfileTab(p: ProfileTabProps): JSX.Element {
   });
 
   // ─── Экраны стека ───
+  const settings = (
+    <SettingsList
+      theme={p.theme} role={p.role} setRole={p.setRole} schedule={p.schedule} openPicker={p.openPicker} stale={stale}
+      nav={{
+        friends: () => stack.push({ kind: 'friends' }),
+        search: () => stack.push({ kind: 'search' }),
+        blocked: () => stack.push({ kind: 'blocked' }),
+        hidden: () => stack.push({ kind: 'hidden' }),
+        moderation: () => void openModeration(),
+        deleteAccount: () => setDelOpen(true),
+      }}
+    />
+  );
+
   const renderScreen = (sc: Screen, on: boolean): JSX.Element => {
     switch (sc.kind) {
+      case 'settings':
+        return (
+          <div className="wrap wrap--prof prof-screen">
+            {on && <NavBar left={<BackButton onClick={back} />} title="Настройки" />}
+            <LargeTitle title="Настройки" />
+            {settings}
+          </div>
+        );
       case 'friends':
         return <FriendsView active={on} onBack={back} onOpenUser={(u) => void openUser(u)} onSearch={() => stack.push({ kind: 'search' })} />;
       case 'search':
@@ -231,7 +269,7 @@ export default function ProfileTab(p: ProfileTabProps): JSX.Element {
         {social && (
           <>
             <Button variant="tinted" size={44} full disabled={!s.online} onClick={() => setEditOpen(true)}>Изменить профиль</Button>
-            <Button variant="tinted" size={44} full onClick={() => void actions.share(userLink(me.username!), me.name)}>Поделиться</Button>
+            <Button variant="tinted" size={44} full onClick={() => void actions.share(userLink(me.username!), me.name)}>Поделиться профилем</Button>
           </>
         )}
       </ProfileHeader>
@@ -239,12 +277,24 @@ export default function ProfileTab(p: ProfileTabProps): JSX.Element {
   }
 
   const top = stack.stack.length - 1;
+  // Профиль как в Threads — когда он заполнен и сервер ответил; иначе карточка и настройки прямо на корне.
+  const threads = !!username && !stale;
+  const canWrite = s.mode === 'on' && !me?.banned;
+  const compose = async () => {
+    if (await s.ensure('post', currentReturnTo())) setComposer(true);
+  };
 
   return (
     <>
       <div className="wrap wrap--prof" hidden={top >= 0}>
-        {active && top < 0 && <NavBar />}
-        <LargeTitle title="Профиль" />
+        {active && top < 0 && (
+          threads
+            ? <NavBar title={me!.name} right={
+                <NavButton label="Настройки" onClick={() => stack.push({ kind: 'settings' })}><Icon name="menu" /></NavButton>
+              } />
+            : <NavBar />
+        )}
+        {!threads && <LargeTitle title="Профиль" />}
         {!s.online && (
           <div className="offline prof-offline" role="status">
             <Icon name="wifiOff" size={20} />
@@ -253,14 +303,10 @@ export default function ProfileTab(p: ProfileTabProps): JSX.Element {
         )}
         {head}
 
-        {username && (
+        {threads && (
           <section className="prof-mine" aria-labelledby="prof-mine-t">
-            <div className="sec__h">
-              <h2 className="sec__t" id="prof-mine-t">Мои посты</h2>
-              {!!posts?.items.length && (
-                <button type="button" className="sec__a prof-all" onClick={() => stack.push({ kind: 'user', username })}>Все посты</button>
-              )}
-            </div>
+            <div className="prof-tabs"><h2 className="prof-tab" id="prof-mine-t">Ветки</h2></div>
+            {canWrite && <WhatsNew me={me} guest={false} onCompose={() => void compose()} onSignIn={() => {}} />}
             {!posts || (posts.loading && !posts.items.length) ? (
               <div className="skel prof-skel-post" aria-busy="true" aria-label="Загрузка постов" />
             ) : posts.error && !posts.items.length ? (
@@ -270,7 +316,7 @@ export default function ProfileTab(p: ProfileTabProps): JSX.Element {
                 : <p className="prof-empty">Посты загрузятся, когда появится интернет</p>
             ) : posts.items.length ? (
               <PostList
-                posts={posts.items} next={null} loadMore={async () => {}}
+                posts={posts.items} next={posts.next} loadMore={loadMorePosts}
                 onOpenThread={(id) => stack.push({ kind: 'thread', id })}
                 onOpenUser={(u) => void openUser(u)}
                 onChange={(id, np) => setPosts((x) => x && {
@@ -283,17 +329,7 @@ export default function ProfileTab(p: ProfileTabProps): JSX.Element {
           </section>
         )}
 
-        <SettingsList
-          theme={p.theme} role={p.role} setRole={p.setRole} schedule={p.schedule} openPicker={p.openPicker} stale={stale}
-          nav={{
-            friends: () => stack.push({ kind: 'friends' }),
-            search: () => stack.push({ kind: 'search' }),
-            blocked: () => stack.push({ kind: 'blocked' }),
-            hidden: () => stack.push({ kind: 'hidden' }),
-            moderation: () => void openModeration(),
-            deleteAccount: () => setDelOpen(true),
-          }}
-        />
+        {!threads && settings}
       </div>
 
       {stack.stack.map((sc, i) => (
@@ -307,6 +343,7 @@ export default function ProfileTab(p: ProfileTabProps): JSX.Element {
 
       {onboarded && <EditProfileSheet open={editOpen} onClose={() => setEditOpen(false)} />}
       <DeleteAccountSheet open={delOpen && s.status === 'signed'} onClose={() => setDelOpen(false)} />
+      {composer && <Composer onClose={() => setComposer(false)} onPublished={() => setComposer(false)} />}
     </>
   );
 }

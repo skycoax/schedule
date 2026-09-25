@@ -8,33 +8,22 @@ import { LargeTitle, NavBar, NavButton, NavPlaceholder, UniLogoButton } from '..
 import { useUniversityMenu } from '../../shell/useUniversityMenu';
 import { RESELECT_EVENT } from '../../tabs';
 import type { ChatLink, ChatTabProps, TabId } from '../../tabs';
-import { Button } from '../../ui/Button';
 import { Icon } from '../../ui/icons';
 import { banText } from '../format';
 import { currentReturnTo, useSession } from '../session';
 import { useStack } from '../stack';
-import { categoryOf } from '../types';
-import type { CategoryId, Post } from '../types';
+import type { Post } from '../types';
 import { EmptyState } from '../ui/EmptyState';
 import { UserProfileView } from '../profile/UserProfileView';
-import { CategoryChips } from './CategoryChips';
 import { Composer } from './Composer';
 import { Feed } from './Feed';
 import type { FeedHandle } from './Feed';
 import { ScreenVisible, reducedMotion, uniShort } from './PostCard';
 import { ThreadView } from './ThreadView';
+import { WhatsNew } from './WhatsNew';
 import './chat.css';
 
 type ChatScreen = { kind: 'thread'; id: number; focus?: boolean } | { kind: 'user'; username: string };
-
-const CAT_KEY = 'chatCat';
-
-function readCat(): CategoryId | '' {
-  try { return categoryOf(sessionStorage.getItem(CAT_KEY))?.id ?? ''; } catch { return ''; }
-}
-function writeCat(v: CategoryId | '') {
-  try { sessionStorage.setItem(CAT_KEY, v); } catch { /* приватный режим */ }
-}
 
 export default function ChatTab(p: ChatTabProps): JSX.Element {
   const { active, link, onLinkHandled } = p;
@@ -44,16 +33,9 @@ export default function ChatTab(p: ChatTabProps): JSX.Element {
   const { push, pop, popToRoot } = nav;
   const umenu = useUniversityMenu();
   const feed = useRef<FeedHandle>(null);
-  const [cat, setCatState] = useState<CategoryId | ''>(readCat);
   const [composer, setComposer] = useState(false);
   const top = nav.top;
   const short = uniShort();
-
-  const setCat = useCallback((v: CategoryId | '') => {
-    setCatState(v);
-    writeCat(v);
-    window.scrollTo(0, 0);
-  }, []);
 
   const openThread = useCallback((id: number, focus?: boolean) => {
     push(focus ? { kind: 'thread', id, focus: true } : { kind: 'thread', id });
@@ -70,11 +52,10 @@ export default function ChatTab(p: ChatTabProps): JSX.Element {
     setComposer(true);
   }, [ensure]);
 
-  const onPublished = useCallback((post: Post) => {
+  const onPublished = useCallback((_post: Post) => {
     setComposer(false);
-    if (cat && cat !== post.category) { setCatState(''); writeCat(''); }
     window.scrollTo({ top: 0 });
-  }, [cat]);
+  }, []);
 
   // Ссылка из адреса: один раз, когда вкладка видна и ясно, вошёл ли человек.
   const handled = useRef<ChatLink | null>(null);
@@ -142,16 +123,12 @@ export default function ChatTab(p: ChatTabProps): JSX.Element {
                 <a href="https://t.me/skycoax" target="_blank" rel="noopener noreferrer">@skycoax</a>.
               </p>
             )}
-            {/* В readonly писать нельзя никому — строка «после входа» противоречила бы строке выше. */}
-            {guest && mode === 'on' && (
-              <div className="chat-guest">
-                <p>Читать можно без аккаунта. Писать, отвечать и ставить отметки — после входа.</p>
-                <Button size={32} variant="tinted" onClick={() => session.requestSignIn('account')}>Войти</Button>
-              </div>
+            {/* Как в Threads: «Что нового?» над лентой. Гостю — вход; в readonly писать нельзя никому. */}
+            {mode === 'on' && !me?.banned && (
+              <WhatsNew me={me} guest={guest} onCompose={() => void compose()} onSignIn={() => session.requestSignIn('account')} />
             )}
-            <CategoryChips value={cat} onChange={setCat} all label="Темы обсуждений" />
             <Feed
-              ref={feed} active={active && !top} cat={cat} canCompose={mode === 'on'} onCompose={() => void compose()}
+              ref={feed} active={active && !top} cat="" canCompose={mode === 'on'} onCompose={() => void compose()}
               onOpenThread={openThread} onOpenUser={(u) => void openUser(u)}
             />
           </>
@@ -177,7 +154,7 @@ export default function ChatTab(p: ChatTabProps): JSX.Element {
       })}
 
       {umenu.element}
-      {composer && <Composer initialCategory={cat || null} onClose={() => setComposer(false)} onPublished={onPublished} />}
+      {composer && <Composer onClose={() => setComposer(false)} onPublished={onPublished} />}
       <PullRefresh onRefresh={refresh} enabled={active && !top && !off} target=".chat-root" />
     </>
   );
