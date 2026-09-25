@@ -1,9 +1,10 @@
 // Настройки в «Профиле» (для гостя и для вошедшего): расписание, оформление, общение, конфиденциальность,
 // модерация, приложение, аккаунт. Разделы «Обсуждений» скрыты, пока сессия грузится и при SOCIAL_MODE=off.
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { JSX, ReactNode } from 'react';
 import { brand } from '../../brand';
 import { Install } from '../../components/Install';
+import { ViewportDebug } from '../../components/ViewportDebug';
 import { ThemeControl } from '../../components/ThemeControl';
 import { isStandalone } from '../../hooks/useInstall';
 import { useUniversityMenu } from '../../shell/useUniversityMenu';
@@ -64,6 +65,13 @@ export function SettingsList(p: {
   const [docOpen, setDocOpen] = useState(false);
   const [installOpen, setInstallOpen] = useState(false);
   const [opt, setOpt] = useState<Partial<Me['privacy']>>({});
+  const [debug, setDebug] = useState(false);
+  const taps = useRef<number[]>([]);
+  const tapFoot = () => {
+    const now = Date.now();
+    taps.current = [...taps.current.filter((t) => now - t < 3000), now];
+    if (taps.current.length >= 5) { taps.current = []; setDebug(true); }
+  };
 
   // Старые окна (политика, «На главный экран») — слои истории: «Назад» закрывает их, а не вкладку.
   useLayer(installOpen, () => setInstallOpen(false), 'install');
@@ -194,7 +202,9 @@ export function SettingsList(p: {
         </ListSection>
       )}
 
-      <p className="set__foot">Para — неофициальное приложение и не связано ни с одним вузом.</p>
+      {/* Пять быстрых нажатий — диагностика экрана (components/ViewportDebug), для разбора вёрстки на iPhone. */}
+      <p className="set__foot" onClick={tapFoot}>Para — неофициальное приложение и не связано ни с одним вузом.</p>
+      {debug && <ViewportDebug onClose={() => setDebug(false)} />}
 
       {menu.element}
       <RulesSheet open={rulesOpen} mode="read" onClose={() => setRulesOpen(false)} />
