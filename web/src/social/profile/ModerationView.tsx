@@ -147,7 +147,7 @@ function CaseCard(p: {
         </>
       )}
       {c.target.type === 'instant' && (
-        <p className="mod-gone">{c.gone ? 'Момента больше нет' : 'Момент — фото, которое сутки видят друзья автора'}</p>
+        <p className="mod-gone">{c.gone ? 'Момента больше нет' : 'Момент — фото, которое автор показывает на сутки'}</p>
       )}
       {c.target.type === 'user' && (
         <>

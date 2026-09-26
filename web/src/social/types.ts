@@ -195,19 +195,21 @@ export interface ReportCase {
   gone?: boolean;
 }
 
-// ─── Моменты (как Instants в Instagram): фото с камеры, сутки видят друзья ───
+// ─── Моменты (как Instants в Instagram): фото с камеры на сутки — всем в вузе или только друзьям ───
 
 export const INSTANT_REACTIONS = ['❤️', '😂', '😮', '😢', '🔥', '👏'] as const;
 export type InstantReaction = typeof INSTANT_REACTIONS[number];
-/** Момент друга в ленте моментов. */
+/** Кто видит момент: все вошедшие (в «Обсуждениях» того же вуза) или только друзья. */
+export type InstantAudience = 'all' | 'friends';
+/** Чужой момент в ленте моментов (друга или «для всех» из вуза). */
 export interface FriendInstant {
   id: number; media: MediaRef; createdAt: string; expiresAt: string; seen: boolean; reaction: InstantReaction | null;
 }
-export interface InstantGroup { author: UserCard; items: FriendInstant[]; unseen: number }
+export interface InstantGroup { author: UserCard; friend: boolean; items: FriendInstant[]; unseen: number }
 export interface InstantsFeed { groups: InstantGroup[]; mine: { active: number; latest: MediaRef | null } }
 /** Свой момент в архиве «Твои моменты». */
 export interface MyInstant {
-  id: number; media: MediaRef | null; createdAt: string; expiresAt: string; active: boolean; hidden: boolean;
+  id: number; media: MediaRef | null; createdAt: string; expiresAt: string; active: boolean; audience: InstantAudience; hidden: boolean;
   views: number; reactions: { emoji: string; count: number }[];
 }
 export interface InstantDetail extends MyInstant {

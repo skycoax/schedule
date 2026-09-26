@@ -1,7 +1,8 @@
-// Моменты (как Instants в Instagram): фото с камеры приложения, которое сутки видят друзья автора и на которое
-// они ставят реакции; автору — архив «Твои моменты» на год (старше стирает jobs.js). Фото — обычная строка
-// media (kind 'post', post_id NULL) со связью instants.media_id: /api/media/* отдаёт его только автору,
-// модератору и друзьям, пока момент не истёк (instant-access.js). Жалобы и модерация — moderation.js (цель 'i:<id>').
+// Моменты (как Instants в Instagram): фото с камеры приложения, которое сутки видят все вошедшие в «Обсуждениях»
+// того же вуза (audience 'all', по умолчанию) или только друзья автора ('friends'), с реакциями; автору — архив
+// «Твои моменты» на год (старше стирает jobs.js). Фото — обычная строка media (kind 'post', post_id NULL) со связью
+// instants.media_id: /api/media/* отдаёт его только тем, кто видит момент, пока он не истёк (instant-access.js).
+// Жалобы и модерация — moderation.js (цель 'i:<id>').
 import { tx, nowIso, DAY } from './db.js';
 import { ok, invalid, notFound, guard, isAdmin, bodyOf, cursorParam, marks } from './http.js';
 import { limit, keyOf, dailyCap, dayAgo } from './limits.js';
@@ -10,11 +11,15 @@ import { usersByIds, userCardOf } from './users.js';
 import { canSeeInstant, instantById, deleteInstantRows } from './instant-access.js';
 import { audit } from './moderation.js';
 
-/** Сколько момент видят друзья и сколько хранится архив автора. */
+/** Сколько момент виден другим и сколько хранится архив автора. */
 export const INSTANT_TTL = DAY;
 export const INSTANT_KEEP_DAYS = 365;
 /** Реакции (как в Instagram) — одна на человека. */
 export const REACTIONS = ['❤️', '😂', '😮', '😢', '🔥', '👏'];
+/** Кто видит момент: все вошедшие (в ленте моментов своего вуза) или только друзья. */
+export const AUDIENCES = ['all', 'friends'];
+/** Сколько последних моментов (друзей и вуза) отдаёт лента за раз. */
+const FEED_MAX = 600;
 
 const ARCHIVE_PAGE = 60;
 const ID_RE = /^\d{1,12}$/;
@@ -23,6 +28,7 @@ const TEXT_I = {
   media: 'Фото не найдено — сними момент ещё раз',
   self: 'Это твой момент',
   reaction: 'Такой реакции нет',
+  audience: 'Выбери, кто увидит момент',
 };
 
 const idParam = (raw) => {
@@ -57,6 +63,7 @@ export function instantRoutes(inst, ctx) {
     createdAt: i.created_at,
     expiresAt: i.expires_at,
     active: i.expires_at > nowIso(),
+    audience: i.audience,
     hidden: !!Number(i.hidden),
     views: st ? st.views : 0,
     reactions: st ? st.reactions : [],
@@ -68,6 +75,8 @@ export function instantRoutes(inst, ctx) {
     const b = bodyOf(req);
     const mediaId = typeof b.media === 'string' ? b.media : '';
     if (!MEDIA_ID_RE.test(mediaId)) throw invalid(TEXT_I.media, 'media');
+    const audience = b.audience === undefined ? 'all' : b.audience;
+    if (!AUDIENCES.includes(audience)) throw invalid(TEXT_I.audience, 'audience');
     limit('instant', 'u:' + me.id);
     dailyCap('instant', me, db.prepare('SELECT COUNT(*) n, MIN(created_at) first FROM instants WHERE author_id = ? AND created_at > ?')
       .get(me.id, dayAgo()));
@@ -78,31 +87,34 @@ export function instantRoutes(inst, ctx) {
         AND NOT EXISTS (SELECT 1 FROM users x WHERE x.avatar_id = media.id)`).get(mediaId, me.id);
       if (!m) throw invalid(TEXT_I.media, 'media');
       db.prepare('UPDATE media SET attached_at = ? WHERE id = ?').run(now, m.id);
-      return Number(db.prepare('INSERT INTO instants (author_id, media_id, uni, created_at, expires_at) VALUES (?,?,?,?,?)')
-        .run(me.id, m.id, req.tenant ? req.tenant.id : null, now, nowIso(Date.now() + INSTANT_TTL)).lastInsertRowid);
+      return Number(db.prepare(`INSERT INTO instants (author_id, media_id, uni, audience, created_at, expires_at)
+        VALUES (?,?,?,?,?,?)`).run(me.id, m.id, req.tenant ? req.tenant.id : null, audience, now,
+        nowIso(Date.now() + INSTANT_TTL)).lastInsertRowid);
     });
     reply.code(201);
     const i = instantById(db, id);
     return ok(mineOut(i, statsOf([id]).get(id)));
   });
 
-  // Моменты друзей за сутки — по авторам: сначала те, у кого есть непросмотренные, потом самые свежие.
+  // Моменты за сутки: друзей (любые, из любого вуза) и «для всех» из вуза этого адреса — по авторам:
+  // сначала те, у кого есть непросмотренные, среди них друзья, потом самые свежие.
   const feedRows = db.prepare(`
-    SELECT i.id, i.author_id, i.media_id, i.created_at, i.expires_at, v.seen_at, v.reaction
+    SELECT i.id, i.author_id, i.media_id, i.created_at, i.expires_at, v.seen_at, v.reaction, f.user_lo IS NOT NULL AS friend
     FROM instants i
     JOIN users u ON u.id = i.author_id AND u.status = 'active'
-    JOIN friends f ON f.status = 'accepted' AND f.user_lo = MIN(i.author_id, $me) AND f.user_hi = MAX(i.author_id, $me)
+    LEFT JOIN friends f ON f.status = 'accepted' AND f.user_lo = MIN(i.author_id, $me) AND f.user_hi = MAX(i.author_id, $me)
     LEFT JOIN instant_views v ON v.instant_id = i.id AND v.user_id = $me
     WHERE i.expires_at > $now AND i.hidden = 0 AND i.author_id <> $me
+      AND (f.user_lo IS NOT NULL OR (i.audience = 'all' AND i.uni = $uni))
       AND NOT EXISTS (SELECT 1 FROM blocks b WHERE (b.blocker_id = $me AND b.blocked_id = i.author_id)
                                                 OR (b.blocker_id = i.author_id AND b.blocked_id = $me))
-    ORDER BY i.id`);
+    ORDER BY i.id DESC LIMIT ${FEED_MAX}`);
   const myActive = db.prepare('SELECT id, media_id FROM instants WHERE author_id = ? AND expires_at > ? ORDER BY id DESC');
   inst.get('/api/social/instants', async (req) => {
     const me = guard(req, 'S');
     limit('read', keyOf(req));
     const now = nowIso();
-    const rows = feedRows.all({ $me: me.id, $now: now });
+    const rows = feedRows.all({ $me: me.id, $now: now, $uni: req.tenant ? req.tenant.id : '' }).reverse();
     const refs = new Map(mediaRefsByIds(db, rows.map((r) => r.media_id)).map((m) => [m.id, m]));
     const cards = usersByIds(db, rows.map((r) => r.author_id));
     const groups = new Map();
@@ -110,14 +122,16 @@ export function instantRoutes(inst, ctx) {
       const media = refs.get(r.media_id);
       const card = cards.get(r.author_id);
       if (!media || !card) continue;
-      if (!groups.has(r.author_id)) groups.set(r.author_id, { author: userCardOf(ctx, card, false), items: [], unseen: 0, last: 0 });
+      if (!groups.has(r.author_id)) {
+        groups.set(r.author_id, { author: userCardOf(ctx, card, false), friend: !!r.friend, items: [], unseen: 0, last: 0 });
+      }
       const g = groups.get(r.author_id);
       g.items.push({ id: r.id, media, createdAt: r.created_at, expiresAt: r.expires_at, seen: !!r.seen_at, reaction: r.reaction || null });
       if (!r.seen_at) g.unseen += 1;
       g.last = Math.max(g.last, r.id);
     }
     const list = [...groups.values()]
-      .sort((a, b) => (Number(b.unseen > 0) - Number(a.unseen > 0)) || (b.last - a.last))
+      .sort((a, b) => (Number(b.unseen > 0) - Number(a.unseen > 0)) || (Number(b.friend) - Number(a.friend)) || (b.last - a.last))
       .map(({ last, ...g }) => g);
     const mine = myActive.all(me.id, now);
     return ok({ groups: list, mine: { active: mine.length, latest: mine[0] ? refOf(mine[0].media_id) : null } });
@@ -166,7 +180,7 @@ export function instantRoutes(inst, ctx) {
     });
   });
 
-  // Один момент: автору и модератору — кто посмотрел и какая реакция; другу — сам момент.
+  // Один момент: автору и модератору — кто посмотрел и какая реакция; остальным, кто его видит, — сам момент.
   inst.get('/api/social/instants/:id', async (req) => {
     const me = guard(req, 'S');
     const i = instantById(db, idParam(req.params.id));

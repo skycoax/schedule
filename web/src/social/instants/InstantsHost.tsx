@@ -1,6 +1,6 @@
-// Моменты в «Обсуждениях»: карточка у правого края (как в Instagram — «+», а когда у друзей есть новые моменты,
-// их миниатюры и число), камера, просмотр моментов друзей и архив «Твои моменты».
-// Моменты друзей грузятся, пока вкладка видна: сразу и раз в минуту, после своего момента — заново.
+// Моменты в «Обсуждениях»: карточка у правого края (как в Instagram — «+», а когда есть новые моменты друзей
+// и людей из вуза — их миниатюры и число), камера, просмотр моментов и архив «Твои моменты».
+// Моменты грузятся, пока вкладка видна: сразу и раз в минуту, после своего момента — заново.
 import { useCallback, useEffect, useState } from 'react';
 import type { JSX } from 'react';
 import { Icon } from '../../ui/icons';
@@ -69,7 +69,7 @@ export function InstantsHost(p: { active: boolean; hidden?: boolean }): JSX.Elem
   const unseen = groups.reduce((n, g) => n + g.unseen, 0);
   const thumbs = groups.filter((g) => g.unseen > 0).slice(0, 2)
     .map((g) => (g.items.find((x) => !x.seen) || g.items[0]).media.thumb);
-  const label = unseen ? `Моменты друзей: новых ${unseen}` : groups.length ? 'Моменты друзей' : 'Новый момент';
+  const label = unseen ? `Моменты: новых ${unseen}` : groups.length ? 'Моменты' : 'Новый момент';
 
   return (
     <>

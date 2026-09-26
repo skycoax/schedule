@@ -1,17 +1,21 @@
 // Камера моментов (как «New instant» в Instagram): живая камера в форме суперэллипса, кнопка спуска,
 // вспышка и смена камеры; снимок — квадрат до 1080 (JPEG) и миниатюра 640 → /api/social/media → /api/social/instants.
+// Кто увидит: «Все» (по умолчанию — вошедшие в «Обсуждениях» вуза) или «Только друзья»; выбор запоминается.
 // Нет камеры (отказ в доступе, компьютер без камеры) — «Выбрать фото» из галереи.
 // Вспышка: задняя камера — фонарик, где браузер его даёт (Android); передняя — белый экран, как в iPhone.
 import { useEffect, useRef, useState } from 'react';
 import type { JSX } from 'react';
 import { createPortal } from 'react-dom';
+import { chooseAction } from '../../ui/ActionSheet';
 import { Icon } from '../../ui/icons';
 import { toast } from '../../ui/Toast';
 import { useHideTabBar } from '../../ui/bar';
 import { useLayer } from '../../ui/layers';
+import { ls } from '../../lib/store';
 import { socialApi } from '../api';
 import { currentReturnTo, useSession } from '../session';
 import { errText, handledBySession } from '../chat/PostCard';
+import type { InstantAudience } from '../types';
 import { installSquircle } from './squircle';
 import './instants.css';
 
@@ -19,6 +23,7 @@ type Phase = 'starting' | 'live' | 'nocam' | 'shot' | 'sending';
 interface Shot { full: Blob; thumb: Blob; url: string }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const AUD_KEY = 'instant_aud';
 
 /** Квадрат из середины кадра: полный (до 1080) и миниатюра (до 640). mirror — передняя камера. */
 async function squareFrom(src: CanvasImageSource, w: number, h: number, mirror: boolean): Promise<Shot> {
@@ -65,8 +70,23 @@ export function InstantCamera(p: { onClose: () => void; onSent: () => void; onAr
   const [screenFlash, setScreenFlash] = useState(false);
   const [shot, setShot] = useState<Shot | null>(null);
   const shotUrl = useRef('');
+  const [audience, setAudience] = useState<InstantAudience>(() => (ls(AUD_KEY) === 'friends' ? 'friends' : 'all'));
 
   const noFriends = s.me ? s.me.counts.friends === 0 : false;
+
+  const pickAudience = async () => {
+    const a = await chooseAction({
+      title: 'Кто увидит момент',
+      message: 'Сутки, потом он останется только у тебя в «Твоих моментах».',
+      actions: [
+        { id: 'all', label: 'Все в «Обсуждениях»', checked: audience === 'all' },
+        { id: 'friends', label: 'Только друзья', checked: audience === 'friends' },
+      ],
+    });
+    if (a !== 'all' && a !== 'friends') return;
+    setAudience(a);
+    ls(AUD_KEY, a);
+  };
 
   // Камера включена, пока нет снимка; сменили камеру — перезапуск.
   useEffect(() => {
@@ -149,8 +169,8 @@ export function InstantCamera(p: { onClose: () => void; onSent: () => void; onAr
     setPhase('sending');
     try {
       const up = await socialApi.uploadMedia({ full: shot.full, thumb: shot.thumb }, { kind: 'post' });
-      await socialApi.createInstant(up.id);
-      toast(noFriends ? 'Момент сохранён в «Твоих моментах»' : 'Момент отправлен друзьям');
+      await socialApi.createInstant(up.id, audience);
+      toast(audience === 'all' ? 'Момент опубликован' : noFriends ? 'Момент сохранён в «Твоих моментах»' : 'Момент отправлен друзьям');
       p.onSent();
       p.onClose();
     } catch (e) {
@@ -214,8 +234,14 @@ export function InstantCamera(p: { onClose: () => void; onSent: () => void; onAr
         </div>
       )}
 
-      <div className="ic__aud"><span className="ic__aud-ico"><Icon name="people" size={18} /></span>Увидят друзья · сутки</div>
-      {noFriends && <p className="ic__hint">У тебя пока нет друзей — момент увидишь только ты, в «Твоих моментах».</p>}
+      <button type="button" className="ic__aud" aria-haspopup="menu" disabled={phase === 'sending'} onClick={() => void pickAudience()}>
+        <span className="ic__aud-ico"><Icon name={audience === 'all' ? 'globe' : 'people'} size={18} /></span>
+        {audience === 'all' ? 'Увидят все' : 'Увидят друзья'} · сутки
+        <span className="ic__aud-chev"><Icon name="chevronDown" size={16} /></span>
+      </button>
+      {audience === 'friends' && noFriends && (
+        <p className="ic__hint">У тебя пока нет друзей — момент увидишь только ты, в «Твоих моментах».</p>
+      )}
 
       <input ref={fileRef} type="file" accept="image/*" hidden tabIndex={-1}
         onChange={(e) => { const f = e.currentTarget.files?.[0]; e.currentTarget.value = ''; void pickFile(f); }} />

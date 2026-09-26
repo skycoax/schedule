@@ -265,7 +265,7 @@ export function mediaRoutes(inst, ctx) {
     const postPublic = m.post_id !== null && !m.deleted_at && !m.hidden && m.author_status === 'active';
     const avatarPublic = !!m.is_avatar && m.owner_status === 'active';
     const isPublic = postPublic || avatarPublic;
-    // Фото момента — только автору, модератору и друзьям, пока момент не истёк (instant-access.js).
+    // Фото момента — только тем, кто видит момент (автор, модератор; вошедшие или друзья, пока не истёк).
     if (m.instant_id) {
       const i = instantById(db, m.instant_id);
       if (!canSeeInstant(db, req.user, i, i && i.author_status)) return gone();

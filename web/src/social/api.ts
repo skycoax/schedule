@@ -4,7 +4,7 @@
 // web/src/api.ts (расписание) сюда не импортируем и не меняем.
 import { brand } from '../brand';
 import type {
-  AdminActionBody, AdminStats, AdminUsersPage, AgeGroup, InstantDetail, InstantReaction, InstantsFeed, MyInstant, AuditItem, AuthIntent, AuthOutcome, AuthState, CategoryId, ErrorCode, FriendLists,
+  AdminActionBody, AdminStats, AdminUsersPage, AgeGroup, InstantAudience, InstantDetail, InstantReaction, InstantsFeed, MyInstant, AuditItem, AuthIntent, AuthOutcome, AuthState, CategoryId, ErrorCode, FriendLists,
   LikeState, Me, MePatch, MediaRef, NewPost, NewReply, Page, Post, ProfilePage, Relation, ReportBody, ReportCase,
   ReportResult, Thread, UploadedMedia, UserCard, UsernameCheck,
 } from './types';
@@ -356,8 +356,8 @@ export const socialApi = {
   instantsFeed(signal?: AbortSignal): Promise<InstantsFeed> {
     return call<InstantsFeed>('GET', '/api/social/instants', { signal });
   },
-  createInstant(media: string): Promise<MyInstant> {
-    return call<MyInstant>('POST', '/api/social/instants', { body: { media } });
+  createInstant(media: string, audience: InstantAudience): Promise<MyInstant> {
+    return call<MyInstant>('POST', '/api/social/instants', { body: { media, audience } });
   },
   async viewInstant(id: number): Promise<void> {
     await call<null>('POST', '/api/social/instants/' + id + '/view', { body: {} });

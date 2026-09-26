@@ -247,7 +247,14 @@ CREATE INDEX IF NOT EXISTS idx_iviews_user ON instant_views (user_id);
 UPDATE users SET friend_req = 'all' WHERE friend_req <> 'all';
 `;
 
-const MIGRATIONS = [SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4];
+// Кто видит момент: 'all' — все вошедшие в «Обсуждениях» того же вуза (по умолчанию для новых), 'friends' — только
+// друзья. Уже снятые моменты снимались «для друзей» — у них так и остаётся.
+export const SCHEMA_V5 = `
+ALTER TABLE instants ADD COLUMN audience TEXT NOT NULL DEFAULT 'friends' CHECK (audience IN ('all','friends'));
+CREATE INDEX IF NOT EXISTS idx_instants_uni ON instants (uni, expires_at);
+`;
+
+const MIGRATIONS = [SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5];
 
 /** Открыть (и при необходимости создать) social.db и довести схему до последней версии. */
 export function openSocialDb(dir = config.dataDir) {

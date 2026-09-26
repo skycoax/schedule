@@ -1155,15 +1155,16 @@ async function runMain() {
   assert.ok(stats.users > 0 && stats.mediaBytes > 0 && stats.bannedUsers >= 1);
   ok('журнал (все действия, без почты и текстов) и сводка модератора');
 
-  // ── Моменты: только друзья, сутки, реакции, архив, фото не публичное, жалоба и удаление модератором ──
+  // ── Моменты: для всех (по умолчанию) и только друзьям, сутки, реакции, архив, фото не публичное, жалоба, удаление ──
   const I1 = await user('i1', `Момент ${RUN}`);
   const I2 = await user('i2', `Друг ${RUN}`);
   const I3 = await user('i3', `Чужой ${RUN}`);
   expect(await call(I1.jar, 'POST', `/api/social/friends/${I2.me.id}`, { json: {}, headers: W }), 200, 'заявка в друзья');
   expect(await call(I2.jar, 'POST', `/api/social/friends/${I1.me.id}/accept`, { json: {}, headers: W }), 200, 'принять заявку');
   const im = await uploadPhoto(I1, { full: makeJpeg(1080, 1080, SCENES.sunset), thumb: makeJpeg(640, 640, SCENES.sunset) });
-  const momentA = expect(await call(I1.jar, 'POST', '/api/social/instants', { json: { media: im.id }, headers: W }), 201, 'момент');
-  assert.ok(momentA.id && momentA.active && momentA.media && momentA.views === 0);
+  const momentA = expect(await call(I1.jar, 'POST', '/api/social/instants', { json: { media: im.id, audience: 'friends' }, headers: W }),
+    201, 'момент друзьям');
+  assert.ok(momentA.id && momentA.active && momentA.media && momentA.views === 0 && momentA.audience === 'friends');
   bad(await call(I1.jar, 'POST', '/api/social/instants', { json: { media: im.id }, headers: W }), 'то же фото второй раз',
     'Фото не найдено — сними момент ещё раз', 'media');
   bad(await call(I1.jar, 'POST', '/api/social/posts', { json: { text: 'x', category: 'other', media: [im.id] }, headers: W }),
@@ -1193,7 +1194,35 @@ async function runMain() {
   assert.ok(det.viewers.length === 1 && det.viewers[0].user.id === I2.me.id && det.viewers[0].reaction === '🔥');
   const detFriend = expect(await call(I2.jar, 'GET', `/api/social/instants/${momentA.id}`), 200, 'момент другу');
   assert.ok(!('viewers' in detFriend), 'друг не видит, кто ещё смотрел');
-  ok('моменты: только друзьям, фото не публичное, просмотры, реакции, архив автора');
+  ok('моменты друзьям: только друзья, фото не публичное, просмотры, реакции, архив автора');
+
+  // По умолчанию момент — для всех: его видят вошедшие в ленте моментов того же вуза (друзья — всегда первыми).
+  const imAll = await uploadPhoto(I1, { full: makeJpeg(1080, 1080, SCENES.sea), thumb: makeJpeg(640, 640, SCENES.sea) });
+  const imAll2 = await uploadPhoto(I1, { full: makeJpeg(1080, 1080, SCENES.sea), thumb: makeJpeg(640, 640, SCENES.sea) });
+  bad(await call(I1.jar, 'POST', '/api/social/instants', { json: { media: imAll.id, audience: 'nobody' }, headers: W }),
+    'кривая аудитория', 'Выбери, кто увидит момент', 'audience');
+  const momentAll = expect(await call(I1.jar, 'POST', '/api/social/instants', { json: { media: imAll.id }, headers: W }), 201, 'момент всем');
+  assert.equal(momentAll.audience, 'all', 'по умолчанию — для всех');
+  let fAll = expect(await call(I3.jar, 'GET', '/api/social/instants'), 200, 'моменты вуза');
+  let gAll = fAll.groups.find((x) => x.author.id === I1.me.id);
+  assert.ok(gAll && gAll.friend === false && gAll.items.map((x) => x.id).join() === String(momentAll.id),
+    'не друг видит момент для всех, но не момент для друзей');
+  assert.ok(expect(await call(I2.jar, 'GET', '/api/social/instants'), 200, 'моменты друга').groups
+    .find((x) => x.author.id === I1.me.id).items.length === 2, 'друг видит оба');
+  assert.ok(!expect(await call(I3.jar, 'GET', '/api/social/instants', { uni: 'tsue' }), 200, 'моменты другого вуза').groups
+    .some((x) => x.author.id === I1.me.id), 'в другом вузе момент для всех не виден');
+  expect(await call(I3.jar, 'GET', `/api/media/${imAll.id}.jpg`, { uni: '' }), 200, 'фото момента для всех вошедшему');
+  expect(await call(guest, 'GET', `/api/media/${imAll.id}.jpg`, { uni: '' }), 404, 'фото момента для всех гостю');
+  expect(await call(I3.jar, 'POST', `/api/social/instants/${momentAll.id}/react`, { json: { emoji: '❤️' }, headers: W }), 200, 'реакция не друга');
+  expect(await call(I3.jar, 'PUT', `/api/social/blocks/${I1.me.id}`, { json: {}, headers: W }), 200, 'блок автора');
+  fAll = expect(await call(I3.jar, 'GET', '/api/social/instants'), 200, 'моменты после блока');
+  assert.ok(!fAll.groups.some((x) => x.author.id === I1.me.id), 'заблокированный автор не виден');
+  expect(await call(I3.jar, 'GET', `/api/media/${imAll.id}.jpg`, { uni: '' }), 404, 'фото после блока');
+  expect(await call(I3.jar, 'DELETE', `/api/social/blocks/${I1.me.id}`, { json: {}, headers: W }), 200, 'разблок автора');
+  expect(await call(I1.jar, 'POST', '/api/social/instants', { json: { media: imAll2.id, audience: 'all' }, headers: W }), 201, 'момент всем 2');
+  const mineAll = expect(await call(I1.jar, 'GET', '/api/social/instants/mine'), 200, 'архив');
+  assert.equal(mineAll.items.find((x) => x.id === momentAll.id).audience, 'all');
+  ok('моменты для всех: по умолчанию, лента вуза (не другого), фото вошедшим, не гостям, блокировка');
 
   // Жалоба друга «сексуальное» ×1 не скрывает, модератор видит дело с фото и удаляет момент.
   const rep1 = expect(await report(I2, 'instant', momentA.id, 'sexual'), 200, 'жалоба на момент');

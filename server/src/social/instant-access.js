@@ -18,14 +18,15 @@ function blockedEither(db, a, b) {
 
 /**
  * Видит ли viewer момент i (строка instants) при статусе автора authorStatus.
- * Автор и модератор — всегда (архив, жалобы). Остальные — только друг автора, пока момент не истёк
- * и не скрыт, автор не ограничен и никто из двоих не заблокировал другого.
+ * Автор и модератор — всегда (архив, жалобы). Остальные — пока момент не истёк и не скрыт, автор не ограничен
+ * и никто из двоих не заблокировал другого: момент «для всех» — любой вошедший, «для друзей» — только друг.
  */
 export function canSeeInstant(db, viewer, i, authorStatus) {
   if (!viewer || !i) return false;
   if (viewer.id === i.author_id || isAdmin(viewer)) return true;
   if (Number(i.hidden) || i.expires_at <= nowIso() || authorStatus !== 'active') return false;
-  return areFriends(db, viewer.id, i.author_id) && !blockedEither(db, viewer.id, i.author_id);
+  if (blockedEither(db, viewer.id, i.author_id)) return false;
+  return i.audience === 'all' || areFriends(db, viewer.id, i.author_id);
 }
 
 /** Момент со статусом автора по id (или null). */

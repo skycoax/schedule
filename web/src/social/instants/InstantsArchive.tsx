@@ -45,7 +45,7 @@ function Detail(p: { item: MyInstant; onBack: () => void; onDeleted: (id: number
     return () => c.abort();
   }, [p.item.id]);
   const del = async () => {
-    const ok = await confirmDialog({ title: 'Удалить момент?', message: 'Он пропадёт у друзей и из твоего архива.', confirm: 'Удалить', destructive: true });
+    const ok = await confirmDialog({ title: 'Удалить момент?', message: 'Его больше никто не увидит, и он пропадёт из твоего архива.', confirm: 'Удалить', destructive: true });
     if (!ok) return;
     setBusy(true);
     try {
@@ -68,7 +68,8 @@ function Detail(p: { item: MyInstant; onBack: () => void; onDeleted: (id: number
       <div className="ia__det">
         <div className="ix__frame sq">{p.item.media && <img src={p.item.media.url} alt="Момент" />}</div>
         <p className="ia__stats">
-          {p.item.active ? 'Сейчас видят друзья' : 'Друзья больше не видят'} · {views} {plural(views, ['просмотр', 'просмотра', 'просмотров'])}
+          {p.item.active ? (p.item.audience === 'all' ? 'Сейчас видят все' : 'Сейчас видят друзья') : 'Виден только тебе'}
+          {' · '}{views} {plural(views, ['просмотр', 'просмотра', 'просмотров'])}
           {p.item.hidden ? ' · скрыт после жалобы' : ''}
         </p>
         {d && d.viewers && d.viewers.length > 0 && (
@@ -146,7 +147,7 @@ export function InstantsArchive(p: { onClose: () => void; onCamera?: () => void 
             {state === 'loading' && <div className="ia__more"><Spinner size={24} /></div>}
             {state === 'error' && <p className="ia__empty">Не удалось загрузить моменты.</p>}
             {state === 'ready' && !items.length && (
-              <p className="ia__empty">Здесь будут твои моменты — снимки, которые сутки видят друзья. Хранятся год.</p>
+              <p className="ia__empty">Здесь будут твои моменты — снимки, которые сутки видят все или только друзья. Хранятся год.</p>
             )}
             {sections.map((sec) => (
               <section key={sec.title}>
