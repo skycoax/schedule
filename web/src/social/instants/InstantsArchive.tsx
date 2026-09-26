@@ -2,7 +2,7 @@
 // дальше по месяцам; сетка суперэллипсов с реакциями. Нажатие — момент крупно: кто видел, какие реакции,
 // «Удалить». Видно только автору.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { JSX } from 'react';
+import type { CSSProperties, JSX } from 'react';
 import { createPortal } from 'react-dom';
 import { confirmDialog } from '../../ui/ActionSheet';
 import { Icon } from '../../ui/icons';
@@ -89,7 +89,7 @@ function Detail(p: { item: MyInstant; onBack: () => void; onDeleted: (id: number
   );
 }
 
-export function InstantsArchive(p: { onClose: () => void; onCamera?: () => void }): JSX.Element {
+export function InstantsArchive(p: { motion?: string; onClose: () => void; onCamera?: () => void }): JSX.Element {
   installSquircle();
   useLayer(true, p.onClose, 'instant-archive');
   useHideTabBar(true, 'instant');
@@ -98,6 +98,7 @@ export function InstantsArchive(p: { onClose: () => void; onCamera?: () => void 
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [more, setMore] = useState(false);
   const [open, setOpen] = useState<MyInstant | null>(null);
+  const [returned, setReturned] = useState(false);   // вернулись из «детали» — список въезжает слева
   const ctrl = useRef<AbortController | null>(null);
 
   const load = useCallback(async (cursor: string | null) => {
@@ -130,10 +131,10 @@ export function InstantsArchive(p: { onClose: () => void; onCamera?: () => void 
   }, [items]);
 
   return createPortal(
-    <div className="ix ia" role="dialog" aria-modal="true" aria-label="Твои моменты">
+    <div className={'ix ia ' + (p.motion || '')} role="dialog" aria-modal="true" aria-label="Твои моменты">
       {open ? (
-        <Detail item={open} onBack={() => setOpen(null)}
-          onDeleted={(id) => { setItems((l) => l.filter((x) => x.id !== id)); setOpen(null); }} />
+        <Detail item={open} onBack={() => { setReturned(true); setOpen(null); }}
+          onDeleted={(id) => { setItems((l) => l.filter((x) => x.id !== id)); setReturned(true); setOpen(null); }} />
       ) : (
         <>
           <div className="ix__bar">
@@ -143,7 +144,7 @@ export function InstantsArchive(p: { onClose: () => void; onCamera?: () => void 
               ? <button type="button" className="ix__icon" aria-label="Новый момент" onClick={p.onCamera}><Icon name="camera" size={24} /></button>
               : <span />}
           </div>
-          <div className="ia__body">
+          <div className={'ia__body' + (returned ? ' is-back' : '')}>
             {state === 'loading' && <div className="ia__more"><Spinner size={24} /></div>}
             {state === 'error' && <p className="ia__empty">Не удалось загрузить моменты.</p>}
             {state === 'ready' && !items.length && (
@@ -153,9 +154,9 @@ export function InstantsArchive(p: { onClose: () => void; onCamera?: () => void 
               <section key={sec.title}>
                 <h3 className="ia__sec">{sec.title}</h3>
                 <div className="ia__grid">
-                  {sec.items.map((x) => (
+                  {sec.items.map((x, k) => (
                     <button key={x.id} type="button" className="ia__cell sq" aria-label={'Момент ' + WHEN.format(Date.parse(x.createdAt))}
-                      onClick={() => setOpen(x)}>
+                      style={{ '--i': Math.min(k, 14) } as CSSProperties} onClick={() => setOpen(x)}>
                       {x.media && <img src={x.media.thumb} alt="" loading="lazy" decoding="async" />}
                       {total(x) > 0 && <span className="ia__react">{x.reactions[0].emoji} {total(x)}</span>}
                       {x.active && <span className="ia__live">сейчас</span>}

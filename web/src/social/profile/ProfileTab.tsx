@@ -26,6 +26,7 @@ import { ScreenVisible } from '../chat/PostCard';
 import { ThreadView } from '../chat/ThreadView';
 import { WhatsNew } from '../chat/WhatsNew';
 import { InstantsArchive } from '../instants/InstantsArchive';
+import { ixMotion, useLeave } from '../instants/motion';
 import { BlockedView } from './BlockedView';
 import { DeleteAccountSheet } from './DeleteAccountSheet';
 import { EditProfileSheet } from './EditProfileSheet';
@@ -72,6 +73,7 @@ export default function ProfileTab(p: ProfileTabProps): JSX.Element {
   const [delOpen, setDelOpen] = useState(false);
   const [composer, setComposer] = useState(false);
   const [archive, setArchive] = useState(false);
+  const [archiveLeaving, closeArchive] = useLeave(() => setArchive(false));
   const [Mod, setMod] = useState<ModComp | null>(null);
   const [Users, setUsers] = useState<UsersComp | null>(null);
   const [slow, setSlow] = useState(false);
@@ -372,7 +374,7 @@ export default function ProfileTab(p: ProfileTabProps): JSX.Element {
       {onboarded && <EditProfileSheet open={editOpen} onClose={() => setEditOpen(false)} />}
       <DeleteAccountSheet open={delOpen && s.status === 'signed'} onClose={() => setDelOpen(false)} />
       {composer && <Composer onClose={() => setComposer(false)} onPublished={() => setComposer(false)} />}
-      {archive && <InstantsArchive onClose={() => setArchive(false)} />}
+      {archive && <InstantsArchive motion={ixMotion('push', archiveLeaving)} onClose={closeArchive} />}
     </>
   );
 }

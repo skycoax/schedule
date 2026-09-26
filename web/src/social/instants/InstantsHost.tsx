@@ -1,8 +1,11 @@
 // Моменты в «Обсуждениях»: карточка у правого края (как в Instagram — «+», а когда есть моменты друзей и людей
 // из вуза — фото на всю карточку, сначала непросмотренное), камера, просмотр моментов и архив «Твои моменты».
 // Моменты грузятся, пока вкладка видна: сразу и раз в минуту, после своего момента — заново.
-import { useCallback, useEffect, useState } from 'react';
+// Анимации: из карточки экран «вырастает» и в неё же уходит; камера выезжает снизу, архив — справа;
+// между экранами под ними чёрная подложка, чтобы лента не мигала.
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { JSX } from 'react';
+import { createPortal } from 'react-dom';
 import { Icon } from '../../ui/icons';
 import { socialApi } from '../api';
 import { currentReturnTo, useSession } from '../session';
@@ -11,6 +14,8 @@ import { InstantCamera } from './InstantCamera';
 import { InstantViewer } from './InstantViewer';
 import { InstantsArchive } from './InstantsArchive';
 import { installSquircle } from './squircle';
+import { ixMotion, setIxOrigin, useLeave } from './motion';
+import type { IxAnim } from './motion';
 import './instants.css';
 
 type Screen = null | 'camera' | 'viewer' | 'archive';
@@ -21,6 +26,11 @@ export function InstantsHost(p: { active: boolean; hidden?: boolean }): JSX.Elem
   const [feed, setFeed] = useState<InstantsFeed | null>(null);
   const [screen, setScreen] = useState<Screen>(null);
   const [start, setStart] = useState(0);
+  const [anim, setAnim] = useState<IxAnim>('zoom');
+  const [back, setBack] = useState<Screen>(null);   // куда вернуться из архива («Назад»), если пришли из камеры
+  const card = useRef<HTMLButtonElement>(null);
+  const [leaving, closeAll] = useLeave(() => { setScreen(null); setBack(null); });
+  const go = (next: Exclude<Screen, null>, a: IxAnim, from: Screen = null) => { setAnim(a); setBack(from); setScreen(next); };
   const ready = s.status === 'signed' && !!s.me?.username && s.mode === 'on';
 
   const load = useCallback(async () => {
@@ -54,13 +64,14 @@ export function InstantsHost(p: { active: boolean; hidden?: boolean }): JSX.Elem
 
   const open = async () => {
     if (!(await s.ensure('post', currentReturnTo()))) return;
+    setIxOrigin(card.current);
     const groups = feed?.groups || [];
     if (groups.length) {
       const i = groups.findIndex((g) => g.unseen > 0);
       setStart(i >= 0 ? i : 0);
-      setScreen('viewer');
+      go('viewer', 'zoom');
     } else {
-      setScreen('camera');
+      go('camera', 'zoom');
     }
   };
 
@@ -70,23 +81,28 @@ export function InstantsHost(p: { active: boolean; hidden?: boolean }): JSX.Elem
   const first = groups.find((g) => g.unseen > 0) || groups[0];
   const cover = first ? (first.items.find((x) => !x.seen) || first.items[first.items.length - 1]).media.thumb : null;
   const label = unseen ? `Моменты: новых ${unseen}` : groups.length ? 'Моменты' : 'Новый момент';
+  const motion = ixMotion(anim, leaving);
 
   return (
     <>
       {p.active && (
-        <button type="button" className={'ie' + (cover ? ' has-photo' : '') + (p.hidden || screen ? ' is-hidden' : '')}
+        <button ref={card} type="button" className={'ie' + (cover ? ' has-photo' : '') + (p.hidden || screen ? ' is-hidden' : '')}
           aria-label={label} onClick={() => void open()}>
           {cover ? <img className="ie__img" src={cover} alt="" /> : <Icon name="plus" size={26} />}
         </button>
       )}
+      {screen && createPortal(<div className={'ix-shade' + (leaving ? ' is-leaving' : '')} aria-hidden="true" />, document.body)}
       {screen === 'camera' && (
-        <InstantCamera onClose={() => setScreen(null)} onSent={() => void load()} onArchive={() => setScreen('archive')} />
+        <InstantCamera motion={motion} onClose={closeAll} onSent={() => void load()} onArchive={() => go('archive', 'push', 'camera')} />
       )}
       {screen === 'viewer' && feed && feed.groups.length > 0 && (
-        <InstantViewer groups={feed.groups} start={Math.min(start, feed.groups.length - 1)} onClose={() => setScreen(null)}
-          onCamera={() => setScreen('camera')} onUpdate={patch} onGone={gone} />
+        <InstantViewer motion={motion} groups={feed.groups} start={Math.min(start, feed.groups.length - 1)} onClose={closeAll}
+          onCamera={() => go('camera', 'up')} onUpdate={patch} onGone={gone} />
       )}
-      {screen === 'archive' && <InstantsArchive onClose={() => setScreen(null)} onCamera={() => setScreen('camera')} />}
+      {screen === 'archive' && (
+        <InstantsArchive motion={motion} onClose={back === 'camera' ? () => go('camera', 'back') : closeAll}
+          onCamera={() => go('camera', 'up')} />
+      )}
     </>
   );
 }

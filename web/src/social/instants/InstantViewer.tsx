@@ -25,7 +25,10 @@ const firstUnseen = (g: InstantGroup | undefined) => {
   return i >= 0 ? i : 0;
 };
 
+type Move = '' | 'next' | 'prev' | 'author-next' | 'author-prev';
+
 export function InstantViewer(p: {
+  motion?: string;
   groups: InstantGroup[];
   start: number;
   onClose: () => void;
@@ -40,6 +43,7 @@ export function InstantViewer(p: {
   const [gi, setGi] = useState(p.start);
   const [ii, setIi] = useState(() => firstUnseen(p.groups[p.start]));
   const [pop, setPop] = useState<{ e: string; k: number } | null>(null);
+  const [move, setMove] = useState<Move>('');
   const g = p.groups[gi];
   const it = g ? g.items[Math.min(ii, g.items.length - 1)] : undefined;
 
@@ -52,13 +56,13 @@ export function InstantViewer(p: {
 
   const next = () => {
     if (!g) return;
-    if (ii < g.items.length - 1) setIi(ii + 1);
-    else if (gi < p.groups.length - 1) { setGi(gi + 1); setIi(firstUnseen(p.groups[gi + 1])); }
+    if (ii < g.items.length - 1) { setMove('next'); setIi(ii + 1); }
+    else if (gi < p.groups.length - 1) { setMove('author-next'); setGi(gi + 1); setIi(firstUnseen(p.groups[gi + 1])); }
     else p.onClose();
   };
   const prev = () => {
-    if (ii > 0) setIi(ii - 1);
-    else if (gi > 0) { setGi(gi - 1); setIi(p.groups[gi - 1].items.length - 1); }
+    if (ii > 0) { setMove('prev'); setIi(ii - 1); }
+    else if (gi > 0) { setMove('author-prev'); setGi(gi - 1); setIi(p.groups[gi - 1].items.length - 1); }
   };
 
   useEffect(() => {
@@ -93,12 +97,12 @@ export function InstantViewer(p: {
   };
 
   return createPortal(
-    <div className="ix iv" role="dialog" aria-modal="true" aria-label={'Моменты: ' + g.author.name}>
+    <div className={'ix iv ' + (p.motion || '')} role="dialog" aria-modal="true" aria-label={'Моменты: ' + g.author.name}>
       <div className="iv__bars" aria-hidden="true">
         {g.items.map((x, k) => <i key={x.id} className={k < ii ? 'is-done' : k === ii ? 'is-on' : ''} />)}
       </div>
       <div className="iv__top">
-        <div className="iv__who">
+        <div key={g.author.id} className={'iv__who' + (move.startsWith('author') ? ' is-new' : '')}>
           <Avatar user={g.author} size={32} />
           <span className="iv__name">{g.author.name}</span>
           <span className="iv__time">{relTime(it.createdAt)}</span>
@@ -108,8 +112,8 @@ export function InstantViewer(p: {
         <button type="button" className="ix__icon" aria-label="Закрыть" onClick={p.onClose}><Icon name="close" size={24} /></button>
       </div>
       <div className="iv__stage">
-        <div className="ix__frame sq">
-          <img key={it.id} src={it.media.url} alt={'Момент ' + g.author.name} />
+        <div key={it.id} className={'ix__frame sq' + (move ? ' iv--' + move : '')}>
+          <img src={it.media.url} alt={'Момент ' + g.author.name} />
         </div>
         <button type="button" className="iv__nav iv__nav--prev" aria-label="Предыдущий" onClick={prev} />
         <button type="button" className="iv__nav iv__nav--next" aria-label="Следующий" onClick={next} />

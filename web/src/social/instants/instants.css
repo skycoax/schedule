@@ -22,10 +22,32 @@
 
 /* ─── Общий полноэкранный слой (камера, просмотр, архив) ───
    Ниже листов (ui-layer 60, ActionSheet 70): жалоба, «Удалить?», вход открываются поверх. */
-.ix{position:fixed;inset:0;z-index:58;display:flex;flex-direction:column;background:#000;color:#fff;
+.ix{position:fixed;inset:0;z-index:58;display:flex;flex-direction:column;background:#000;color:#fff;overflow:hidden;
   padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
   animation:ix-in 260ms cubic-bezier(.2,.8,.2,1);font-family:var(--font)}
 @keyframes ix-in{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:none}}
+
+/* Как экран появляется и уходит (motion.ts): из карточки у края и обратно в неё, снизу, справа, слева. */
+.ix-shade{position:fixed;inset:0;z-index:57;background:#000;pointer-events:none;animation:ix-fade 260ms ease-out both}
+.ix-shade.is-leaving{animation:ix-fade-out 230ms ease-in both}
+@keyframes ix-fade{from{opacity:0}}
+@keyframes ix-fade-out{to{opacity:0}}
+.ix--zoom, .ix--back.is-leaving{transform-origin:var(--ix-ox, 100%) var(--ix-oy, 60%)}
+.ix--zoom{animation:ix-zoom 380ms cubic-bezier(.2,.9,.22,1) both}
+@keyframes ix-zoom{from{opacity:0;transform:scale(.16);border-radius:48px}60%{opacity:1}to{transform:none;border-radius:0}}
+.ix--up{animation:ix-up 360ms cubic-bezier(.2,.9,.22,1) both}
+@keyframes ix-up{from{transform:translateY(100%)}}
+.ix--push{animation:ix-push 340ms cubic-bezier(.2,.9,.22,1) both}
+@keyframes ix-push{from{transform:translateX(100%)}}
+.ix--back{animation:ix-back 320ms cubic-bezier(.2,.9,.22,1) both}
+@keyframes ix-back{from{opacity:.4;transform:translateX(-28%)}}
+.ix.is-leaving{pointer-events:none}
+.ix--zoom.is-leaving, .ix--back.is-leaving{animation:ix-shrink 230ms cubic-bezier(.4,0,.7,.4) both}
+@keyframes ix-shrink{to{opacity:0;transform:scale(.16);border-radius:48px}}
+.ix--up.is-leaving{animation:ix-down 230ms cubic-bezier(.4,0,.7,.4) both}
+@keyframes ix-down{to{transform:translateY(100%)}}
+.ix--push.is-leaving{animation:ix-push-out 230ms cubic-bezier(.4,0,.7,.4) both}
+@keyframes ix-push-out{to{transform:translateX(100%)}}
 .ix__bar{flex:none;display:grid;grid-template-columns:44px 1fr 44px;align-items:center;gap:8px;height:56px;padding:0 12px}
 .ix__title{font-size:17px;font-weight:600;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ix__icon{display:grid;place-items:center;width:44px;height:44px;border-radius:22px;color:#fff}
@@ -39,6 +61,10 @@
   transform:translateX(-50%);background:rgba(0,0,0,.45);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);
   color:#fff;font:600 13px/32px var(--font);font-variant-numeric:tabular-nums;-webkit-tap-highlight-color:transparent}
 .ic__zoom.is-on{color:#ffd60a}
+.ix__frame > img.ic__shot{animation:ic-shot 360ms ease-out both}
+@keyframes ic-shot{from{filter:brightness(2.2);transform:scale(1.04)}}
+.ic__controls, .ic__after{animation:ic-swap 260ms cubic-bezier(.2,.9,.22,1) both}
+@keyframes ic-swap{from{opacity:0;transform:translateY(12px)}}
 .ic__zoom:active{background:rgba(0,0,0,.6)}
 .ix__msg{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;
   padding:24px;text-align:center;font-size:15px;line-height:1.4;color:rgba(255,255,255,.8)}
@@ -74,8 +100,22 @@
 
 /* ─── Просмотр моментов друзей ─── */
 .iv__bars{flex:none;display:flex;gap:4px;padding:10px 16px 0}
-.iv__bars i{flex:1;height:3px;border-radius:2px;background:rgba(255,255,255,.28)}
-.iv__bars i.is-on, .iv__bars i.is-done{background:#fff}
+.iv__bars i{position:relative;flex:1;height:3px;border-radius:2px;overflow:hidden;background:rgba(255,255,255,.28)}
+.iv__bars i.is-done{background:#fff}
+.iv__bars i.is-on::after{content:"";position:absolute;inset:0;background:#fff;transform-origin:left;
+  animation:iv-bar 420ms cubic-bezier(.2,.9,.22,1) both}
+@keyframes iv-bar{from{transform:scaleX(0)}}
+/* Перелистывание: следующий/предыдущий момент того же автора — сдвиг; другой автор — въезжает сбоку */
+.iv--next{animation:iv-next 280ms cubic-bezier(.2,.9,.22,1) both}
+.iv--prev{animation:iv-prev 280ms cubic-bezier(.2,.9,.22,1) both}
+@keyframes iv-next{from{opacity:0;transform:translateX(22px) scale(.97)}}
+@keyframes iv-prev{from{opacity:0;transform:translateX(-22px) scale(.97)}}
+.iv--author-next{animation:iv-author-next 400ms cubic-bezier(.2,.9,.22,1) both}
+.iv--author-prev{animation:iv-author-prev 400ms cubic-bezier(.2,.9,.22,1) both}
+@keyframes iv-author-next{from{opacity:0;transform:translateX(60%) scale(.86) rotate(5deg)}}
+@keyframes iv-author-prev{from{opacity:0;transform:translateX(-60%) scale(.86) rotate(-5deg)}}
+.iv__who.is-new{animation:iv-who 300ms ease-out both}
+@keyframes iv-who{from{opacity:0;transform:translateY(-6px)}}
 .iv__top{flex:none;display:flex;align-items:center;gap:10px;height:56px;padding:0 8px 0 16px}
 .iv__who{flex:1;min-width:0;display:flex;align-items:center;gap:6px}
 .iv__name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:15px;font-weight:600}
@@ -99,7 +139,11 @@
 .ia__body{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:0 12px 24px;-webkit-overflow-scrolling:touch}
 .ia__sec{margin:18px 4px 10px;font-size:20px;font-weight:700;letter-spacing:-.01em}
 .ia__grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
-.ia__cell{position:relative;aspect-ratio:1;background:#1c1c1e}
+.ia__cell{position:relative;aspect-ratio:1;background:#1c1c1e;
+  animation:ia-cell 380ms cubic-bezier(.2,.9,.22,1) both;animation-delay:calc(var(--i, 0) * 24ms)}
+@keyframes ia-cell{from{opacity:0;transform:scale(.9)}}
+.ia__body.is-back{animation:ia-pop 300ms cubic-bezier(.2,.9,.22,1) both}
+@keyframes ia-pop{from{opacity:0;transform:translateX(-32px)}}
 .ia__cell img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 .ia__cell:active{opacity:.8}
 .ia__react{position:absolute;top:10%;right:12%;display:flex;align-items:center;gap:3px;font:600 14px/1 var(--font);
@@ -108,7 +152,8 @@
   font:600 11px/1.2 var(--font);color:#fff}
 .ia__empty{padding:80px 24px;text-align:center;font-size:15px;line-height:1.45;color:rgba(255,255,255,.6)}
 .ia__more{display:flex;justify-content:center;padding:16px}
-.ia__det{flex:1;min-height:0;overflow-y:auto;padding:0 16px 24px}
+.ia__det{flex:1;min-height:0;overflow-y:auto;padding:0 16px 24px;animation:ia-push 320ms cubic-bezier(.2,.9,.22,1) both}
+@keyframes ia-push{from{opacity:0;transform:translateX(40px)}}
 .ia__det .ix__frame{width:min(100%, 420px);margin:8px auto 0}
 .ia__stats{margin:16px 4px 8px;font-size:14px;color:rgba(255,255,255,.6)}
 .ia__viewers{list-style:none;margin:0;padding:0}
@@ -119,6 +164,7 @@
   color:#ff453a;font-size:16px;font-weight:600}
 
 @media (prefers-reduced-motion: reduce){
-  .ie, .ix, .iv__pop{animation:none}
+  .ie, .ix, .ix.is-leaving, .ix-shade, .iv__pop, .ix__frame, .ix__frame > img, .ic__controls, .ic__after, .iv__who,
+  .iv__bars i::after, .ia__cell, .ia__body, .ia__det{animation:none}
   .ic__flash{animation-duration:200ms}
 }

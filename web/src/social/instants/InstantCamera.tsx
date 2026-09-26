@@ -90,7 +90,7 @@ function camError(e: unknown): string {
   return 'Камера не включилась. Закрой другие приложения с камерой и попробуй ещё раз.';
 }
 
-export function InstantCamera(p: { onClose: () => void; onSent: () => void; onArchive: () => void }): JSX.Element {
+export function InstantCamera(p: { motion?: string; onClose: () => void; onSent: () => void; onArchive: () => void }): JSX.Element {
   installSquircle();
   const s = useSession();
   useLayer(true, p.onClose, 'instant-camera');
@@ -109,6 +109,7 @@ export function InstantCamera(p: { onClose: () => void; onSent: () => void; onAr
   const [zoom, setZoom] = useState(1);
   const [zr, setZr] = useState<ZoomRange>(DIGITAL);
   const zoomNow = useRef({ zoom: 1, zr: DIGITAL, live: false });
+  const zoomAnim = useRef(0);   // плавный переход зума по кнопке «1× / 2×»
   const shotUrl = useRef('');
   const [audience, setAudience] = useState<InstantAudience>(() => (ls(AUD_KEY) === 'friends' ? 'friends' : 'all'));
 
@@ -191,7 +192,11 @@ export function InstantCamera(p: { onClose: () => void; onSent: () => void; onAr
     let from = 1;
     const dist = (t: TouchList) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
     const onStart = (e: TouchEvent) => {
-      if (e.touches.length === 2 && zoomNow.current.live) { start = dist(e.touches); from = zoomNow.current.zoom; }
+      if (e.touches.length === 2 && zoomNow.current.live) {
+        cancelAnimationFrame(zoomAnim.current);
+        start = dist(e.touches);
+        from = zoomNow.current.zoom;
+      }
     };
     const onMove = (e: TouchEvent) => {
       if (e.touches.length !== 2 || !start) return;
@@ -214,6 +219,7 @@ export function InstantCamera(p: { onClose: () => void; onSent: () => void; onAr
     el.addEventListener('wheel', onWheel, { passive: false });
     el.addEventListener('gesturestart', noGesture);
     return () => {
+      cancelAnimationFrame(zoomAnim.current);
       el.removeEventListener('touchstart', onStart);
       el.removeEventListener('touchmove', onMove);
       el.removeEventListener('touchend', onEnd);
@@ -223,7 +229,18 @@ export function InstantCamera(p: { onClose: () => void; onSent: () => void; onAr
     };
   }, []);
 
-  const toggleZoom = () => setZoom((z) => (z < 1.95 ? clamp(2, zr.min, zr.max) : clamp(1, zr.min, zr.max)));
+  const toggleZoom = () => {
+    const z0 = zoomNow.current.zoom;
+    const target = z0 < 1.95 ? clamp(2, zr.min, zr.max) : clamp(1, zr.min, zr.max);
+    cancelAnimationFrame(zoomAnim.current);
+    const t0 = performance.now();
+    const step = (t: number) => {
+      const k = Math.min(1, (t - t0) / 240);
+      setZoom(z0 + (target - z0) * (1 - Math.pow(1 - k, 3)));
+      if (k < 1) zoomAnim.current = requestAnimationFrame(step);
+    };
+    zoomAnim.current = requestAnimationFrame(step);
+  };
 
   const keep = (img: Shot) => {
     if (shotUrl.current) URL.revokeObjectURL(shotUrl.current);
@@ -277,7 +294,7 @@ export function InstantCamera(p: { onClose: () => void; onSent: () => void; onAr
   const dz = zr.hw ? 1 : zoom;   // цифровой зум — увеличиваем само видео
 
   return createPortal(
-    <div className="ix ic" role="dialog" aria-modal="true" aria-label="Новый момент">
+    <div className={'ix ic ' + (p.motion || '')} role="dialog" aria-modal="true" aria-label="Новый момент">
       <div className="ix__bar">
         <button type="button" className="ix__icon" aria-label="Закрыть" onClick={p.onClose}><Icon name="close" size={24} /></button>
         <h2 className="ix__title">Новый момент</h2>
@@ -287,7 +304,7 @@ export function InstantCamera(p: { onClose: () => void; onSent: () => void; onAr
       <div className="ix__stage">
         <div ref={frame} className={'ix__frame sq' + (shot ? '' : ' is-cam')}>
           {shot
-            ? <img src={shot.url} alt="Снимок" />
+            ? <img className="ic__shot" src={shot.url} alt="Снимок" />
             : <video ref={video} style={{ transform: `scale(${facing === 'user' ? -dz : dz}, ${dz})` }} playsInline muted autoPlay />}
           {!shot && phase === 'live' && (
             <button type="button" className={'ic__zoom' + (zoom > 1.04 ? ' is-on' : '')} onClick={toggleZoom}
