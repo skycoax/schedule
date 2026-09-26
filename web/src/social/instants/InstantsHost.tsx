@@ -1,5 +1,5 @@
-// Моменты в «Обсуждениях»: карточка у правого края (как в Instagram — «+», а когда есть новые моменты друзей
-// и людей из вуза — их миниатюры и число), камера, просмотр моментов и архив «Твои моменты».
+// Моменты в «Обсуждениях»: карточка у правого края (как в Instagram — «+», а когда есть моменты друзей и людей
+// из вуза — фото на всю карточку, сначала непросмотренное), камера, просмотр моментов и архив «Твои моменты».
 // Моменты грузятся, пока вкладка видна: сразу и раз в минуту, после своего момента — заново.
 import { useCallback, useEffect, useState } from 'react';
 import type { JSX } from 'react';
@@ -67,18 +67,16 @@ export function InstantsHost(p: { active: boolean; hidden?: boolean }): JSX.Elem
   if (s.mode === 'off') return null;
   const groups = feed?.groups || [];
   const unseen = groups.reduce((n, g) => n + g.unseen, 0);
-  const thumbs = groups.filter((g) => g.unseen > 0).slice(0, 2)
-    .map((g) => (g.items.find((x) => !x.seen) || g.items[0]).media.thumb);
+  const first = groups.find((g) => g.unseen > 0) || groups[0];
+  const cover = first ? (first.items.find((x) => !x.seen) || first.items[first.items.length - 1]).media.thumb : null;
   const label = unseen ? `Моменты: новых ${unseen}` : groups.length ? 'Моменты' : 'Новый момент';
 
   return (
     <>
       {p.active && (
-        <button type="button" className={'ie' + (p.hidden || screen ? ' is-hidden' : '')} aria-label={label} onClick={() => void open()}>
-          {thumbs.length
-            ? <span className="ie__stack">{thumbs.map((t) => <img key={t} className="sq" src={t} alt="" />)}</span>
-            : <Icon name="plus" size={26} />}
-          {unseen > 0 && <span className="ie__badge">{unseen}</span>}
+        <button type="button" className={'ie' + (cover ? ' has-photo' : '') + (p.hidden || screen ? ' is-hidden' : '')}
+          aria-label={label} onClick={() => void open()}>
+          {cover ? <img className="ie__img" src={cover} alt="" /> : <Icon name="plus" size={26} />}
         </button>
       )}
       {screen === 'camera' && (

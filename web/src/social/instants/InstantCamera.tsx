@@ -4,6 +4,8 @@
 // Момент — только живой снимок: фото из галереи выбрать нельзя. Нет камеры (отказ в доступе, компьютер без
 // камеры) — объяснение и «Повторить».
 // Вспышка: задняя камера — фонарик, где браузер его даёт (Android); передняя — белый экран, как в iPhone.
+// Зум: щипок двумя пальцами (колесо мыши) и кнопка «1× / 2×» внизу кадра. Где камера умеет зум сама (Android,
+// новые iOS), зумирует камера; иначе — цифровой зум до 5×: снимок берётся из середины кадра.
 import { useEffect, useRef, useState } from 'react';
 import type { JSX } from 'react';
 import { createPortal } from 'react-dom';
@@ -21,30 +23,61 @@ import { installSquircle } from './squircle';
 import './instants.css';
 
 type Phase = 'starting' | 'live' | 'nocam' | 'shot' | 'sending';
-interface Shot { full: Blob; thumb: Blob; url: string }
+interface Shot { full: Blob; thumb: Blob | null; url: string }
+interface ZoomRange { min: number; max: number; hw: boolean }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const AUD_KEY = 'instant_aud';
+/** Сервер принимает фото до 900 КБ и миниатюру до 150 КБ — берём с запасом. */
+const FULL_MAX = 880_000;
+const THUMB_MAX = 140_000;
+/** Цифровой зум (когда камера сама не умеет) — до 5×. */
+const DIGITAL: ZoomRange = { min: 1, max: 5, hw: false };
+const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
+/** «1×», «1,5×», «2×». */
+const zoomText = (z: number) => String(Math.round(z * 10) / 10).replace('.', ',') + '×';
 
-/** Квадрат из середины кадра: полный (до 1080) и миниатюра (до 640). mirror — передняя камера. */
-async function squareFrom(src: CanvasImageSource, w: number, h: number, mirror: boolean): Promise<Shot> {
-  const side = Math.min(w, h);
+const jpeg = (c: HTMLCanvasElement, q: number) => new Promise<Blob | null>((resolve) => c.toBlob(resolve, 'image/jpeg', q));
+
+function paint(size: number, from: CanvasImageSource, side: number, x: number, y: number, mirror: boolean): HTMLCanvasElement {
+  const c = document.createElement('canvas');
+  c.width = size;
+  c.height = size;
+  const ctx = c.getContext('2d');
+  if (!ctx) throw new Error('Не получилось сохранить снимок');
+  ctx.imageSmoothingQuality = 'high';
+  if (mirror) { ctx.translate(size, 0); ctx.scale(-1, 1); }
+  ctx.drawImage(from, x, y, side, side, 0, 0, size, size);
+  return c;
+}
+
+/**
+ * Квадрат из середины кадра (при цифровом зуме — из меньшей середины): полное фото до 1080 и миниатюра до 640.
+ * Качество подбирается под предел сервера (0,92 → 0,6), не влезло — размер чуть меньше; миниатюра не влезла —
+ * без неё (сервер покажет полное). Снимок с любой камеры — хорошей или слабой — уходит без отказа.
+ */
+async function squareFrom(src: CanvasImageSource, w: number, h: number, mirror: boolean, zoom = 1): Promise<Shot> {
+  const side = Math.min(w, h) / Math.max(1, zoom);
   const sx = (w - side) / 2;
   const sy = (h - side) / 2;
-  const out = (size: number, q: number) => new Promise<Blob>((resolve, reject) => {
-    const c = document.createElement('canvas');
-    c.width = size;
-    c.height = size;
-    const ctx = c.getContext('2d');
-    if (!ctx) { reject(new Error('Не получилось сохранить снимок')); return; }
-    if (mirror) { ctx.translate(size, 0); ctx.scale(-1, 1); }
-    ctx.drawImage(src, sx, sy, side, side, 0, 0, size, size);
-    c.toBlob((b) => (b ? resolve(b) : reject(new Error('Не получилось сохранить снимок'))), 'image/jpeg', q);
-  });
-  const fullSide = Math.max(1, Math.min(1080, Math.round(side)));
-  let full = await out(fullSide, 0.86);
-  if (full.size > 860_000) full = await out(fullSide, 0.7);
-  const thumb = await out(Math.min(640, fullSide), 0.8);
+  let size = Math.max(1, Math.min(1080, Math.round(side)));
+  let full: Blob | null = null;
+  let canvas: HTMLCanvasElement | null = null;
+  for (let attempt = 0; attempt < 5 && !full; attempt++) {
+    canvas = paint(size, src, side, sx, sy, mirror);
+    for (const q of [0.92, 0.85, 0.78, 0.7, 0.6]) {
+      const b = await jpeg(canvas, q);
+      if (b && b.size <= FULL_MAX) { full = b; break; }
+    }
+    if (!full) size = Math.max(1, Math.round(size * 0.85));
+  }
+  if (!full || !canvas) throw new Error('Не получилось сохранить снимок');
+  const t = paint(Math.min(640, size), canvas, size, 0, 0, false);
+  let thumb: Blob | null = null;
+  for (const q of [0.82, 0.72, 0.62, 0.52, 0.42]) {
+    const b = await jpeg(t, q);
+    if (b && b.size <= THUMB_MAX) { thumb = b; break; }
+  }
   return { full, thumb, url: URL.createObjectURL(full) };
 }
 
@@ -63,6 +96,7 @@ export function InstantCamera(p: { onClose: () => void; onSent: () => void; onAr
   useLayer(true, p.onClose, 'instant-camera');
   useHideTabBar(true, 'instant');
   const video = useRef<HTMLVideoElement>(null);
+  const frame = useRef<HTMLDivElement>(null);
   const stream = useRef<MediaStream | null>(null);
   const [facing, setFacing] = useState<'environment' | 'user'>('environment');
   const [phase, setPhase] = useState<Phase>('starting');
@@ -72,6 +106,9 @@ export function InstantCamera(p: { onClose: () => void; onSent: () => void; onAr
   const [screenFlash, setScreenFlash] = useState(false);
   const [shot, setShot] = useState<Shot | null>(null);
   const [attempt, setAttempt] = useState(0);        // «Повторить» — запросить камеру заново
+  const [zoom, setZoom] = useState(1);
+  const [zr, setZr] = useState<ZoomRange>(DIGITAL);
+  const zoomNow = useRef({ zoom: 1, zr: DIGITAL, live: false });
   const shotUrl = useRef('');
   const [audience, setAudience] = useState<InstantAudience>(() => (ls(AUD_KEY) === 'friends' ? 'friends' : 'all'));
 
@@ -110,8 +147,19 @@ export function InstantCamera(p: { onClose: () => void; onSent: () => void; onAr
       const v = video.current;
       if (v) { v.srcObject = st; void v.play().catch(() => {}); }
       const track = st.getVideoTracks()[0];
-      const caps = (track && typeof track.getCapabilities === 'function' ? track.getCapabilities() : {}) as { torch?: boolean };
+      const caps = (track && typeof track.getCapabilities === 'function' ? track.getCapabilities() : {}) as
+        { torch?: boolean; zoom?: { min?: number; max?: number } };
+      const set = (track && typeof track.getSettings === 'function' ? track.getSettings() : {}) as { zoom?: number };
       setTorch(!!caps.torch);
+      const hz = caps.zoom;
+      if (hz && typeof hz.min === 'number' && typeof hz.max === 'number' && hz.max > hz.min) {
+        const r = { min: hz.min, max: Math.min(hz.max, 10), hw: true };
+        setZr(r);
+        setZoom(clamp(typeof set.zoom === 'number' ? set.zoom : 1, r.min, r.max));
+      } else {
+        setZr(DIGITAL);
+        setZoom(1);
+      }
       setPhase('live');
     }, (e: unknown) => {
       if (cancelled) return;
@@ -122,6 +170,60 @@ export function InstantCamera(p: { onClose: () => void; onSent: () => void; onAr
   }, [facing, shot, attempt]);
 
   useEffect(() => () => { if (shotUrl.current) URL.revokeObjectURL(shotUrl.current); }, []);
+
+  // Зум камеры (где браузер его даёт) — не чаще раза за кадр.
+  useEffect(() => {
+    if (!zr.hw || phase !== 'live') return;
+    const track = stream.current?.getVideoTracks()[0];
+    if (!track) return;
+    const f = requestAnimationFrame(() => {
+      void track.applyConstraints({ advanced: [{ zoom } as MediaTrackConstraintSet] }).catch(() => {});
+    });
+    return () => cancelAnimationFrame(f);
+  }, [zoom, zr.hw, phase]);
+
+  // Щипок двумя пальцами и колесо мыши по кадру. Слушатели свои (не пассивные), чтобы щипок не зумил страницу.
+  zoomNow.current = { zoom, zr, live: phase === 'live' };
+  useEffect(() => {
+    const el = frame.current;
+    if (!el) return;
+    let start = 0;
+    let from = 1;
+    const dist = (t: TouchList) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+    const onStart = (e: TouchEvent) => {
+      if (e.touches.length === 2 && zoomNow.current.live) { start = dist(e.touches); from = zoomNow.current.zoom; }
+    };
+    const onMove = (e: TouchEvent) => {
+      if (e.touches.length !== 2 || !start) return;
+      e.preventDefault();
+      const r = zoomNow.current.zr;
+      setZoom(clamp(from * dist(e.touches) / start, r.min, r.max));
+    };
+    const onEnd = (e: TouchEvent) => { if (e.touches.length < 2) start = 0; };
+    const onWheel = (e: WheelEvent) => {
+      if (!zoomNow.current.live) return;
+      e.preventDefault();
+      const { zoom: z, zr: r } = zoomNow.current;
+      setZoom(clamp(z * Math.exp(-e.deltaY * 0.002), r.min, r.max));
+    };
+    const noGesture = (e: Event) => e.preventDefault();
+    el.addEventListener('touchstart', onStart, { passive: true });
+    el.addEventListener('touchmove', onMove, { passive: false });
+    el.addEventListener('touchend', onEnd);
+    el.addEventListener('touchcancel', onEnd);
+    el.addEventListener('wheel', onWheel, { passive: false });
+    el.addEventListener('gesturestart', noGesture);
+    return () => {
+      el.removeEventListener('touchstart', onStart);
+      el.removeEventListener('touchmove', onMove);
+      el.removeEventListener('touchend', onEnd);
+      el.removeEventListener('touchcancel', onEnd);
+      el.removeEventListener('wheel', onWheel);
+      el.removeEventListener('gesturestart', noGesture);
+    };
+  }, []);
+
+  const toggleZoom = () => setZoom((z) => (z < 1.95 ? clamp(2, zr.min, zr.max) : clamp(1, zr.min, zr.max)));
 
   const keep = (img: Shot) => {
     if (shotUrl.current) URL.revokeObjectURL(shotUrl.current);
@@ -142,7 +244,7 @@ export function InstantCamera(p: { onClose: () => void; onSent: () => void; onAr
         await track!.applyConstraints({ advanced: [{ torch: true } as MediaTrackConstraintSet] }).catch(() => {});
         await sleep(280);
       }
-      const img = await squareFrom(v, v.videoWidth, v.videoHeight, front);
+      const img = await squareFrom(v, v.videoWidth, v.videoHeight, front, zr.hw ? 1 : zoom);
       if (useTorch) await track!.applyConstraints({ advanced: [{ torch: false } as MediaTrackConstraintSet] }).catch(() => {});
       keep(img);
     } catch (e) {
@@ -172,6 +274,7 @@ export function InstantCamera(p: { onClose: () => void; onSent: () => void; onAr
 
   const canFlash = facing === 'user' || torch;
   const live = phase === 'live' || phase === 'starting';
+  const dz = zr.hw ? 1 : zoom;   // цифровой зум — увеличиваем само видео
 
   return createPortal(
     <div className="ix ic" role="dialog" aria-modal="true" aria-label="Новый момент">
@@ -182,10 +285,14 @@ export function InstantCamera(p: { onClose: () => void; onSent: () => void; onAr
       </div>
 
       <div className="ix__stage">
-        <div className="ix__frame sq">
+        <div ref={frame} className={'ix__frame sq' + (shot ? '' : ' is-cam')}>
           {shot
             ? <img src={shot.url} alt="Снимок" />
-            : <video ref={video} className={facing === 'user' ? 'is-mirror' : undefined} playsInline muted autoPlay />}
+            : <video ref={video} style={{ transform: `scale(${facing === 'user' ? -dz : dz}, ${dz})` }} playsInline muted autoPlay />}
+          {!shot && phase === 'live' && (
+            <button type="button" className={'ic__zoom' + (zoom > 1.04 ? ' is-on' : '')} onClick={toggleZoom}
+              aria-label={'Зум ' + zoomText(zoom)}>{zoomText(zoom)}</button>
+          )}
           {!shot && phase === 'nocam' && (
             <div className="ix__msg">
               <span>{error}</span>

@@ -19,8 +19,9 @@ const TEXT = {
   too_big: 'Фото слишком большое',
 } as const;
 
-const MAX_FILE = 30 * 1024 * 1024;
-const MAX_SOURCE_SIDE = 12000;
+// Только защита от явно не-фото: снимки камер на 108–200 Мп (до ~16 000 px, десятки МБ) принимаются и уменьшаются.
+const MAX_FILE = 150 * 1024 * 1024;
+const MAX_SOURCE_SIDE = 30000;
 const EXT = /\.(jpe?g|png|webp|heic|heif|gif|avif|bmp)$/i;
 
 type Canvas = HTMLCanvasElement | OffscreenCanvas;

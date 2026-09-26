@@ -6,7 +6,7 @@
 
 .sq{-webkit-mask:var(--sq-mask) center/100% 100% no-repeat;mask:var(--sq-mask) center/100% 100% no-repeat}
 
-/* ─── Карточка у правого края ленты: «+» или миниатюры моментов друзей ─── */
+/* ─── Карточка у правого края ленты: «+» или фото момента на всю карточку (половина — за краем экрана) ─── */
 .ie{position:fixed;right:-30px;top:56%;z-index:22;width:78px;height:104px;padding:0 34px 0 10px;border-radius:24px;
   display:flex;align-items:center;justify-content:center;
   background:var(--bar-glass);-webkit-backdrop-filter:blur(20px) saturate(180%);backdrop-filter:blur(20px) saturate(180%);
@@ -14,12 +14,8 @@
   transition:transform 220ms cubic-bezier(.2,.8,.2,1), opacity 180ms var(--ease);animation:ie-in 320ms cubic-bezier(.2,.8,.2,1)}
 .ie:active{transform:translateX(-4px) scale(.97)}
 .ie.is-hidden{transform:translateX(60px);opacity:0;pointer-events:none}
-.ie__stack{position:relative;display:block;width:40px;height:40px}
-.ie__stack img{position:absolute;inset:0;width:40px;height:40px;object-fit:cover;background:var(--media-bg)}
-.ie__stack img:nth-child(1){transform:rotate(-8deg) translateX(-3px)}
-.ie__stack img:nth-child(2){transform:rotate(6deg) translateX(4px)}
-.ie__badge{position:absolute;top:10px;left:4px;min-width:18px;height:18px;padding:0 5px;border-radius:9px;
-  background:var(--accent);color:#fff;font:700 11px/18px var(--font);text-align:center}
+.ie.has-photo{padding:0;overflow:hidden;background:var(--media-bg)}
+.ie__img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
 @keyframes ie-in{from{transform:translateX(60px)}to{transform:none}}
 
 /* ─── Общий полноэкранный слой (камера, просмотр, архив) ───
@@ -36,7 +32,12 @@
 .ix__stage{flex:1;min-height:0;display:grid;place-items:center;padding:8px 16px}
 .ix__frame{position:relative;width:min(100%, calc(100dvh - 330px));aspect-ratio:1;background:#1c1c1e;overflow:hidden}
 .ix__frame > video, .ix__frame > img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
-.ix__frame > video.is-mirror{transform:scaleX(-1)}
+.ix__frame.is-cam{touch-action:none}
+.ic__zoom{position:absolute;left:50%;bottom:14px;z-index:1;min-width:44px;height:32px;padding:0 10px;border-radius:16px;
+  transform:translateX(-50%);background:rgba(0,0,0,.45);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);
+  color:#fff;font:600 13px/32px var(--font);font-variant-numeric:tabular-nums;-webkit-tap-highlight-color:transparent}
+.ic__zoom.is-on{color:#ffd60a}
+.ic__zoom:active{background:rgba(0,0,0,.6)}
 .ix__msg{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;
   padding:24px;text-align:center;font-size:15px;line-height:1.4;color:rgba(255,255,255,.8)}
 
