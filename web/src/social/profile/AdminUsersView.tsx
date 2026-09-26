@@ -103,7 +103,7 @@ function Details({ u, onOpen }: { u: AdminUser; onOpen: (username: string) => vo
   const rows: [string, string][] = [
     ['Почта', u.email + (u.emailVerified ? '' : ' (не подтверждена)')],
     ['Имя в Google', u.google.name || '—'],
-    ['Возраст', u.age === 'minor' ? '16–17 лет' : '18 и старше'],
+    ['Возраст', u.age === 'minor' ? '16–17 лет (отметил при входе)' : '16 и старше'],
     ['Язык Google', u.google.locale || '—'],
     ...(u.google.domain ? [['Домен Google', u.google.domain] as [string, string]] : []),
     ['Регистрация', [whenOf(u.createdAt), u.signup.host, u.signup.device].filter(Boolean).join(' · ')],

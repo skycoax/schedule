@@ -206,6 +206,9 @@ button.frd-row__main:active{background:var(--fill)}
 .signin__link{color:var(--accent,var(--c1));font:inherit;text-align:left}
 .signin__link:active{opacity:.6}
 .signin__note{max-width:420px;margin-top:10px;font-size:12.5px;line-height:1.45;color:var(--ink-60)}
+/* Одна строка согласия под кнопкой Google — как в Instagram и Threads. */
+.signin__legal{margin:4px 8px 2px;font-size:12.5px;line-height:1.45;color:var(--ink-60);text-align:center;text-wrap:balance}
+.signin__legal .signin__link{font-size:inherit}
 .signin__acts{display:flex;flex-direction:column;align-items:stretch;gap:6px;width:100%;max-width:420px;margin-top:18px}
 .signin__dev{width:100%;max-width:420px;margin-top:10px;padding-top:6px;border-top:.5px solid var(--sep)}
 .signin__devbtn{min-height:44px;padding:0 8px;font-size:14px;color:var(--ink-60)}

@@ -1,17 +1,17 @@
-// Лист входа (AuthHost, prompt.kind === 'signin'). Возраст спрашиваем ДО Google, согласие с правилами и
-// политикой — обязательная галочка; вход — полный переход на /api/auth/google/start (session.signIn).
-// Режим удаления (reason 'delete'): без возраста и галочки, аккаунт при таком входе не создаётся.
+// Лист входа (AuthHost, prompt.kind === 'signin'): кнопка Google и одна строка под ней, как в Instagram и Threads:
+// «Продолжая, ты подтверждаешь, что тебе есть 16 лет, и принимаешь Правила и Политику». Нажатие — это согласие
+// (сервер получает accept=1 и возрастную группу «взрослый»); вход — переход на /api/auth/google/start.
+// Режим удаления (reason 'delete'): без согласия, аккаунт при таком входе не создаётся.
 import { useId, useState } from 'react';
 import type { JSX } from 'react';
 import { Sheet } from '../../ui/Sheet';
 import { Button } from '../../ui/Button';
 import { Icon } from '../../ui/icons';
 import type { IconName } from '../../ui/icons';
-import { ageBlocked, setAgeBlock } from '../local';
+import { ageBlocked } from '../local';
 import { LINKS } from '../rules';
 import { useSession } from '../session';
-import { brand } from '../../brand';
-import type { AgeGroup, AuthReason } from '../types';
+import type { AuthReason } from '../types';
 import { GOOGLE_OFF, GoogleButton, OFFLINE_SIGNIN } from './GoogleButton';
 import { PolicySheet, RulesSheet } from './RulesSheet';
 import './profile.css';
@@ -35,8 +35,6 @@ const ICON: Record<AuthReason, IconName> = {
   profile: 'person', search: 'search', account: 'person', delete: 'trash', expired: 'person',
 };
 
-type Age = 'under' | AgeGroup;
-
 /** Удаление, пока вход через Google не настроен (как на странице /delete-account, но на «ты»). */
 const GOOGLE_OFF_DELETE = 'Вход через Google пока недоступен. Напиши @skycoax — удалим аккаунт вручную.';
 
@@ -53,37 +51,27 @@ export function SignInSheet(p: { reason: AuthReason; returnTo: string; onClose: 
   const del = p.reason === 'delete';
   const minAge = s.config?.minAge ?? 16;
   const titleId = useId();
-  const ageName = useId();
-  const consentId = useId();
 
-  const [age, setAge] = useState<Age | null>(null);
-  const [accept, setAccept] = useState(false);
-  const [blocked, setBlocked] = useState(() => !del && ageBlocked());
+  // «Младше 16», выбранное раньше (пока в окне был вопрос о возрасте), действует свои 30 дней.
+  const [blocked] = useState(() => !del && ageBlocked());
   const [rulesOpen, setRulesOpen] = useState(false);
   const [docOpen, setDocOpen] = useState(false);
   const [devOpen, setDevOpen] = useState(false);
   const [devName, setDevName] = useState('');
   const [devBusy, setDevBusy] = useState(false);
 
-  const pickAge = (a: Age) => {
-    setAge(a);
-    if (a === 'under') { setAgeBlock(); setBlocked(true); }
-  };
-
   const noGoogle = s.google === false;
   const caption = noGoogle ? (del ? GOOGLE_OFF_DELETE : GOOGLE_OFF) : !s.online ? OFFLINE_SIGNIN : undefined;
-  const ready = del || ((age === 'minor' || age === 'adult') && accept);
-
   const google = () => {
     if (del) s.signIn({ returnTo: p.returnTo, intent: 'delete', accept: false });
-    else if (age === 'minor' || age === 'adult') s.signIn({ returnTo: p.returnTo, intent: 'signin', age, accept: true });
+    else s.signIn({ returnTo: p.returnTo, intent: 'signin', age: 'adult', accept: true });
   };
 
   const dev = async () => {
     const name = devName.trim().toLowerCase();
     if (!name || devBusy) return;
     setDevBusy(true);
-    await s.devSignIn(name, age === 'minor' || age === 'adult' ? age : 'adult', del ? 'delete' : 'signin');
+    await s.devSignIn(name, 'adult', del ? 'delete' : 'signin');
     setDevBusy(false);
   };
 
@@ -101,11 +89,6 @@ export function SignInSheet(p: { reason: AuthReason; returnTo: string; onClose: 
       </div>
     );
   } else {
-    const opts: { id: Age; label: string }[] = [
-      { id: 'under', label: `Младше ${minAge}` },
-      ...(minAge < 18 ? [{ id: 'minor' as Age, label: `${minAge}–17` }] : []),
-      { id: 'adult', label: '18 и старше' },
-    ];
     body = (
       <div className="signin">
         <span className="signin__ico" aria-hidden="true"><Icon name={ICON[p.reason]} size={28} /></span>
@@ -117,42 +100,16 @@ export function SignInSheet(p: { reason: AuthReason; returnTo: string; onClose: 
         </p>
         {p.reason === 'report' && <Telegram />}
 
-        {!del && (
-          <>
-            <fieldset className="signin__age">
-              <legend className="signin__q">Сколько тебе лет?</legend>
-              <div className="signin__opts">
-                {opts.map((o) => (
-                  <label key={o.id} className="signin__opt">
-                    <input type="radio" name={ageName} className="signin__radio" checked={age === o.id}
-                      onChange={() => pickAge(o.id)} />
-                    <span>{o.label}</span>
-                  </label>
-                ))}
-              </div>
-            </fieldset>
-
-            <div className="signin__consent">
-              <label className="signin__cbwrap">
-                <input type="checkbox" className="signin__cb" checked={accept} aria-labelledby={consentId}
-                  onChange={(e) => setAccept(e.currentTarget.checked)} />
-              </label>
-              <p className="signin__consent-t" id={consentId}
-                onClick={(e) => { if (!(e.target as HTMLElement).closest('button')) setAccept((v) => !v); }}>
-                Принимаю{' '}
-                <button type="button" className="signin__link" onClick={() => setRulesOpen(true)}>Правила обсуждений</button>
-                {' '}и{' '}
-                <button type="button" className="signin__link" onClick={() => setDocOpen(true)}>Политику конфиденциальности</button>
-              </p>
-            </div>
-            <p className="signin__note">Para возьмёт из Google имя, почту и фото — фото станет фото профиля (с 18 лет),
-              его можно поменять. Почту другие люди не увидят.
-              {!brand.hub && ' Аккаунт Para один для всех вузов и приложения Para.'}</p>
-          </>
-        )}
-
         <div className="signin__acts">
-          <GoogleButton onClick={google} disabled={!ready || noGoogle || !s.online} caption={caption} />
+          <GoogleButton onClick={google} disabled={noGoogle || !s.online} caption={caption} />
+          {!del && (
+            <p className="signin__legal">
+              Продолжая, ты подтверждаешь, что тебе есть {minAge} лет, и принимаешь{' '}
+              <button type="button" className="signin__link" onClick={() => setRulesOpen(true)}>Правила обсуждений</button>
+              {' '}и{' '}
+              <button type="button" className="signin__link" onClick={() => setDocOpen(true)}>Политику конфиденциальности</button>.
+            </p>
+          )}
           <Button full variant="plain" size={44} onClick={p.onClose}>Не сейчас</Button>
         </div>
 
