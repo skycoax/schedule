@@ -78,7 +78,7 @@ async function settled(s: Session): Promise<void> {
 
 export function useSocialActions(): {
   /** returnTo: куда вернуть гостя после входа (ThreadView передаёт currentReturnTo({ post: rootId })). */
-  report(target: ReportTarget, o: { username: string; kind: 'post' | 'reply' | 'user'; returnTo?: string }): Promise<ReportResult | null>;
+  report(target: ReportTarget, o: { username: string; kind: 'post' | 'reply' | 'user' | 'instant'; returnTo?: string }): Promise<ReportResult | null>;
   block(user: Pick<UserCard, 'id' | 'username'>, returnTo?: string): Promise<boolean>;
   unblock(user: Pick<UserCard, 'id' | 'username'>): Promise<boolean>;
   hideLocally(user: Pick<UserCard, 'id' | 'username' | 'name'>): void;
@@ -157,7 +157,7 @@ export function useSocialActions(): {
     };
 
     /** Жалоба: вход (гостю), лист, а если в листе нажали «Заблокировать @u» — блокировка. */
-    const reportFlow = async (target: ReportTarget, o: { username: string; kind: 'post' | 'reply' | 'user'; returnTo?: string },
+    const reportFlow = async (target: ReportTarget, o: { username: string; kind: 'post' | 'reply' | 'user' | 'instant'; returnTo?: string },
       authorId: number | null): Promise<{ result: ReportResult | null; blocked: boolean }> => {
       if (!(await cur().ensure('report', o.returnTo))) return { result: null, blocked: false };
       const r = await openReportSheet({ target, kind: o.kind, username: o.username });
@@ -166,7 +166,7 @@ export function useSocialActions(): {
       return { result: r.result, blocked };
     };
 
-    const report = async (target: ReportTarget, o: { username: string; kind: 'post' | 'reply' | 'user'; returnTo?: string }) =>
+    const report = async (target: ReportTarget, o: { username: string; kind: 'post' | 'reply' | 'user' | 'instant'; returnTo?: string }) =>
       (await reportFlow(target, o, target.type === 'user' ? target.id : null)).result;
 
     /** Действие модератора: запрос, событие 'moderated', тост. */

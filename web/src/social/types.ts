@@ -147,9 +147,9 @@ export interface MePatch {
   linksVisibility?: LinksVisibility; searchable?: boolean; friendRequests?: FriendRequests;
   avatar?: string | null; uni?: string /* '' — не показывать */; age?: 'adult';
 }
-export interface ReportBody { target: 'post' | 'user'; id: number; reason: ReportReason; note?: string }
+export interface ReportBody { target: 'post' | 'user' | 'instant'; id: number; reason: ReportReason; note?: string }
 
-export type ReportTarget = { type: 'post'; id: number } | { type: 'user'; id: number };
+export type ReportTarget = { type: 'post'; id: number } | { type: 'user'; id: number } | { type: 'instant'; id: number };
 export type AdminAction = 'dismiss' | 'hide' | 'unhide' | 'delete' | 'ban' | 'unban' | 'reset';
 export type ResetField = 'avatar' | 'bio' | 'links' | 'name';
 export interface AdminActionBody {
@@ -191,6 +191,29 @@ export interface ReportCase {
   lastAt: string;
   resolvedAt: string | null;
   resolvedBy: string | null;                    // '@username' модератора
+  /** Цель — момент, и его уже нет (удалил автор или истёк год). */
+  gone?: boolean;
+}
+
+// ─── Моменты (как Instants в Instagram): фото с камеры, сутки видят друзья ───
+
+export const INSTANT_REACTIONS = ['❤️', '😂', '😮', '😢', '🔥', '👏'] as const;
+export type InstantReaction = typeof INSTANT_REACTIONS[number];
+/** Момент друга в ленте моментов. */
+export interface FriendInstant {
+  id: number; media: MediaRef; createdAt: string; expiresAt: string; seen: boolean; reaction: InstantReaction | null;
+}
+export interface InstantGroup { author: UserCard; items: FriendInstant[]; unseen: number }
+export interface InstantsFeed { groups: InstantGroup[]; mine: { active: number; latest: MediaRef | null } }
+/** Свой момент в архиве «Твои моменты». */
+export interface MyInstant {
+  id: number; media: MediaRef | null; createdAt: string; expiresAt: string; active: boolean; hidden: boolean;
+  views: number; reactions: { emoji: string; count: number }[];
+}
+export interface InstantDetail extends MyInstant {
+  author: UserCard | null;
+  /** Только автору и модератору. */
+  viewers?: { user: UserCard; reaction: string | null; seenAt: string }[];
 }
 export interface AdminStats {
   users: number; usersToday: number; postsToday: number; repliesToday: number;

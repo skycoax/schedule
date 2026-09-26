@@ -110,11 +110,11 @@ export function findOrCreateUser(ctx, claims, state, meta = {}) {
           .run(social.rulesVersion, social.policyVersion, now, found.id);
       }
       // Человек сказал перед входом, что ему 16–17, а аккаунт числится взрослым: переводим в «до 18»
-      // с закрытыми настройками, как у нового аккаунта этого возраста (их можно снова открыть, кроме ссылок).
+      // с закрытыми настройками (не в поиске, ссылки — только друзьям); заявки в друзья открыты всем.
       // Только вниз: «18 и старше» у аккаунта «до 18» ничего не меняет — для этого есть PATCH /me { age }.
       // В журнал не пишется: возрастную группу не видят и модераторы.
       if (state.intent === 'signin' && state.age === 'minor' && found.age_group === 'adult') {
-        db.prepare(`UPDATE users SET age_group = 'minor', links_vis = 'friends', searchable = 0, friend_req = 'none'
+        db.prepare(`UPDATE users SET age_group = 'minor', links_vis = 'friends', searchable = 0
                     WHERE id = ?`).run(found.id);
       }
       return db.prepare('SELECT * FROM users WHERE id = ?').get(found.id);
@@ -136,7 +136,7 @@ export function findOrCreateUser(ctx, claims, state, meta = {}) {
                          last_login_at, login_count)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)`).run(
       claims.sub, claims.email, claims.emailVerified ? 1 : 0, age, name, fold(name),
-      age === 'adult' ? 1 : 0, age === 'adult' ? 'all' : 'none', uni,
+      age === 'adult' ? 1 : 0, 'all', uni,
       mark ? 'banned' : 'active', mark ? mark.until : null, mark ? mark.reason : '',
       agreed ? social.rulesVersion : 0, agreed ? social.policyVersion : 0, agreed ? now : null, now,
       claims.name || '', claims.locale || '', claims.hd || '', claims.picture || '',

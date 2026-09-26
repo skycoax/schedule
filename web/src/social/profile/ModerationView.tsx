@@ -36,7 +36,8 @@ function statsLine(st: AdminStats): string {
     + `ограничено ${st.bannedUsers}`;
 }
 
-function kindOf(c: ReportCase): 'ПОСТ' | 'ОТВЕТ' | 'ПРОФИЛЬ' {
+function kindOf(c: ReportCase): 'ПОСТ' | 'ОТВЕТ' | 'ПРОФИЛЬ' | 'МОМЕНТ' {
+  if (c.target.type === 'instant') return 'МОМЕНТ';
   if (c.target.type === 'user') return 'ПРОФИЛЬ';
   if (c.snapshot?.kind === 'reply' || (c.post && c.post.rootId !== null)) return 'ОТВЕТ';
   return 'ПОСТ';
@@ -83,9 +84,11 @@ function CaseCard(p: {
   const count = `${c.reporters} ${plural(c.reporters, ['жалоба', 'жалобы', 'жалоб'])}`;
   const threadId = livePost ? livePost.rootId ?? livePost.id : snap?.rootId ?? null;
 
-  // Фото: у поста — его фото (или из снимка), у профиля — аватар 128 и 512.
+  // Фото: у поста — его фото (или из снимка), у момента — его снимок, у профиля — аватар 128 и 512.
   const pairs: { key: string; small: string; big: string; w: number; h: number; labels: [string, string] }[] = [];
-  if (c.target.type === 'post') {
+  if (c.target.type === 'instant') {
+    for (const m of snap?.media || []) pairs.push({ key: m.id, small: m.thumb || m.url, big: m.url, w: m.w, h: m.h, labels: ['Превью', 'Оригинал'] });
+  } else if (c.target.type === 'post') {
     for (const m of (livePost ? livePost.media : snap?.media) || []) {
       pairs.push({ key: m.id, small: m.thumb || m.url, big: m.url, w: m.w, h: m.h, labels: ['Превью', 'Оригинал'] });
     }
@@ -143,6 +146,9 @@ function CaseCard(p: {
           {snap?.text && <p className="mod-text mod-text--snap">{snap.text}</p>}
         </>
       )}
+      {c.target.type === 'instant' && (
+        <p className="mod-gone">{c.gone ? 'Момента больше нет' : 'Момент — фото, которое сутки видят друзья автора'}</p>
+      )}
       {c.target.type === 'user' && (
         <>
           {!u && <p className="mod-gone">Аккаунт удалён</p>}
@@ -178,6 +184,9 @@ function CaseCard(p: {
       )}
 
       <div className="mod-acts">
+        {c.target.type === 'instant' && !c.gone && (
+          <Button size={32} variant="destructive" disabled={p.busy} onClick={() => p.onAct(c, 'delete')}>Удалить момент</Button>
+        )}
         {livePost && (
           <>
             <Button size={32} variant="destructive" disabled={p.busy} onClick={() => p.onAct(c, 'delete')}>Удалить</Button>

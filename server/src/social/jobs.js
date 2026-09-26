@@ -48,7 +48,8 @@ export function hourlyJob(ctx) {
   const dayAgo = nowIso(Date.now() - DAY);
   const orphans = tx(db, () => {
     const rows = db.prepare(`SELECT id FROM media WHERE post_id IS NULL AND created_at < ?
-      AND (kind = 'post' OR NOT EXISTS (SELECT 1 FROM users x WHERE x.avatar_id = media.id))`).all(dayAgo);
+      AND (kind = 'post' OR NOT EXISTS (SELECT 1 FROM users x WHERE x.avatar_id = media.id))
+      AND NOT EXISTS (SELECT 1 FROM instants i WHERE i.media_id = media.id)`).all(dayAgo);
     const del = db.prepare('DELETE FROM media WHERE id = ?');
     for (const r of rows) del.run(r.id);
     return rows;
@@ -89,6 +90,14 @@ export function dailyJob(ctx) {
   const db = ctx.db;
   const now = Date.now();
   const iso = (ms) => nowIso(ms);
+  // Моменты старше года (архив автора) — вместе с фото; строка media каскадом убирает момент и просмотры.
+  const oldInstants = tx(db, () => {
+    const rows = db.prepare('SELECT media_id AS id FROM instants WHERE created_at < ?').all(iso(now - 365 * DAY));
+    const del = db.prepare('DELETE FROM media WHERE id = ?');
+    for (const r of rows) del.run(r.id);
+    return rows;
+  });
+  unlinkMedia(oldInstants);
   tx(db, () => {
     db.prepare('DELETE FROM audit WHERE ts < ?').run(iso(now - 180 * DAY));
     // Входы в журнал больше не пишутся — убираем оставшиеся от ранних версий.

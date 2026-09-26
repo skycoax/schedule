@@ -89,14 +89,14 @@ export interface ReportOutcome { result: ReportResult | null; block: boolean }
 interface ReportReq {
   id: number;
   target: ReportTarget;
-  kind: 'post' | 'reply' | 'user';
+  kind: 'post' | 'reply' | 'user' | 'instant';
   username: string;
   resolve: (r: ReportOutcome) => void;
 }
 export interface ReportSheetProps {
   open: boolean;
   target: ReportTarget;
-  kind: 'post' | 'reply' | 'user';
+  kind: 'post' | 'reply' | 'user' | 'instant';
   username: string;
   onDone: (result: ReportResult | null, block: boolean) => void;
 }
@@ -105,7 +105,7 @@ let reportSeq = 0;
 let reportHost: ((r: ReportReq) => void) | null = null;
 
 /** Внутреннее (для actions.tsx): открыть лист жалобы. Без SessionProvider — сразу null. */
-export function openReportSheet(o: { target: ReportTarget; kind: 'post' | 'reply' | 'user'; username: string }): Promise<ReportOutcome> {
+export function openReportSheet(o: { target: ReportTarget; kind: 'post' | 'reply' | 'user' | 'instant'; username: string }): Promise<ReportOutcome> {
   return new Promise<ReportOutcome>((resolve) => {
     if (!reportHost) { resolve({ result: null, block: false }); return; }
     reportHost({ id: ++reportSeq, ...o, resolve });

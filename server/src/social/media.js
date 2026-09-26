@@ -13,6 +13,7 @@ import {
 } from './http.js';
 import { limit, dailyCap, dayAgo } from './limits.js';
 import { sanitizeJpeg } from './jpeg.js';
+import { canSeeInstant, instantById } from './instant-access.js';
 
 export const MEDIA_ID_RE = /^[A-Za-z0-9_-]{22}$/;
 const FILE_RE = /^([A-Za-z0-9_-]{22})(_t)?\.jpg$/;
@@ -164,18 +165,21 @@ const MEDIA_TEXT = {
 export function mediaRoutes(inst, ctx) {
   const db = ctx.db;
   const stat = db.prepare('SELECT COUNT(*) n, MIN(created_at) first FROM media WHERE owner_id = ? AND kind = ? AND created_at > ?');
-  const unattached = db.prepare("SELECT COUNT(*) n FROM media WHERE owner_id = ? AND kind = 'post' AND post_id IS NULL");
+  // Фото моментов — тоже post_id IS NULL, но они уже отправлены: в «неотправленные» не считаются.
+  const unattached = db.prepare(`SELECT COUNT(*) n FROM media WHERE owner_id = ? AND kind = 'post' AND post_id IS NULL
+    AND NOT EXISTS (SELECT 1 FROM instants i WHERE i.media_id = media.id)`);
   const insert = db.prepare(`INSERT INTO media (id, owner_id, kind, width, height, bytes, sha256, created_at)
     VALUES (?,?,?,?,?,?,?,?)`);
   const ownFree = db.prepare(`SELECT * FROM media WHERE id = ? AND owner_id = ? AND post_id IS NULL
-    AND NOT EXISTS (SELECT 1 FROM users x WHERE x.avatar_id = media.id)`);
+    AND NOT EXISTS (SELECT 1 FROM users x WHERE x.avatar_id = media.id) AND NOT EXISTS (SELECT 1 FROM instants i WHERE i.media_id = media.id)`);
   const setThumb = db.prepare(`UPDATE media SET thumb_bytes = ? WHERE id = ? AND owner_id = ? AND post_id IS NULL
-    AND NOT EXISTS (SELECT 1 FROM users x WHERE x.avatar_id = media.id)`);
+    AND NOT EXISTS (SELECT 1 FROM users x WHERE x.avatar_id = media.id) AND NOT EXISTS (SELECT 1 FROM instants i WHERE i.media_id = media.id)`);
   const dropFree = db.prepare(`DELETE FROM media WHERE id = ? AND owner_id = ? AND post_id IS NULL
-    AND NOT EXISTS (SELECT 1 FROM users x WHERE x.avatar_id = media.id)`);
+    AND NOT EXISTS (SELECT 1 FROM users x WHERE x.avatar_id = media.id) AND NOT EXISTS (SELECT 1 FROM instants i WHERE i.media_id = media.id)`);
   const lookup = db.prepare(`
     SELECT m.id, m.owner_id, m.kind, m.post_id, m.thumb_bytes, p.hidden, p.deleted_at, pa.status AS author_status,
-           (SELECT 1 FROM users x WHERE x.avatar_id = m.id) AS is_avatar, ou.status AS owner_status
+           (SELECT 1 FROM users x WHERE x.avatar_id = m.id) AS is_avatar, ou.status AS owner_status,
+           (SELECT i.id FROM instants i WHERE i.media_id = m.id) AS instant_id
     FROM media m
     JOIN users ou ON ou.id = m.owner_id
     LEFT JOIN posts p  ON p.id = m.post_id
@@ -261,7 +265,13 @@ export function mediaRoutes(inst, ctx) {
     const postPublic = m.post_id !== null && !m.deleted_at && !m.hidden && m.author_status === 'active';
     const avatarPublic = !!m.is_avatar && m.owner_status === 'active';
     const isPublic = postPublic || avatarPublic;
-    if (!isPublic && !(req.user && (req.user.id === m.owner_id || isAdmin(req.user)))) return gone();
+    // Фото момента — только автору, модератору и друзьям, пока момент не истёк (instant-access.js).
+    if (m.instant_id) {
+      const i = instantById(db, m.instant_id);
+      if (!canSeeInstant(db, req.user, i, i && i.author_status)) return gone();
+    } else if (!isPublic && !(req.user && (req.user.id === m.owner_id || isAdmin(req.user)))) {
+      return gone();
+    }
 
     let body;
     try {
@@ -276,7 +286,8 @@ export function mediaRoutes(inst, ctx) {
       .header('cross-origin-resource-policy', 'same-origin')
       .header('content-disposition', 'inline; filename="para.jpg"')
       .header('x-robots-tag', 'noindex')
-      .header('cache-control', isPublic ? 'public, max-age=604800' : 'private, no-store');
+      .header('cache-control', isPublic && !m.instant_id ? 'public, max-age=604800'
+        : m.instant_id ? 'private, max-age=600' : 'private, no-store');
     return reply.send(body);
   });
 }

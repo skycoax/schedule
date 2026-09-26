@@ -396,9 +396,9 @@ export function userRoutes(inst, ctx) {
       if (typeof b.searchable !== 'boolean') throw invalid(TEXT.invalid, 'searchable');
       set.searchable = b.searchable ? 1 : 0;
     }
-    if (b.friendRequests !== undefined) {
-      if (b.friendRequests !== 'all' && b.friendRequests !== 'none') throw invalid(TEXT.invalid, 'friendRequests');
-      set.friend_req = b.friendRequests;
+    // Заявки в друзья открыты всем, настройки больше нет: «никто» от старой версии приложения ничего не меняет.
+    if (b.friendRequests !== undefined && b.friendRequests !== 'all' && b.friendRequests !== 'none') {
+      throw invalid(TEXT.invalid, 'friendRequests');
     }
     if (b.uni !== undefined) {
       if (typeof b.uni !== 'string') throw invalid(FIELD_TEXT.uni, 'uni');

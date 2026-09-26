@@ -13,6 +13,7 @@ import { openSocialDb } from './db.js';
 import { configureHttp, hostGuard, csrfGate, socialHeaders, errorHandler, notFoundRoute, parseJson, JSON_LIMIT } from './http.js';
 import { authRoutes, sessionLoader } from './auth.js';
 import { postRoutes } from './posts.js';
+import { instantRoutes } from './instants.js';
 import { userRoutes, accountRoutes } from './users.js';
 import { mediaRoutes } from './media.js';
 import { adminRoutes } from './moderation.js';
@@ -81,6 +82,7 @@ export async function registerSocial(app, { hub, tenants }) {
     accountRoutes(inst, ctx);                        // DELETE /api/social/me — во всех режимах
     if (social.mode !== 'off') {
       postRoutes(inst, ctx);
+      instantRoutes(inst, ctx);
       userRoutes(inst, ctx);
       mediaRoutes(inst, ctx);
       adminRoutes(inst, ctx);

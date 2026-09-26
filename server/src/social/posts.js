@@ -264,8 +264,10 @@ function readInput(b, me, { root, company }) {
 
 /** Прикрепить свои неотправленные фото (внутри tx); не вышло — откат с ошибкой поля. */
 function attachMedia(db, postId, ownerId, media, now) {
+  // Фото момента к посту не прикрепить: у него своя видимость (только друзья).
   const upd = db.prepare(`UPDATE media SET post_id = ?, position = ?, attached_at = ?
-    WHERE id = ? AND owner_id = ? AND kind = 'post' AND post_id IS NULL`);
+    WHERE id = ? AND owner_id = ? AND kind = 'post' AND post_id IS NULL
+      AND NOT EXISTS (SELECT 1 FROM instants i WHERE i.media_id = media.id)`);
   media.forEach((id, i) => {
     if (upd.run(postId, i, now, id, ownerId).changes !== 1) throw invalid(POST_TEXT.mediaGone, 'media');
   });

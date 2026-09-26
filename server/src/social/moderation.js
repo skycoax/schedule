@@ -10,6 +10,9 @@ import { cleanText, tooLong, fold } from './text.js';
 import { mediaRefsByIds, mediaUrl, thumbUrl, unlinkMedia } from './media.js';
 import { usersByIds, userCardOf, uniShortOf, friendCount } from './users.js';
 import { postOut, deletePost, viewerOf } from './posts.js';
+import { canSeeInstant, instantById, deleteInstantRows } from './instant-access.js';
+
+const INSTANT_GONE = 'Момент недоступен';
 
 /**
  * Запись в журнал (таблица audit). Без текста публикаций, почты, IP и токенов — только id и коды.
@@ -87,7 +90,7 @@ export function adminRoutes(inst, ctx) {
   inst.post('/api/social/reports', async (req) => {
     const me = guard(req, 'S');
     const b = bodyOf(req);
-    if (b.target !== 'post' && b.target !== 'user') throw invalid(TEXT.invalid, 'target');
+    if (b.target !== 'post' && b.target !== 'user' && b.target !== 'instant') throw invalid(TEXT.invalid, 'target');
     const id = intField(b.id, 'id');
     if (!REASONS.includes(b.reason)) throw invalid(REPORT_TEXT.reason, 'reason');
     if (b.note !== undefined && b.note !== null && typeof b.note !== 'string') throw invalid(REPORT_TEXT.note, 'note');
@@ -98,17 +101,25 @@ export function adminRoutes(inst, ctx) {
     const admin = isAdmin(me);
     let post = null;
     let target = null;
+    let instant = null;
     if (b.target === 'post') {
       post = getPost.get(id);
       if (!post || post.deleted_at) throw notFound(TEXT.postGone);
       if (post.author_id === me.id) throw invalid(REPORT_TEXT.self);
+    } else if (b.target === 'instant') {
+      // Момент: пожаловаться можно, только пока он виден (друг автора, сутки) — или модератору.
+      instant = instantById(db, id);
+      if (!instant) throw notFound(INSTANT_GONE);
+      if (instant.author_id === me.id) throw invalid(REPORT_TEXT.self);
+      if (!canSeeInstant(db, me, instant, instant.author_status)) throw notFound(INSTANT_GONE);
     } else {
       if (id === me.id) throw invalid(REPORT_TEXT.self);
       target = getUser.get(id);
       if (!target || !target.username) throw notFound(TEXT.profileGone);
     }
-    const key = (post ? 'p:' : 'u:') + id;
-    const hiddenNow = () => (post ? !!getPost.get(id).hidden : false);
+    const key = (post ? 'p:' : instant ? 'i:' : 'u:') + id;
+    const hiddenNow = () => (post ? !!getPost.get(id).hidden
+      : instant ? !!Number((instantById(db, id) || { hidden: 1 }).hidden) : false);
     // Повтор своей же жалобы — тот же ответ (жалоба была подана, когда цель была видна).
     if (db.prepare('SELECT 1 FROM reports WHERE reporter_id = ? AND target_key = ?').get(me.id, key)) {
       return ok({ reported: true, hidden: hiddenNow() });
@@ -123,7 +134,7 @@ export function adminRoutes(inst, ctx) {
           const root = getPost.get(post.root_id);
           if (!root || (!root.deleted_at && !reportable(me, root))) throw notFound(TEXT.postGone);
         }
-      } else if (target.status !== 'active' || blockedMe(target.id, me.id)) {
+      } else if (target && (target.status !== 'active' || blockedMe(target.id, me.id))) {
         throw notFound(TEXT.profileGone);
       }
     }
@@ -149,6 +160,12 @@ export function adminRoutes(inst, ctx) {
           kind: post.root_id ? 'reply' : 'post', rootId: post.root_id ?? null, text: post.text, name: null,
           username: author ? author.username : null, media, mediaCount: post.media_count, at: now,
         };
+      } else if (instant) {
+        const author = getUser.get(instant.author_id);
+        snapshot = {
+          kind: 'instant', rootId: null, text: '', name: author ? author.name : null,
+          username: author ? author.username : null, media: [instant.media_id], mediaCount: 1, at: now,
+        };
       } else {
         snapshot = {
           kind: 'user', rootId: null, text: target.bio, name: target.name, username: target.username,
@@ -157,10 +174,18 @@ export function adminRoutes(inst, ctx) {
       }
       db.prepare(`INSERT OR IGNORE INTO reports (reporter_id, target_key, post_id, user_id, uni, reason, note, snapshot, counts, created_at)
         VALUES (?,?,?,?,?,?,?,?,?,?)`).run(
-        me.id, key, post ? post.id : null, post ? post.author_id : target.id,
-        post ? post.uni : (req.tenant ? req.tenant.id : target.uni || null),
+        me.id, key, post ? post.id : null, post ? post.author_id : instant ? instant.author_id : target.id,
+        post ? post.uni : instant ? instant.uni : (req.tenant ? req.tenant.id : target.uni || null),
         b.reason, note, JSON.stringify(snapshot), counted, now);
 
+      if (instant) {
+        // Момент скрывается у всех (кроме автора и модератора) по тем же правилам, что пост.
+        const st = db.prepare(`SELECT COUNT(*) n, SUM(reason = 'child') child, SUM(reason IN ${SEVERE_SQL}) severe
+          FROM reports WHERE target_key = ? AND status = 'open' AND counts = 1`).get(key);
+        const hide = admin || Number(st.child) >= 1 || Number(st.severe) >= 2 || st.n >= social.reportThreshold;
+        if (hide) db.prepare('UPDATE instants SET hidden = 1 WHERE id = ?').run(instant.id);
+        return hide || !!Number(instant.hidden);
+      }
       if (!post) return false;
       const stat = db.prepare(`SELECT COUNT(*) n,
           SUM(reason = 'child') child,
@@ -242,9 +267,11 @@ export function adminRoutes(inst, ctx) {
     const resolver = !open && lastResolved && lastResolved.resolved_by ? getUser.get(lastResolved.resolved_by) : null;
     let uid = type === 'u' ? id : null;
     if (type === 'p') uid = postRow && postRow.author_id ? postRow.author_id : (all[all.length - 1].user_id ?? null);
+    const instantRow = type === 'i' ? instantById(db, id) : null;
+    if (type === 'i') uid = instantRow ? instantRow.author_id : (all[all.length - 1].user_id ?? null);
     return {
       key: row.key,
-      target: { type: type === 'p' ? 'post' : 'user', id },
+      target: { type: type === 'p' ? 'post' : type === 'i' ? 'instant' : 'user', id },
       status: open ? 'open' : (lastResolved ? lastResolved.status : 'dismissed'),
       post,
       snapshot,
@@ -253,7 +280,8 @@ export function adminRoutes(inst, ctx) {
       notes,
       reporters: set.length,
       severe: set.some((r) => SEVERE.includes(r.reason)),
-      hidden: !!(postRow && postRow.hidden),
+      hidden: !!(postRow && postRow.hidden) || !!(instantRow && Number(instantRow.hidden)),
+      gone: type === 'i' && !instantRow,
       firstAt: row.first_at,
       lastAt: row.last_at,
       resolvedAt: open ? null : row.resolved_at || null,
@@ -283,10 +311,12 @@ export function adminRoutes(inst, ctx) {
     const b = bodyOf(req);
     if (!ACTIONS.includes(b.action)) throw invalid(TEXT.invalid, 'action');
     const t = b.target;
-    if (!t || typeof t !== 'object' || (t.type !== 'post' && t.type !== 'user')) throw invalid(TEXT.invalid, 'target');
+    if (!t || typeof t !== 'object' || !['post', 'user', 'instant'].includes(t.type)) throw invalid(TEXT.invalid, 'target');
     const id = intField(t.id, 'target');
     const action = b.action;
-    if (['hide', 'unhide', 'delete'].includes(action) && t.type !== 'post') throw invalid(TEXT.invalid, 'target');
+    // Момент: удалить, отклонить жалобы, действия с автором; скрывать/возвращать — только посты.
+    if (['hide', 'unhide'].includes(action) && t.type !== 'post') throw invalid(TEXT.invalid, 'target');
+    if (action === 'delete' && t.type === 'user') throw invalid(TEXT.invalid, 'target');
 
     let days = null;
     let reason = '';
@@ -307,17 +337,21 @@ export function adminRoutes(inst, ctx) {
 
     // Цель: пост (для hide/unhide/delete/dismiss) и человек (для ban/unban/reset — сам или автор поста).
     const post = t.type === 'post' ? getPost.get(id) : null;
+    const instant = t.type === 'instant' ? instantById(db, id) : null;
     const userAction = ['ban', 'unban', 'reset'].includes(action);
     // Пост удалён (надгробие) или его строки уже нет (автор удалил ответ без ответов): hide/unhide/delete — 404;
     // dismiss закрывает жалобы, а ban/unban/reset действуют на автора из жалоб (reports.user_id).
-    const lastReport = t.type === 'post' && (!post || post.deleted_at)
-      ? db.prepare('SELECT user_id FROM reports WHERE target_key = ? ORDER BY id DESC LIMIT 1').get('p:' + id)
+    const lastReport = (t.type === 'post' && (!post || post.deleted_at)) || (t.type === 'instant' && !instant)
+      ? db.prepare('SELECT user_id FROM reports WHERE target_key = ? ORDER BY id DESC LIMIT 1').get((t.type === 'post' ? 'p:' : 'i:') + id)
       : null;
+    if (t.type === 'instant' && !instant && !lastReport) throw notFound(INSTANT_GONE);
+    if (t.type === 'instant' && !instant && action === 'delete') throw notFound(INSTANT_GONE);
     if (t.type === 'post' && !post && !lastReport) throw notFound(TEXT.postGone);
     if (t.type === 'post' && (!post || post.deleted_at) && action !== 'dismiss' && !userAction) throw notFound(TEXT.postGone);
     let user = null;
     if (userAction) {
-      const uid = t.type === 'user' ? id : (post && post.author_id) || (lastReport && lastReport.user_id) || null;
+      const uid = t.type === 'user' ? id
+        : (post && post.author_id) || (instant && instant.author_id) || (lastReport && lastReport.user_id) || null;
       user = uid ? getUser.get(uid) : null;
       if (!user) throw notFound(TEXT.profileGone);
       if (action === 'ban' && isAdmin(user)) throw forbidden();
@@ -328,8 +362,8 @@ export function adminRoutes(inst, ctx) {
     }
 
     limit('admin', 'u:' + me.id);
-    const key = (t.type === 'post' ? 'p:' : 'u:') + id;
-    const uni = post ? post.uni : null;
+    const key = (t.type === 'post' ? 'p:' : t.type === 'instant' ? 'i:' : 'u:') + id;
+    const uni = post ? post.uni : instant ? instant.uni : null;
     let files = [];
     tx(db, () => {
       if (action === 'dismiss') {
@@ -337,6 +371,7 @@ export function adminRoutes(inst, ctx) {
         if (post && post.hidden && post.hidden_reason === 'reports') {
           db.prepare('UPDATE posts SET hidden = 0, hidden_reason = NULL, report_count = 0 WHERE id = ?').run(post.id);
         }
+        if (instant && Number(instant.hidden)) db.prepare('UPDATE instants SET hidden = 0 WHERE id = ?').run(instant.id);
         audit(db, me.id, 'report.dismiss', key, uni, {});
       } else if (action === 'hide') {
         db.prepare("UPDATE posts SET hidden = 1, hidden_reason = 'admin' WHERE id = ?").run(post.id);
@@ -346,6 +381,10 @@ export function adminRoutes(inst, ctx) {
         db.prepare('UPDATE posts SET hidden = 0, hidden_reason = NULL, report_count = 0 WHERE id = ?').run(post.id);
         resolveReports(db, key, 'dismissed', me.id);
         audit(db, me.id, 'post.unhide', key, uni, {});
+      } else if (action === 'delete' && instant) {
+        files = deleteInstantRows(db, instant);
+        resolveReports(db, key, 'actioned', me.id);
+        audit(db, me.id, 'instant.delete', key, uni, {});
       } else if (action === 'delete') {
         files = deletePost(db, post, 'admin');
         resolveReports(db, key, 'actioned', me.id);
@@ -358,7 +397,7 @@ export function adminRoutes(inst, ctx) {
             WHERE author_id = ? AND deleted_at IS NULL AND hidden = 0`).run(user.id);
         }
         resolveReports(db, 'u:' + user.id, 'actioned', me.id);
-        if (t.type === 'post') resolveReports(db, key, 'actioned', me.id);
+        if (t.type === 'post' || t.type === 'instant') resolveReports(db, key, 'actioned', me.id);
         audit(db, me.id, 'user.ban', 'u:' + user.id, uni, { days, reason, hidePosts: b.hidePosts === true });
       } else if (action === 'unban') {
         db.prepare("UPDATE users SET status = 'active', banned_until = NULL, ban_reason = '' WHERE id = ?").run(user.id);

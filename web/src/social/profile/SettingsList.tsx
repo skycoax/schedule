@@ -60,6 +60,7 @@ export interface SettingsNav {
   hidden: () => void;
   moderation: () => void;
   users: () => void;
+  instants: () => void;
   deleteAccount: () => void;
 }
 
@@ -151,6 +152,7 @@ export function SettingsList(p: {
           <ListRow label="Друзья" icon={{ name: 'people', color: 'var(--c3)' }} badge={me.requestsIn} onClick={p.nav.friends}
             ariaLabel={me.requestsIn > 0 ? `Друзья, новых заявок: ${me.requestsIn}` : undefined} />
           <ListRow label="Найти людей" icon={{ name: 'search', color: 'var(--c5)' }} onClick={p.nav.search} />
+          <ListRow label="Мои моменты" icon={{ name: 'camera', color: 'var(--c6)' }} onClick={p.nav.instants} />
           <ListRow label="Заблокированные" icon={{ name: 'hand', color: 'var(--c4)' }} onClick={p.nav.blocked} />
         </ListSection>
       )}

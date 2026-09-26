@@ -7,7 +7,8 @@ export type IconName =
   | 'calendar' | 'calendarFill' | 'bubbles' | 'bubblesFill' | 'person' | 'personFill' | 'history' | 'compose'
   | 'back' | 'chevronRight' | 'chevronDown' | 'ellipsis' | 'heart' | 'heartFill' | 'reply' | 'share' | 'photo'
   | 'send' | 'close' | 'search' | 'check' | 'globe' | 'lock' | 'flag' | 'hand' | 'trash' | 'people' | 'shield'
-  | 'plus' | 'link' | 'telegram' | 'instagram' | 'wifiOff' | 'warning' | 'plane' | 'menu' | 'comment' | 'contrast';
+  | 'plus' | 'link' | 'telegram' | 'instagram' | 'wifiOff' | 'warning' | 'plane' | 'menu' | 'comment' | 'contrast'
+  | 'camera' | 'flash' | 'flashOff' | 'flip' | 'grid';
 
 interface Def { s?: string; f?: string; a?: string; e?: 1 }
 
@@ -33,6 +34,12 @@ const ICONS: Record<IconName, Def> = {
   // Бумажный самолётик «Поделиться», ≡ «Меню», облачко «Ответить» — как в Threads.
   plane: { s: 'M20.5 3.5 3.5 10.2l6.9 3.3 3.3 6.9L20.5 3.5ZM10.4 13.5l4.4-4.4' },
   menu: { s: 'M4 8h16M4 16h16' },
+  // Моменты: камера, вспышка (вкл/выкл), смена камеры, архив сеткой.
+  camera: { s: 'M8.5 6.5l1.2-2h4.6l1.2 2H18A2.5 2.5 0 0 1 20.5 9v8.5A2.5 2.5 0 0 1 18 20H6a2.5 2.5 0 0 1-2.5-2.5V9A2.5 2.5 0 0 1 6 6.5h2.5ZM8.75 13a3.25 3.25 0 1 0 6.5 0a3.25 3.25 0 1 0 -6.5 0' },
+  flash: { s: 'M13.5 3 5.5 13.5h6L10.5 21l8-10.5h-6L13.5 3Z' },
+  flashOff: { s: 'M13.5 3 11 6.3M8.3 9.8 5.5 13.5h6L10.5 21l4.2-5.5M16.2 12.4l2.3-1.9h-6l.4-2.9M3.5 3.5l17 17' },
+  flip: { s: 'M4.5 10.5A7.5 7.5 0 0 1 18 7.2M18 3.5v3.7h-3.7M19.5 13.5A7.5 7.5 0 0 1 6 16.8M6 20.5v-3.7h3.7' },
+  grid: { s: 'M4.5 4.5h6v6h-6ZM13.5 4.5h6v6h-6ZM4.5 13.5h6v6h-6ZM13.5 13.5h6v6h-6Z' },
   // Тема оформления: круг, наполовину залитый.
   contrast: { s: 'M12 3.25a8.75 8.75 0 1 0 0 17.5a8.75 8.75 0 1 0 0-17.5Z', f: 'M12 3.25a8.75 8.75 0 0 1 0 17.5Z' },
   comment: { s: 'M20.2 15.4A8.6 8.6 0 1 0 17 19l3.7 1.2-1.2-3.6c.3-.4.5-.8.7-1.2Z' },

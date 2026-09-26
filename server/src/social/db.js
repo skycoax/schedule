@@ -216,7 +216,38 @@ ALTER TABLE users ADD COLUMN last_login_at  TEXT;                      -- пос
 ALTER TABLE users ADD COLUMN login_count    INTEGER NOT NULL DEFAULT 0;
 `;
 
-const MIGRATIONS = [SCHEMA_V1, SCHEMA_V2, SCHEMA_V3];
+// Моменты (как Instants в Instagram): фото с камеры, которое сутки видят друзья; автору — архив на год.
+// Фото — обычная строка media (kind 'post', post_id NULL), связь — instants.media_id; удаляется строка media —
+// вместе с ней момент и его просмотры.
+export const SCHEMA_V4 = `
+CREATE TABLE IF NOT EXISTS instants (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  author_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  media_id    TEXT    NOT NULL UNIQUE REFERENCES media(id) ON DELETE CASCADE,
+  uni         TEXT,
+  created_at  TEXT    NOT NULL,
+  expires_at  TEXT    NOT NULL,                            -- до этого времени момент видят друзья (сутки)
+  hidden      INTEGER NOT NULL DEFAULT 0                   -- скрыт после жалобы (тяжёлая причина) или модератором
+);
+CREATE INDEX IF NOT EXISTS idx_instants_author ON instants (author_id, id);
+CREATE INDEX IF NOT EXISTS idx_instants_exp    ON instants (expires_at);
+
+-- Кто открыл момент и какую реакцию поставил (одна на человека).
+CREATE TABLE IF NOT EXISTS instant_views (
+  instant_id  INTEGER NOT NULL REFERENCES instants(id) ON DELETE CASCADE,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  seen_at     TEXT    NOT NULL,
+  reaction    TEXT,
+  reacted_at  TEXT,
+  PRIMARY KEY (instant_id, user_id)
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS idx_iviews_user ON instant_views (user_id);
+
+-- Настройку «Кто может добавить в друзья» убрали из приложения — заявки открыты всем.
+UPDATE users SET friend_req = 'all' WHERE friend_req <> 'all';
+`;
+
+const MIGRATIONS = [SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4];
 
 /** Открыть (и при необходимости создать) social.db и довести схему до последней версии. */
 export function openSocialDb(dir = config.dataDir) {

@@ -416,7 +416,7 @@ async function runMain() {
   // Несовершеннолетний: строже по умолчанию.
   const F = await login(`sm_${RUN}_f`, { age: 'minor' });
   assert.equal(F.me.age, 'minor');
-  assert.deepEqual(F.me.privacy, { links: 'friends', searchable: false, friendRequests: 'none' });
+  assert.deepEqual(F.me.privacy, { links: 'friends', searchable: false, friendRequests: 'all' });
   await onboard(F, `sm_${RUN}_f`, `Мия ${RUN}`);
   r = await call(F.jar, 'PATCH', '/api/social/me', { json: { linksVisibility: 'signed' }, headers: W });
   bad(r, 'minor: signed', 'До 18 лет контакты видят только друзья', 'linksVisibility');
@@ -432,9 +432,9 @@ async function runMain() {
   expect(await call(N.jar, 'PATCH', '/api/social/me', { json: { linksVisibility: 'signed' }, headers: W }), 200, 'взрослый: signed');
   const N2 = await login(`sm_${RUN}_y`, { age: 'minor' });
   assert.equal(N2.me.age, 'minor', 'вход с «16–17» переводит взрослый аккаунт в «до 18»');
-  assert.deepEqual(N2.me.privacy, { links: 'friends', searchable: false, friendRequests: 'none' });
+  assert.deepEqual(N2.me.privacy, { links: 'friends', searchable: false, friendRequests: 'all' });
   assert.equal((await login(`sm_${RUN}_y`, { age: 'adult' })).me.age, 'minor', 'вход с «18 и старше» возраст не повышает');
-  ok('несовершеннолетний: searchable false, заявки «никто», signed нельзя; age → adult только один раз; «16–17» при входе понижает');
+  ok('несовершеннолетний: searchable false, заявки открыты, signed нельзя; age → adult только один раз; «16–17» при входе понижает');
 
   // Правила: вход без принятия (разработка) → 403 rules; intent=delete не трогает согласие; принять.
   const R = await login(`sm_${RUN}_r`, { accept: false });
@@ -947,9 +947,11 @@ async function runMain() {
   bad(await fpost(A, A.me.id), 'друг сам себе', 'Нельзя добавить в друзья себя');
   expect(await fpost(A, 999999999), 404, 'друг несуществующий', 'not_found', 'Профиль не найден');
   bad(await fpost(A, 'abc'), 'кривой id');
-  r = await fpost(A, F.me.id);
-  expect(r, 403, 'заявка несовершеннолетнему с «никто»', 'blocked', 'Этот человек не принимает заявки в друзья');
-  assert.equal(expect(await call(A.jar, 'GET', `/api/social/users/${F.me.username}`), 200, 'профиль F').user.canFriend, false);
+  assert.equal(expect(await call(A.jar, 'GET', `/api/social/users/${F.me.username}`), 200, 'профиль F').user.canFriend, true);
+  expect(await call(F.jar, 'PATCH', '/api/social/me', { json: { friendRequests: 'none' }, headers: W }), 200, '«никто» от старой версии');
+  assert.equal((await meOf(F.jar)).privacy.friendRequests, 'all', '«никто» не сохраняется');
+  assert.deepEqual(expect(await fpost(A, F.me.id), 200, 'заявка 16–17 летнему'), { relation: 'outgoing' });
+  expect(await call(A.jar, 'DELETE', `/api/social/friends/${F.me.id}`, { json: {}, headers: W }), 200, 'отмена заявки F');
   const notOnboarded = await login(`sm_${RUN}_n`);
   expect(await fpost(A, notOnboarded.me.id), 403, 'заявка без профиля', 'blocked', 'Нельзя добавить этого пользователя');
   assert.deepEqual(expect(await fpost(A, B.me.id), 200, 'заявка'), { relation: 'outgoing' });
@@ -1153,6 +1155,66 @@ async function runMain() {
   assert.ok(stats.users > 0 && stats.mediaBytes > 0 && stats.bannedUsers >= 1);
   ok('журнал (все действия, без почты и текстов) и сводка модератора');
 
+  // ── Моменты: только друзья, сутки, реакции, архив, фото не публичное, жалоба и удаление модератором ──
+  const I1 = await user('i1', `Момент ${RUN}`);
+  const I2 = await user('i2', `Друг ${RUN}`);
+  const I3 = await user('i3', `Чужой ${RUN}`);
+  expect(await call(I1.jar, 'POST', `/api/social/friends/${I2.me.id}`, { json: {}, headers: W }), 200, 'заявка в друзья');
+  expect(await call(I2.jar, 'POST', `/api/social/friends/${I1.me.id}/accept`, { json: {}, headers: W }), 200, 'принять заявку');
+  const im = await uploadPhoto(I1, { full: makeJpeg(1080, 1080, SCENES.sunset), thumb: makeJpeg(640, 640, SCENES.sunset) });
+  const momentA = expect(await call(I1.jar, 'POST', '/api/social/instants', { json: { media: im.id }, headers: W }), 201, 'момент');
+  assert.ok(momentA.id && momentA.active && momentA.media && momentA.views === 0);
+  bad(await call(I1.jar, 'POST', '/api/social/instants', { json: { media: im.id }, headers: W }), 'то же фото второй раз',
+    'Фото не найдено — сними момент ещё раз', 'media');
+  bad(await call(I1.jar, 'POST', '/api/social/posts', { json: { text: 'x', category: 'other', media: [im.id] }, headers: W }),
+    'фото момента в пост', undefined, 'media');
+  const feed2 = expect(await call(I2.jar, 'GET', '/api/social/instants'), 200, 'моменты друзей');
+  const g = feed2.groups.find((x) => x.author.id === I1.me.id);
+  assert.ok(g && g.unseen === 1 && g.items[0].id === momentA.id, 'друг видит момент');
+  const feed3 = expect(await call(I3.jar, 'GET', '/api/social/instants'), 200, 'моменты чужого');
+  assert.ok(!feed3.groups.some((x) => x.author.id === I1.me.id), 'не друг момент не видит');
+  expect(await call(I2.jar, 'GET', `/api/media/${im.id}.jpg`, { uni: '' }), 200, 'фото момента другу');
+  expect(await call(I3.jar, 'GET', `/api/media/${im.id}.jpg`, { uni: '' }), 404, 'фото момента чужому');
+  expect(await call(guest, 'GET', `/api/media/${im.id}.jpg`, { uni: '' }), 404, 'фото момента гостю');
+  const imHead = await call(I2.jar, 'GET', `/api/media/${im.id}.jpg`, { uni: '' });
+  assert.match(imHead.headers['cache-control'] || '', /private/, 'фото момента не кешируется публично');
+  expect(await call(I2.jar, 'POST', `/api/social/instants/${momentA.id}/view`, { json: {}, headers: W }), 200, 'просмотр');
+  bad(await call(I2.jar, 'POST', `/api/social/instants/${momentA.id}/react`, { json: { emoji: '💩' }, headers: W }),
+    'чужая реакция', 'Такой реакции нет', 'emoji');
+  expect(await call(I2.jar, 'POST', `/api/social/instants/${momentA.id}/react`, { json: { emoji: '🔥' }, headers: W }), 200, 'реакция');
+  expect(await call(I3.jar, 'POST', `/api/social/instants/${momentA.id}/react`, { json: { emoji: '🔥' }, headers: W }), 404, 'реакция чужого');
+  const seenFeed = expect(await call(I2.jar, 'GET', '/api/social/instants'), 200, 'моменты после просмотра');
+  const g2 = seenFeed.groups.find((x) => x.author.id === I1.me.id);
+  assert.ok(g2.unseen === 0 && g2.items[0].seen && g2.items[0].reaction === '🔥');
+  const archive = expect(await call(I1.jar, 'GET', '/api/social/instants/mine'), 200, 'архив');
+  const a0 = archive.items.find((x) => x.id === momentA.id);
+  assert.ok(a0 && a0.views === 1 && a0.reactions[0].emoji === '🔥' && a0.reactions[0].count === 1, 'в архиве просмотры и реакции');
+  const det = expect(await call(I1.jar, 'GET', `/api/social/instants/${momentA.id}`), 200, 'момент автору');
+  assert.ok(det.viewers.length === 1 && det.viewers[0].user.id === I2.me.id && det.viewers[0].reaction === '🔥');
+  const detFriend = expect(await call(I2.jar, 'GET', `/api/social/instants/${momentA.id}`), 200, 'момент другу');
+  assert.ok(!('viewers' in detFriend), 'друг не видит, кто ещё смотрел');
+  ok('моменты: только друзьям, фото не публичное, просмотры, реакции, архив автора');
+
+  // Жалоба друга «сексуальное» ×1 не скрывает, модератор видит дело с фото и удаляет момент.
+  const rep1 = expect(await report(I2, 'instant', momentA.id, 'sexual'), 200, 'жалоба на момент');
+  assert.equal(rep1.reported, true);
+  expect(await report(I3, 'instant', momentA.id, 'spam'), 404, 'жалоба чужого на момент');
+  const iq = expect(await call(boss.jar, 'GET', '/api/social/admin/reports?status=open'), 200, 'очередь');
+  const c = iq.items.find((x) => x.key === 'i:' + momentA.id);
+  assert.ok(c && c.target.type === 'instant' && c.snapshot.kind === 'instant' && c.snapshot.media.length === 1, 'дело по моменту с фото');
+  expect(await call(boss.jar, 'GET', `/api/media/${im.id}.jpg`, { uni: '' }), 200, 'фото момента модератору');
+  expect(await call(boss.jar, 'POST', '/api/social/admin/action', { json: { action: 'delete', target: { type: 'instant', id: momentA.id } }, headers: W }),
+    200, 'удаление момента модератором');
+  expect(await call(I2.jar, 'GET', `/api/media/${im.id}.jpg`, { uni: '' }), 404, 'фото удалённого момента');
+  const after = expect(await call(I1.jar, 'GET', '/api/social/instants/mine'), 200, 'архив после удаления');
+  assert.ok(!after.items.some((x) => x.id === momentA.id));
+  // Свой момент автор удаляет сам.
+  const im2 = await uploadPhoto(I1, { full: makeJpeg(1080, 1080, SCENES.sunset), thumb: makeJpeg(640, 640, SCENES.sunset) });
+  const momentB = expect(await call(I1.jar, 'POST', '/api/social/instants', { json: { media: im2.id }, headers: W }), 201, 'момент 2');
+  expect(await call(I2.jar, 'DELETE', `/api/social/instants/${momentB.id}`, { json: {}, headers: W }), 404, 'чужой момент не удалить');
+  expect(await call(I1.jar, 'DELETE', `/api/social/instants/${momentB.id}`, { json: {}, headers: W }), 200, 'удалить свой момент');
+  ok('моменты: жалоба, дело в очереди с фото, удаление модератором и автором');
+
   // Пользователи в админке: только модератору; почта, возраст, данные входа — да, Google ID — никогда.
   expect(await call(guest, 'GET', '/api/social/admin/users'), 401, 'пользователи гостю', 'auth');
   expect(await call(B.jar, 'GET', '/api/social/admin/users'), 403, 'пользователи не модератору', 'forbidden');
@@ -1262,9 +1324,9 @@ async function fakeGoogle(ORIGIN) {
     assert.equal(loc, ORIGIN + '/?tab=profile#auth=ok');
     const me = await meOf(jar);
     assert.deepEqual([me.age, me.privacy.searchable, me.privacy.friendRequests, me.rulesAccepted, me.name, me.needsProfile, me.uni],
-      ['minor', false, 'none', true, 'Гугл', true, UNI]);
+      ['minor', false, 'all', true, 'Гугл', true, UNI]);
     assert.match(me.email, /^g•••@example\.com$/);
-    ok('Google: новый аккаунт (minor: не ищется, заявки «никто»), имя из given_name, согласие записано, вуз из start');
+    ok('Google: новый аккаунт (minor: не ищется, заявки открыты), имя из given_name, согласие записано, вуз из start');
     loc = await signIn(jar, { intent: 'delete', sub, email: `${sub}@example.com` });
     assert.equal(loc, ORIGIN + '/?tab=profile#auth=ok');
     assert.equal((await meOf(jar)).id, me.id);

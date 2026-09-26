@@ -22,6 +22,7 @@ import type { FeedHandle } from './Feed';
 import { ScreenVisible, reducedMotion } from './PostCard';
 import { ThreadView } from './ThreadView';
 import { WhatsNew } from './WhatsNew';
+import { InstantsHost } from '../instants/InstantsHost';
 import './chat.css';
 
 type ChatScreen = { kind: 'thread'; id: number; focus?: boolean } | { kind: 'user'; username: string };
@@ -151,6 +152,8 @@ export default function ChatTab(p: ChatTabProps): JSX.Element {
       })}
 
       {composer && <Composer onClose={() => setComposer(false)} onPublished={onPublished} />}
+      {/* Моменты: карточка у правого края ленты, камера, просмотр и архив (social/instants). */}
+      {!off && <InstantsHost active={active && !top} hidden={composer} />}
       {/* Заголовок «Обсуждения» начинается сразу под строкой состояния (chat.css, .chat-root) — там и орб. */}
       <PullRefresh onRefresh={refresh} enabled={active && !top && !off} target=".chat-root"
         top="calc(env(safe-area-inset-top) + 20px)" />

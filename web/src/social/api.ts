@@ -4,7 +4,7 @@
 // web/src/api.ts (расписание) сюда не импортируем и не меняем.
 import { brand } from '../brand';
 import type {
-  AdminActionBody, AdminStats, AdminUsersPage, AgeGroup, AuditItem, AuthIntent, AuthOutcome, AuthState, CategoryId, ErrorCode, FriendLists,
+  AdminActionBody, AdminStats, AdminUsersPage, AgeGroup, InstantDetail, InstantReaction, InstantsFeed, MyInstant, AuditItem, AuthIntent, AuthOutcome, AuthState, CategoryId, ErrorCode, FriendLists,
   LikeState, Me, MePatch, MediaRef, NewPost, NewReply, Page, Post, ProfilePage, Relation, ReportBody, ReportCase,
   ReportResult, Thread, UploadedMedia, UserCard, UsernameCheck,
 } from './types';
@@ -350,6 +350,29 @@ export const socialApi = {
 
   async unblock(userId: number): Promise<void> {
     await call<unknown>('DELETE', '/api/social/blocks/' + userId, { body: {} });
+  },
+
+  // ─── Моменты ───
+  instantsFeed(signal?: AbortSignal): Promise<InstantsFeed> {
+    return call<InstantsFeed>('GET', '/api/social/instants', { signal });
+  },
+  createInstant(media: string): Promise<MyInstant> {
+    return call<MyInstant>('POST', '/api/social/instants', { body: { media } });
+  },
+  async viewInstant(id: number): Promise<void> {
+    await call<null>('POST', '/api/social/instants/' + id + '/view', { body: {} });
+  },
+  reactInstant(id: number, emoji: InstantReaction | null): Promise<{ reaction: InstantReaction | null }> {
+    return call<{ reaction: InstantReaction | null }>('POST', '/api/social/instants/' + id + '/react', { body: { emoji } });
+  },
+  myInstants(cursor?: string | null, signal?: AbortSignal): Promise<Page<MyInstant>> {
+    return call<Page<MyInstant>>('GET', '/api/social/instants/mine', { params: { cursor }, signal });
+  },
+  instant(id: number, signal?: AbortSignal): Promise<InstantDetail> {
+    return call<InstantDetail>('GET', '/api/social/instants/' + id, { signal });
+  },
+  async deleteInstant(id: number): Promise<void> {
+    await call<null>('DELETE', '/api/social/instants/' + id, { body: {} });
   },
 
   report(b: ReportBody): Promise<ReportResult> {
