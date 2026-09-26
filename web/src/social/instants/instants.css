@@ -6,17 +6,19 @@
 
 .sq{-webkit-mask:var(--sq-mask) center/100% 100% no-repeat;mask:var(--sq-mask) center/100% 100% no-repeat}
 
-/* ─── Карточка у правого края ленты: «+» или фото момента на всю карточку (половина — за краем экрана) ─── */
-.ie{position:fixed;right:-30px;top:56%;z-index:22;width:78px;height:104px;padding:0 34px 0 10px;border-radius:24px;
+/* ─── Карточка у правого края ленты: «+» или фото момента на всю карточку (половина — за краем экрана),
+   чуть наклонена, как в Instagram ─── */
+.ie{--ie-tilt:rotate(-8deg);position:fixed;right:-30px;top:56%;z-index:22;width:78px;height:104px;padding:0 34px 0 10px;border-radius:26px;
+  transform:var(--ie-tilt);
   display:flex;align-items:center;justify-content:center;
   background:var(--bar-glass);-webkit-backdrop-filter:blur(20px) saturate(180%);backdrop-filter:blur(20px) saturate(180%);
   box-shadow:inset 0 0 0 1px var(--glass-edge), var(--glass-shadow);color:var(--ink-60);
   transition:transform 220ms cubic-bezier(.2,.8,.2,1), opacity 180ms var(--ease);animation:ie-in 320ms cubic-bezier(.2,.8,.2,1)}
-.ie:active{transform:translateX(-4px) scale(.97)}
-.ie.is-hidden{transform:translateX(60px);opacity:0;pointer-events:none}
+.ie:active{transform:var(--ie-tilt) translateX(-4px) scale(.97)}
+.ie.is-hidden{transform:var(--ie-tilt) translateX(60px);opacity:0;pointer-events:none}
 .ie.has-photo{padding:0;overflow:hidden;background:var(--media-bg)}
 .ie__img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
-@keyframes ie-in{from{transform:translateX(60px)}to{transform:none}}
+@keyframes ie-in{from{transform:var(--ie-tilt) translateX(60px)}to{transform:var(--ie-tilt)}}
 
 /* ─── Общий полноэкранный слой (камера, просмотр, архив) ───
    Ниже листов (ui-layer 60, ActionSheet 70): жалоба, «Удалить?», вход открываются поверх. */
