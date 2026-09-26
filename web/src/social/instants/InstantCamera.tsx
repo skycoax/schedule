@@ -1,7 +1,8 @@
 // Камера моментов (как «New instant» в Instagram): живая камера в форме суперэллипса, кнопка спуска,
 // вспышка и смена камеры; снимок — квадрат до 1080 (JPEG) и миниатюра 640 → /api/social/media → /api/social/instants.
 // Кто увидит: «Все» (по умолчанию — вошедшие в «Обсуждениях» вуза) или «Только друзья»; выбор запоминается.
-// Нет камеры (отказ в доступе, компьютер без камеры) — «Выбрать фото» из галереи.
+// Момент — только живой снимок: фото из галереи выбрать нельзя. Нет камеры (отказ в доступе, компьютер без
+// камеры) — объяснение и «Повторить».
 // Вспышка: задняя камера — фонарик, где браузер его даёт (Android); передняя — белый экран, как в iPhone.
 import { useEffect, useRef, useState } from 'react';
 import type { JSX } from 'react';
@@ -49,9 +50,11 @@ async function squareFrom(src: CanvasImageSource, w: number, h: number, mirror: 
 
 function camError(e: unknown): string {
   const name = e instanceof DOMException ? e.name : '';
-  if (name === 'NotAllowedError' || name === 'SecurityError') return 'Нет доступа к камере. Разреши его в настройках браузера или выбери фото.';
-  if (name === 'NotFoundError' || name === 'OverconstrainedError') return 'Камера не найдена. Можно выбрать фото из галереи.';
-  return 'Камера не включилась. Можно выбрать фото из галереи.';
+  if (name === 'NotAllowedError' || name === 'SecurityError') {
+    return 'Нет доступа к камере. Разреши его в настройках браузера — моменты снимаются только камерой.';
+  }
+  if (name === 'NotFoundError' || name === 'OverconstrainedError') return 'Камера не найдена. Моменты снимаются только камерой.';
+  return 'Камера не включилась. Закрой другие приложения с камерой и попробуй ещё раз.';
 }
 
 export function InstantCamera(p: { onClose: () => void; onSent: () => void; onArchive: () => void }): JSX.Element {
@@ -61,7 +64,6 @@ export function InstantCamera(p: { onClose: () => void; onSent: () => void; onAr
   useHideTabBar(true, 'instant');
   const video = useRef<HTMLVideoElement>(null);
   const stream = useRef<MediaStream | null>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
   const [facing, setFacing] = useState<'environment' | 'user'>('environment');
   const [phase, setPhase] = useState<Phase>('starting');
   const [error, setError] = useState('');
@@ -69,6 +71,7 @@ export function InstantCamera(p: { onClose: () => void; onSent: () => void; onAr
   const [flashOn, setFlashOn] = useState(false);
   const [screenFlash, setScreenFlash] = useState(false);
   const [shot, setShot] = useState<Shot | null>(null);
+  const [attempt, setAttempt] = useState(0);        // «Повторить» — запросить камеру заново
   const shotUrl = useRef('');
   const [audience, setAudience] = useState<InstantAudience>(() => (ls(AUD_KEY) === 'friends' ? 'friends' : 'all'));
 
@@ -96,7 +99,7 @@ export function InstantCamera(p: { onClose: () => void; onSent: () => void; onAr
     setPhase('starting');
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       setPhase('nocam');
-      setError('Камера здесь недоступна. Можно выбрать фото из галереи.');
+      setError('Камера здесь недоступна — моменты снимаются только камерой телефона.');
       return;
     }
     navigator.mediaDevices.getUserMedia({
@@ -116,7 +119,7 @@ export function InstantCamera(p: { onClose: () => void; onSent: () => void; onAr
       setError(camError(e));
     });
     return () => { cancelled = true; stop(); };
-  }, [facing, shot]);
+  }, [facing, shot, attempt]);
 
   useEffect(() => () => { if (shotUrl.current) URL.revokeObjectURL(shotUrl.current); }, []);
 
@@ -146,18 +149,6 @@ export function InstantCamera(p: { onClose: () => void; onSent: () => void; onAr
       toast(errText(e), { kind: 'error' });
     } finally {
       setTimeout(() => setScreenFlash(false), 300);
-    }
-  };
-
-  const pickFile = async (f: File | undefined) => {
-    if (!f) return;
-    try {
-      let bmp: ImageBitmap;
-      try { bmp = await createImageBitmap(f, { imageOrientation: 'from-image' }); } catch { bmp = await createImageBitmap(f); }
-      keep(await squareFrom(bmp, bmp.width, bmp.height, false));
-      bmp.close();
-    } catch {
-      toast('Не получилось открыть фото', { kind: 'error' });
     }
   };
 
@@ -198,7 +189,7 @@ export function InstantCamera(p: { onClose: () => void; onSent: () => void; onAr
           {!shot && phase === 'nocam' && (
             <div className="ix__msg">
               <span>{error}</span>
-              <button type="button" className="ic__btn ic__btn--primary" onClick={() => fileRef.current?.click()}>Выбрать фото</button>
+              <button type="button" className="ic__btn ic__btn--primary" onClick={() => setAttempt((n) => n + 1)}>Повторить</button>
             </div>
           )}
         </div>
@@ -220,11 +211,7 @@ export function InstantCamera(p: { onClose: () => void; onSent: () => void; onAr
                 <Icon name={flashOn ? 'flash' : 'flashOff'} size={24} />
               </button>
             )
-            : (
-              <button type="button" className="ic__side" aria-label="Выбрать фото" onClick={() => fileRef.current?.click()}>
-                <Icon name="photo" size={24} />
-              </button>
-            )}
+            : <span className="ic__side is-empty" aria-hidden="true" />}
           <button type="button" className="ic__shutter" aria-label="Сделать снимок" disabled={phase !== 'live'}
             onClick={() => void capture()} />
           <button type="button" className="ic__side" aria-label="Сменить камеру" disabled={phase === 'nocam'}
@@ -243,8 +230,6 @@ export function InstantCamera(p: { onClose: () => void; onSent: () => void; onAr
         <p className="ic__hint">У тебя пока нет друзей — момент увидишь только ты, в «Твоих моментах».</p>
       )}
 
-      <input ref={fileRef} type="file" accept="image/*" hidden tabIndex={-1}
-        onChange={(e) => { const f = e.currentTarget.files?.[0]; e.currentTarget.value = ''; void pickFile(f); }} />
       {screenFlash && <div className="ic__flash" aria-hidden="true" />}
     </div>,
     document.body,
