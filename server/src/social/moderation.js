@@ -11,6 +11,8 @@ import { mediaRefsByIds, mediaUrl, thumbUrl, unlinkMedia } from './media.js';
 import { usersByIds, userCardOf, uniShortOf, friendCount, BADGES, badgeOf } from './users.js';
 import { postOut, deletePost, viewerOf } from './posts.js';
 import { canSeeInstant, instantById, deleteInstantRows } from './instant-access.js';
+import { forfeitAll } from './game-db.js';
+import { closeStreams, publishDuels } from './game-stream.js';
 
 const INSTANT_GONE = 'Момент недоступен';
 
@@ -368,6 +370,7 @@ export function adminRoutes(inst, ctx) {
     const key = (t.type === 'post' ? 'p:' : t.type === 'instant' ? 'i:' : 'u:') + id;
     const uni = post ? post.uni : instant ? instant.uni : null;
     let files = [];
+    let duels = [];   // игры «Код», которые закончил бан
     tx(db, () => {
       if (action === 'dismiss') {
         resolveReports(db, key, 'dismissed', me.id);
@@ -401,6 +404,8 @@ export function adminRoutes(inst, ctx) {
         }
         resolveReports(db, 'u:' + user.id, 'actioned', me.id);
         if (t.type === 'post' || t.type === 'instant') resolveReports(db, key, 'actioned', me.id);
+        // Игры «Код»: идущие — поражение («сдался»), открытые вызовы — отменены.
+        duels = forfeitAll(db, user.id, 'banned');
         audit(db, me.id, 'user.ban', 'u:' + user.id, uni, { days, reason, hidePosts: b.hidePosts === true });
       } else if (action === 'unban') {
         db.prepare("UPDATE users SET status = 'active', banned_until = NULL, ban_reason = '' WHERE id = ?").run(user.id);
@@ -425,6 +430,10 @@ export function adminRoutes(inst, ctx) {
       }
     });
     unlinkMedia(files);
+    if (action === 'ban') {
+      closeStreams(user.id, 'ban');
+      publishDuels(ctx, duels);
+    }
     return ok(null);
   });
 

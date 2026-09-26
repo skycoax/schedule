@@ -5,7 +5,7 @@
 // Para меняет код на id_token и передаёт итог адресу вуза одноразовым билетом (/api/auth/google/finish).
 // Там проверяется, что это тот же браузер, и создаётся сессия — кука только этого адреса.
 import { randomBytes, createHash } from 'node:crypto';
-import { social, googleConfigured } from '../config.js';
+import { social, googleConfigured, gameMode } from '../config.js';
 import { tx, nowIso, today, DAY } from './db.js';
 import {
   SocialError, ok, bodyOf, invalid, notFound, web, originOf, readCookies, setCookie, clearCookie, sha256hex, safeEqual,
@@ -16,6 +16,7 @@ import { cleanText, graphemes, fold } from './text.js';
 import { audit } from './moderation.js';
 import { meOf } from './users.js';
 import { importGoogleAvatar } from './media.js';
+import { closeStreams, closeStreamsBySid } from './game-stream.js';
 
 const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
 const SESSION_DAYS = 180;
@@ -31,6 +32,7 @@ export function authConfig() {
       mediaBytes: 921_600, thumbBytes: 153_600, mediaSide: 2048, thumbSide: 640, avatarSide: 1024,
       name: 40, bio: 160, usernameMin: 3, usernameMax: 20, note: 300,
     },
+    game: gameMode(),   // мини-игра «Код»: 'on' | 'friends' | 'off' (off — только бот)
   };
 }
 
@@ -315,6 +317,9 @@ export function authRoutes(inst, ctx) {
     if (req.user) {
       if (b.all === true) db.prepare('DELETE FROM sessions WHERE user_id = ?').run(req.user.id);
       else if (req.sid) db.prepare('DELETE FROM sessions WHERE id = ?').run(req.sid);
+      // Потоки игры этой сессии (или всех) закрываются: bye { reason: 'session' }.
+      if (b.all === true) closeStreams(req.user.id, 'session');
+      else closeStreamsBySid(req.sid);
     }
     clearCookie(reply, web.sid);
     req.user = null;

@@ -51,8 +51,9 @@ export interface Session {
 
 const OUTCOME_OK = new Set<AuthOutcome>(['ok', 'cancelled', 'none']);
 
-/** Действия, которым нужны профиль, правила и отсутствие ограничения (охрана P/N на сервере). */
-const WRITES = new Set<AuthReason>(['post', 'reply', 'like', 'friend']);
+/** Действия, которым нужны профиль, правила и отсутствие ограничения (охрана P/N на сервере).
+ *  'game' — игра «Код» с людьми; в режиме «только чтение» её нет (в READONLY_OK не входит). */
+const WRITES = new Set<AuthReason>(['post', 'reply', 'like', 'friend', 'game']);
 /** Что можно в режиме «только чтение». */
 const READONLY_OK = new Set<AuthReason>(['profile', 'search', 'account', 'delete', 'expired', 'report', 'block']);
 
@@ -78,7 +79,7 @@ function meFromCache(c: Pick<Me, 'id' | 'name' | 'username' | 'avatar'>): Me {
     links: { tg: '', ig: '' }, uni: null, uniShort: null, team: false, isAdmin: false, email: '', age: 'minor',
     privacy: { links: 'friends', searchable: false, friendRequests: 'none' },
     needsProfile: c.username === null, suggestedUsername: null, rulesAccepted: true, banned: null,
-    requestsIn: 0, modQueue: 0, counts: { friends: 0, posts: 0 }, usernameNextChange: null, createdAt: '',
+    requestsIn: 0, modQueue: 0, counts: { friends: 0, posts: 0 }, usernameNextChange: null, createdAt: '', game: null,
   };
 }
 

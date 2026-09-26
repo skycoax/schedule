@@ -1,0 +1,235 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   Игра «Код» (web/src/game). Экраны — поверх всего, всегда тёмные, как экраны моментов (.ix из instants.css):
+   слой 58, подложка 57 — ниже листов (60), меню (70) и тостов (100). Внутри .gx свои тёмные цвета, поэтому
+   общие части (аватар, значки, сегменты, заглушки) выглядят как в тёмной теме. Значки ответа — только белым:
+   ● — заливка, ○ — кольцо 1,5 px, · — точка 25 %. Без градиентов, свечений и смысла только цветом.
+   ───────────────────────────────────────────────────────────────────────── */
+
+.gx{--ink-100:#fff;--ink-60:rgba(235,235,245,.6);--ink-30:rgba(235,235,245,.3);--sep:rgba(84,84,88,.55);
+  --fill:rgba(118,118,128,.24);--glass-edge:rgba(255,255,255,.1);--surface:#1c1c1e;--surface-2:#2c2c2e;
+  --seg-track:rgba(118,118,128,.24);--seg-active:#636366;--media-bg:#2c2c2e;--gx-key:#1c1c1e;
+  color-scheme:dark;outline:none;overscroll-behavior:contain}
+.gx.is-under{display:none}
+/* Пока игра открыта (html.has-game, GameHost Root): тосты — сверху, под строкой экрана, а не на клавиатуре игры;
+   плашка «Оцените» (ReviewPrompt) поверх игры не появляется. */
+html.has-game .ui-toasts{top:calc(env(safe-area-inset-top) + 64px);bottom:auto}
+html.has-game .nudge{display:none}
+.gx.ix--still{animation:none}
+.gx button{-webkit-tap-highlight-color:transparent}
+.gx button:focus-visible{outline:2px solid #fff;outline-offset:2px}
+
+/* Створки флип-часов внутри игры: тёмные, без шва; маленькие — для кода вызова и кодов в итоге. */
+.gx .fl{--surface-2:#1c1c1e;--ink-100:#fff;--sep:#000}
+.gx .fl.is-sm{font-size:28px}
+.gx .fl.is-empty b i{color:rgba(255,255,255,.3)}
+.gx .fl.is-sm b.u{border-radius:9px 9px 0 0}
+.gx .fl.is-sm b.l{border-radius:0 0 9px 9px}
+
+/* ─── Верхняя строка ─── */
+.gx-bar{grid-template-columns:44px minmax(0,1fr) auto}
+.gx-bar__mid{min-width:0;display:flex;justify-content:center}
+.gx-bar__r{display:flex;justify-content:flex-end;min-width:44px}
+.gx-who{display:flex;align-items:center;gap:8px;min-width:0}
+.gx-who__av{position:relative;flex:none;display:grid}
+.gx-who__av .av{width:28px;height:28px;font-size:12px}
+.gx-who__bot{flex:none;display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:#1c1c1e}
+.gx-who__name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:16px;font-weight:600}
+.gx-who__live{flex:none;font-size:13px;color:rgba(255,255,255,.6)}
+/* Реакция соперника: всплывает у аватара на 24 px и гаснет за 1,6 с. */
+.gx-float{position:absolute;left:100%;top:2px;font-size:20px;line-height:1;pointer-events:none;
+  animation:gx-float 1.6s ease-out forwards}
+@keyframes gx-float{0%{opacity:0;transform:translateY(4px) scale(.7)}12%{opacity:1;transform:none}
+  70%{opacity:1}100%{opacity:0;transform:translateY(-24px)}}
+.gx-reacts{flex:none;display:flex;justify-content:center;gap:6px;padding:2px 12px 10px;animation:gx-drop 200ms ease-out both}
+@keyframes gx-drop{from{opacity:0;transform:translateY(-6px)}}
+.gx-react{width:46px;height:46px;border-radius:23px;background:rgba(255,255,255,.1);font-size:23px;line-height:46px;
+  transition:transform 140ms}
+.gx-react:active{transform:scale(.88)}
+
+/* ─── Тело экрана ─── */
+.gx-body{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding:4px 16px 24px}
+.gx-center{display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center;padding-top:28px}
+.gx-join{display:flex;flex-direction:column;align-items:center;gap:16px;padding-top:6vh;text-align:center}
+.gx-h{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:6px;margin:0;font-size:20px;font-weight:600;line-height:1.3}
+.gx-h--sm{font-size:17px}
+.gx-text{max-width:340px;margin:0;font-size:15px;line-height:1.45;color:rgba(255,255,255,.65)}
+.gx-cap{margin:0;font-size:13px;line-height:1.4;color:rgba(255,255,255,.55);text-align:center}
+.gx-note{margin:12px 16px 0;font-size:13px;line-height:1.4;color:rgba(255,255,255,.55);text-align:center}
+.gx-err{margin:0;font-size:14px;line-height:1.4;color:rgba(255,255,255,.85);text-align:center}
+.gx-foot{margin:22px 16px 0;font-size:12px;line-height:1.45;color:rgba(255,255,255,.4);text-align:center}
+.gx-empty{padding:40px 16px;font-size:15px;line-height:1.45;color:rgba(255,255,255,.6);text-align:center}
+.gx-skel{height:60px;margin:12px 0 0;border-radius:16px}
+
+/* ─── Кнопки ─── */
+.gx-acts{display:flex;flex-direction:column;gap:10px;width:100%;max-width:360px;margin:10px auto 0}
+.gx-primary, .gx-second{display:block;width:100%;min-height:50px;padding:6px 16px;border-radius:14px;
+  font-size:17px;font-weight:600;line-height:1.2;transition:opacity 120ms}
+.gx-primary{background:#fff;color:#000}
+.gx-second{background:rgba(255,255,255,.12);color:#fff}
+.gx-primary:disabled, .gx-second:disabled{opacity:.35;cursor:default}
+.gx-primary:active:not(:disabled), .gx-second:active:not(:disabled){opacity:.75}
+.gx-link{padding:12px;font-size:16px;font-weight:500;color:#fff}
+.gx-link--danger{color:#ff453a}
+.gx-link:disabled{opacity:.4}
+.gx-pill{flex:none;height:32px;padding:0 14px;border-radius:16px;background:#fff;color:#000;font-size:14px;font-weight:600}
+.gx-pill:disabled{opacity:.35}
+.gx-x{flex:none;width:36px;height:36px;color:rgba(255,255,255,.6)}
+
+/* ─── Лобби ─── */
+.gx-deco{display:flex;gap:6px;width:min(216px,58vw);margin:10px auto 12px}
+.gx-deco .fl{font-size:40px}
+.gx-lead{margin:0 0 20px;font-size:15px;line-height:1.4;color:rgba(255,255,255,.6);text-align:center}
+.gx-sec{margin:24px 16px 8px;font-size:13px;font-weight:600;color:rgba(255,255,255,.55)}
+.gx-list{overflow:hidden;border-radius:16px;background:#1c1c1e}
+.gx-row, .gx-inv{position:relative;display:flex;align-items:center;gap:12px;width:100%;min-height:60px;
+  padding:10px 12px 10px 16px;text-align:left;color:#fff}
+.gx-row + .gx-row::before, .gx-inv + .gx-inv::before{content:'';position:absolute;top:0;left:16px;right:0;
+  border-top:.5px solid rgba(84,84,88,.55)}
+.gx-row:active{background:rgba(255,255,255,.08)}
+.gx-row.is-dim{opacity:.38}
+.gx-row.is-dim:active{background:none}
+.gx-row__ico{flex:none;display:grid;place-items:center;width:30px;height:30px;border-radius:8px;background:#2c2c2e}
+.gx-row__main{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.gx-row__t{display:flex;align-items:center;gap:4px;min-width:0;font-size:16px;font-weight:500}
+.gx-row__s{font-size:13px;line-height:1.35;color:rgba(255,255,255,.55)}
+.gx-row__v{flex:none;max-width:40%;font-size:15px;color:rgba(255,255,255,.55);text-align:right}
+.gx-row__chev{flex:none;color:rgba(255,255,255,.3)}
+.gx-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gx-game.is-unseen .gx-row__t{font-weight:700}
+.gx-game.is-unseen .gx-row__s{color:rgba(255,255,255,.8)}
+.gx-unseen{flex:none;width:6px;height:6px;border-radius:50%;background:#fff}
+.gx-inv{padding-right:8px}
+.gx-inv .gx-name{white-space:normal;overflow-wrap:anywhere}
+
+/* ─── «Твой код»: ячейки и клавиатура ─── */
+.gx-pad{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:space-between;gap:16px;padding:8px 20px 16px}
+.gx-pad__top{display:flex;flex-direction:column;align-items:center;gap:14px;padding-top:4vh}
+.gx-pad__bottom{display:flex;flex-direction:column;gap:12px;width:100%;max-width:420px;margin:0 auto}
+.gx-slots{display:flex;gap:10px;width:min(270px,74vw)}
+.gx-slot{flex:1;min-width:0;display:flex}
+.gx-slots .fl{font-size:44px}
+.gx-slots.is-sm{width:min(210px,58vw);gap:8px}
+.gx-slots.is-sm .fl{font-size:32px}
+.gx-keys{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.gx-key{height:52px;border-radius:12px;background:var(--gx-key);color:#fff;font-size:26px;font-weight:400;
+  font-variant-numeric:tabular-nums;transition:background-color 100ms}
+.gx-key:active:not(:disabled){background:#3a3a3c}
+.gx-key.is-used{color:rgba(255,255,255,.3)}
+.gx-key.is-used:active{background:var(--gx-key)}
+.gx-key--word{font-size:15px;font-weight:500}
+.gx-key:disabled{opacity:.45}
+
+/* ─── Код вызова: шесть маленьких створок (и поле ввода поверх них) ─── */
+.gx-token{position:relative;display:flex;gap:6px;width:min(300px,84vw)}
+.gx-token--in{cursor:text}
+.gx-token__cells{flex:1;min-width:0;display:flex;gap:6px}
+.gx-token .fl.is-cur{border-radius:9px;box-shadow:0 0 0 2px rgba(255,255,255,.7)}
+.gx-token__input{position:absolute;inset:0;width:100%;height:100%;padding:0;border:0;opacity:0;background:transparent;
+  color:transparent;caret-color:transparent;font-size:16px}
+
+/* ─── Поиск соперника ─── */
+.gx-radar{display:flex;align-items:center;gap:8px;height:24px;margin:20px 0 4px}
+.gx-radar i{width:8px;height:8px;border-radius:50%;background:#fff;opacity:.25;animation:gx-dot 1.2s ease-in-out infinite}
+.gx-radar i:nth-child(2){animation-delay:.2s}
+.gx-radar i:nth-child(3){animation-delay:.4s}
+@keyframes gx-dot{0%,100%{opacity:.25}40%{opacity:.9}}
+.gx-found{animation:gx-pop 260ms cubic-bezier(.2,.9,.22,1) both}
+@keyframes gx-pop{from{opacity:0;transform:scale(.96)}}
+
+/* ─── Игра: соперник, подсказка, история, ввод ─── */
+.gx-duel{flex:1;min-height:0;display:flex;flex-direction:column;padding:0 16px 12px}
+.gx-duel.is-over{overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding-bottom:24px}
+.gx-duel.is-over .gx-moves{flex:none;overflow:visible}
+.gx-opp{flex:none;display:flex;flex-direction:column;align-items:center;gap:6px;padding:2px 0 8px}
+.gx-pips{display:flex;gap:5px}
+.gx-pips i{width:7px;height:7px;border-radius:50%;box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.35)}
+.gx-pips i.on{background:#fff;box-shadow:none}
+.gx-opp__row{display:flex;align-items:center;gap:10px;font-size:14px;color:rgba(255,255,255,.85)}
+.gx-opp__code{font-size:13px;letter-spacing:.04em;color:rgba(255,255,255,.4)}
+.gx-hint{flex:none;margin:2px 0 8px;font-size:14px;line-height:1.35;color:rgba(255,255,255,.7);text-align:center}
+.gx-moves{flex:1;min-height:0;margin:0;padding:0 0 4px;list-style:none;overflow-y:auto;overscroll-behavior:contain}
+.gx-move{display:grid;grid-template-columns:28px minmax(0,1fr) auto;align-items:center;column-gap:8px;min-height:40px;
+  padding:0 4px;border-bottom:.5px solid rgba(255,255,255,.08)}
+.gx-move.is-new{animation:gx-row 200ms ease-out both}
+@keyframes gx-row{from{opacity:0;transform:translateY(8px)}}
+.gx-move__n{font-size:14px;font-variant-numeric:tabular-nums;color:rgba(255,255,255,.4)}
+.gx-move__g{font-size:20px;font-weight:500;letter-spacing:.12em;font-variant-numeric:tabular-nums}
+.gx-move__w{grid-column:2 / -1;margin:-6px 0 8px;font-size:12px;color:rgba(255,255,255,.5)}
+.gx-input{flex:none;display:flex;flex-direction:column;align-items:center;gap:10px;padding-top:10px}
+.gx-input .gx-keys, .gx-input .gx-primary{width:100%;max-width:420px}
+.gx-wait{flex:none;margin:0;padding:16px 8px;font-size:15px;line-height:1.45;color:rgba(255,255,255,.75);text-align:center}
+@media (max-height:720px){
+  .gx-input .gx-key{height:46px}
+  .gx-slots.is-sm .fl{font-size:28px}
+  .gx-input{gap:8px}
+}
+
+/* ●○· — порядок значков о цифрах ничего не говорит. */
+.gx-mk{display:inline-flex;align-items:center;gap:5px}
+.gx-mk i{position:relative;width:12px;height:12px;border-radius:50%}
+.gx-mk i.on{background:#fff}
+.gx-mk i.near{box-shadow:inset 0 0 0 1.5px #fff}
+.gx-mk i.none::after{content:'';position:absolute;left:4px;top:4px;width:4px;height:4px;border-radius:50%;background:rgba(255,255,255,.25)}
+.gx-mk.is-sm{gap:4px}
+.gx-mk.is-sm i{width:9px;height:9px}
+.gx-mk.is-sm i.none::after{left:2.5px;top:2.5px}
+.gx-mk.is-new i{animation:gx-mark 180ms ease-out both;animation-delay:calc(120ms + var(--i, 0) * 60ms)}
+@keyframes gx-mark{from{opacity:0;transform:scale(.4)}}
+
+/* ─── Итог ─── */
+.gx-result{display:flex;flex-direction:column;align-items:center;gap:10px;padding:18px 0 8px;text-align:center}
+.gx-big{margin:0;font-size:34px;font-weight:700;letter-spacing:-.02em;line-height:1.15}
+.gx-sub{margin:0;font-size:15px;line-height:1.4;color:rgba(255,255,255,.7)}
+.gx-codes{display:flex;flex-wrap:wrap;justify-content:center;gap:12px 24px;margin:8px 0 4px}
+.gx-codes__i{display:flex;flex-direction:column;align-items:center;gap:6px}
+.gx-code{display:flex;gap:4px;width:124px}
+.gx-code .fl.is-sm{font-size:22px}
+.gx-oppmoves{display:flex;flex-direction:column;align-items:center;gap:8px;margin-top:4px}
+.gx-oppmoves__list{display:flex;flex-wrap:wrap;justify-content:center;gap:8px 14px;max-width:320px}
+
+/* ─── Таблица кода дня ─── */
+.gx-seg{margin:4px 0 14px}
+.gx-lbs{margin:0;padding:0;list-style:none;overflow:hidden;border-radius:16px;background:#1c1c1e}
+.gx-lb{position:relative;display:flex;align-items:center;gap:10px;min-height:52px;padding:6px 14px}
+.gx-lb + .gx-lb::before{content:'';position:absolute;top:0;left:48px;right:0;border-top:.5px solid rgba(84,84,88,.55)}
+.gx-lb.is-me{background:rgba(255,255,255,.1)}
+.gx-lb__p{flex:none;width:24px;font-size:14px;font-variant-numeric:tabular-nums;color:rgba(255,255,255,.6);text-align:right}
+.gx-lb__main{flex:1;min-width:0;display:flex;flex-direction:column}
+.gx-lb__name{display:flex;align-items:center;gap:4px;min-width:0;font-size:15px;font-weight:500}
+.gx-lb__name > span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gx-lb__uni{font-size:12px;color:rgba(255,255,255,.5)}
+.gx-lb__v{flex:none;font-size:14px;font-variant-numeric:tabular-nums;color:rgba(255,255,255,.85)}
+
+/* ─── Поток: «Переподключаемся…» и «Игра открыта в другом окне» ─── */
+.gx-status{position:fixed;left:50%;top:calc(env(safe-area-inset-top) + 60px);z-index:58;transform:translateX(-50%);
+  padding:6px 12px;border-radius:14px;background:#1c1c1e;color:rgba(255,255,255,.7);font:500 13px/1.2 var(--font);
+  pointer-events:none;white-space:nowrap}
+.gx-banner{position:fixed;left:12px;right:12px;top:calc(env(safe-area-inset-top) + 60px);z-index:58;display:flex;
+  align-items:center;gap:12px;max-width:520px;margin:0 auto;padding:10px 10px 10px 16px;border-radius:14px;
+  background:#1c1c1e;color:#fff;font:15px/1.3 var(--font)}
+.gx-banner span{flex:1;min-width:0}
+.gx-banner button{flex:none;height:32px;padding:0 12px;border-radius:16px;background:#fff;color:#000;font-size:14px;font-weight:600}
+
+/* ─── Листы поверх игры (обычная тема приложения) ─── */
+.gx-how{padding:4px 20px 24px;font-size:15px;line-height:1.5;color:var(--ink-100)}
+.gx-how p{margin:0 0 12px}
+.gx-how__row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:8px;padding:10px 16px;
+  border-radius:12px;background:var(--fill);font-weight:500;cursor:pointer}
+.gx-fr{padding:0 12px 24px}
+.gx-fr__load{display:grid;place-items:center;padding:32px}
+.gx-fr__list{margin:0;padding:0;list-style:none}
+.gx-fr__row{display:flex;align-items:center;gap:12px;width:100%;padding:8px 6px;border-radius:12px;text-align:left;color:var(--ink-100)}
+.gx-fr__row:active{background:var(--fill)}
+.gx-fr__main{flex:1;min-width:0;display:flex;flex-direction:column}
+.gx-fr__name{display:flex;align-items:center;gap:4px;min-width:0;font-size:15px;font-weight:600}
+.gx-fr__name > span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gx-fr__user{font-size:13px;color:var(--ink-60)}
+.gx-fr__go{flex:none;height:30px;padding:0 12px;border-radius:15px;background:var(--fill);font-size:14px;font-weight:600;
+  line-height:30px;color:var(--ink-100)}
+.gx-fr__empty{padding:24px 12px;font-size:15px;line-height:1.45;color:var(--ink-60);text-align:center}
+.gx-fr__btn{margin-top:14px;height:44px;padding:0 18px;border-radius:13px;background:var(--accent);color:#fff;font-weight:600}
+
+@media (prefers-reduced-motion: reduce){
+  .gx-move.is-new, .gx-mk.is-new i, .gx-float, .gx-radar i, .gx-reacts, .gx-found{animation:none}
+  .gx-radar i{opacity:.5}
+}

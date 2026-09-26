@@ -1,4 +1,4 @@
-// Ссылки внутрь приложения Para: /?uni=kfu&post=12, &user=alice, &tab=profile&delete=1, #auth=ok…
+// Ссылки внутрь приложения Para: /?uni=kfu&post=12, &user=alice, &tab=profile&delete=1, &duel=K7M2QX, &game=1, #auth=ok…
 // Читаются один раз при запуске (AppShell) и сразу убираются из адреса, чтобы перезагрузка
 // или «Поделиться» не открывали то же самое снова. uni, group, from, ok, u и #m= не трогаем.
 import type { TabId } from '../tabs';
@@ -7,13 +7,18 @@ import { DEEP_PARAMS } from '../lib/uni';
 
 export interface DeepLink {
   tab?: TabId; post?: number; user?: string; compose?: boolean; del?: boolean; mod?: boolean; auth?: AuthOutcome;
+  /** Вызов в игру «Код» по ссылке: код вызова из 6 знаков (заглавные, без 0/O/1/I/L). */
+  duel?: string;
+  /** Открыть игру «Код» (после входа или из «Поделиться» кода дня). */
+  game?: boolean;
 }
 
 const TABS: readonly TabId[] = ['schedule', 'chat', 'profile'];
+const DUEL_TOKEN = /^[A-HJKMNP-Z2-9]{6}$/;
 const OUTCOMES: readonly AuthOutcome[] =
   ['ok', 'cancelled', 'expired', 'failed', 'browser', 'limited', 'unavailable', 'unverified', 'consent', 'none'];
 
-/** Разбирает адрес и убирает из него tab, post, user, compose, delete, mod и #auth=…. */
+/** Разбирает адрес и убирает из него tab, post, user, compose, delete, mod, duel, game и #auth=…. */
 export function readDeepLink(): DeepLink {
   const url = new URL(location.href);
   const q = url.searchParams;
@@ -28,6 +33,9 @@ export function readDeepLink(): DeepLink {
   if (q.get('compose') === '1') dl.compose = true;
   if (q.get('delete') === '1') dl.del = true;
   if (q.get('mod') === '1') dl.mod = true;
+  const duel = (q.get('duel') || '').trim().toUpperCase();
+  if (DUEL_TOKEN.test(duel)) dl.duel = duel;
+  if (q.get('game') === '1') dl.game = true;
 
   let changed = false;
   const m = /^#auth=([a-z]+)/.exec(url.hash);

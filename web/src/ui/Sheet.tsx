@@ -34,10 +34,11 @@ const DRAG_CLOSE = 100;       // px: отпустили ниже — закры�
 const DRAG_VELOCITY = 0.6;    // px/мс: или смахнули быстро
 
 let locks = 0;
-function lockScroll() {
+/** Страница под окном не прокручивается (счётчик: листы и оверлей игры «Код» делят его). */
+export function lockScroll(): void {
   if (locks++ === 0) document.documentElement.classList.add('ui-lock');
 }
-function unlockScroll() {
+export function unlockScroll(): void {
   locks = Math.max(0, locks - 1);
   if (locks === 0) document.documentElement.classList.remove('ui-lock');
 }

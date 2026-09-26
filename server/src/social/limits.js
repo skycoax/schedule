@@ -28,6 +28,12 @@ export const BUCKETS = {
   profile: [10, MIN],         // PATCH /me, принятие правил
   delete: [30, 10 * SEC],
   admin: [60, SEC],
+  // Мини-игра «Код» (game.js).
+  gameGuess: [3, SEC],        // попытка: 3 подряд, потом примерно одна в секунду
+  gameNew: [6, 2 * MIN],      // вызов, случайный соперник, реванш, сдаться, отказ
+  gameJoin: [10, MIN],        // просмотр вызова, принятие по коду и из лобби — по u:<id>; гость — по IP, только промахи
+  gameReact: [5, 3 * SEC],
+  gameStream: [10, 30 * SEC], // поток событий игры, по пользователю
 };
 
 const buckets = new Map();   // key → { t: жетоны, at: мс }
@@ -65,6 +71,19 @@ export function limit(name, key) {
   if (wait) throw rateError(wait);
 }
 
+/**
+ * Как limit, но жетон не берётся: 429, только если ведёрко уже пусто. Для случаев, где жетон списывают
+ * отдельно и не всегда (просмотр вызова гостем — только промахи, limited() после).
+ */
+export function limitPeek(name, key) {
+  if (!social.rateLimits) return;
+  const [cap, ms] = BUCKETS[name];
+  const b = buckets.get(name + '|' + key);
+  if (!b) return;
+  const t = Math.min(cap, b.t + (Date.now() - b.at) / ms);
+  if (t < 1) throw rateError(Math.max(1, Math.ceil((1 - t) * ms / 1000)));
+}
+
 /** Как limit, но без исключения: true — предел превышен (для входа через Google, где ответ — переход). */
 export function limited(name, key) {
   if (!social.rateLimits) return false;
@@ -95,6 +114,7 @@ export const CAPS = {
   avatar: [20, 20],
   report: [50, 10],
   instant: [40, 10],
+  game: [40, 15],             // игры с людьми: созданные и принятые за 24 ч
 };
 export const CAP_TEXT = {
   post: 'Лимит публикаций на сегодня исчерпан — попробуй позже',
@@ -103,6 +123,7 @@ export const CAP_TEXT = {
   avatar: 'Фото профиля сегодня менялось слишком часто — попробуй позже',
   report: 'Слишком много жалоб подряд — попробуй позже',
   instant: 'Лимит моментов на сегодня исчерпан — попробуй позже',
+  game: 'Лимит игр на сегодня исчерпан — попробуй завтра',
 };
 /** Начало окна дневного предела: сейчас минус 24 ч (ISO). */
 export const dayAgo = () => nowIso(Date.now() - DAY);

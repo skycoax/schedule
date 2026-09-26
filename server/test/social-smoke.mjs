@@ -12,10 +12,16 @@
 //   Прогон D (необязательный, вход через Google с поддельным Google): сервер с
 //     GOOGLE_CLIENT_ID=smoke.apps.googleusercontent.com GOOGLE_CLIENT_SECRET=smoke
 //     SOCIAL_DEV_GOOGLE_TOKEN_URL=http://127.0.0.1:9901/token, тест — SMOKE_GOOGLE_PORT=9901 (вместе с прогоном A).
+//   Мини-игра «Код» проверяется в прогоне A (раздел «Код»), в readonly и off. Серверу нужны
+//     GAME_PING_MS=1000 GAME_STREAM_MAX_MS=5000 (ping раз в секунду, поток живёт 5 с). Прогон A оставляет паре
+//     smgame_roa / smgame_rob вызов другу и идущую игру — их прогон readonly проверяет «Сдаться» и «Отказаться».
+//   Прогон E (необязательный, SOCIAL_GAME=friends у сервера): без случайного соперника и общих таблиц
+//     SMOKE_GAME=friends node server/test/social-smoke.mjs http://127.0.0.1:8792 kfu
 import http from 'node:http';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { makeJpeg, SCENES } from './social-seed.mjs';
+import { evaluate } from '../src/social/game-logic.js';
 
 const BASE = new URL(process.argv[2] || 'http://127.0.0.1:8792');
 const UNI = process.argv[3] || 'kfu';
@@ -1305,7 +1311,633 @@ async function runMain() {
   const pages = [];
   for (const p of ['/policy', '/rules', '/delete-account']) pages.push(`${p} ${(await call(guest, 'GET', p, { uni: '' })).status}`);
   ok('robots.txt; страницы Para: ' + pages.join(', '));
+
+  await runGame(st, boss, guest, limitsOn);
   if (!limitsOn) console.log('     внимание: прогон A должен идти с включёнными пределами (без SOCIAL_RATE_LIMITS=off)');
+}
+
+// ═══════════════ «Код»: мини-игра (CONTRACT.md §I) ═══════════════
+
+const G = '/api/social/games';
+const TOKEN_RE = /^[A-HJKMNP-Z2-9]{6}$/;
+const ALL_CODES = [];
+for (let i = 0; i < 10000; i++) { const s = String(i).padStart(4, '0'); if (new Set(s).size === 4) ALL_CODES.push(s); }
+/**
+ * Игрок «Кода»: вход и профиль. Все игроки — с одного IP (127.0.0.1), как класс за одним Wi-Fi: вошедшим ведёрко
+ * gameJoin считается по пользователю, общий IP им не мешает.
+ */
+async function gamer(suffix, name, extra = {}) {
+  return user(suffix, name, extra);
+}
+/** Запрос к /api/social/games…: u — игрок (null — гость); X-Para — всем (просмотру вызова он нужен), изменяющим — ещё Origin. */
+function gcall(u, method, path, { json, headers = {}, uni } = {}) {
+  const h = { ...(method === 'GET' ? { 'X-Para': '1' } : W), ...headers };
+  return call(u ? u.jar : new Map(), method, G + path, { json: method === 'GET' ? undefined : json ?? {}, headers: h, uni });
+}
+/** Повторить при 429 (ведёрко попыток: 3 подряд, дальше примерно одна в секунду). */
+async function paced(fn) {
+  for (let i = 0; i < 15; i++) {
+    const r = await fn();
+    if (r.status !== 429) return r;
+    await sleep(Number(r.headers['retry-after'] || 1) * 1000 + 50);
+  }
+  throw new Error('429 не отпускает');
+}
+const duelGuess = (u, id, guess, n) => paced(() => gcall(u, 'POST', `/duels/${id}/guess`, { json: { guess, n } }));
+const dailyGuess = (u, day, guess, n) => paced(() => gcall(u, 'POST', '/daily/guess', { json: { day, guess, n } }));
+const lobbyOf = async (u) => expect(await gcall(u, 'GET', ''), 200, 'лобби');
+const duelOf = async (u, id) => expect(await gcall(u, 'GET', `/duels/${id}`), 200, 'дуэль').duel;
+const waitingOf = async (u) => (await meOf(u.jar)).game;
+
+/**
+ * Взломать код: каждый раз — первая комбинация, согласная со всеми ответами (обычно 5–8 попыток).
+ * duelId — дуэль, иначе «Код дня» дня day. known — уже сделанные попытки. Возвращает { data, n }.
+ */
+async function solve(u, { duelId, day, known = [] }) {
+  let moves = known;
+  for (let i = 0; i < 12; i++) {
+    const fits = ALL_CODES.filter((c) => !moves.some((m) => m.g === c)
+      && moves.every((m) => { const e = evaluate(c, m.g); return e.on === m.on && e.near === m.near; }));
+    const g = fits[0];
+    const r = duelId ? await duelGuess(u, duelId, g, moves.length + 1) : await dailyGuess(u, day, g, moves.length + 1);
+    const data = expect(r, 200, 'попытка ' + g);
+    moves = duelId ? data.duel.me.moves : data.daily.moves;
+    if (moves[moves.length - 1].on === 4) return { data, n: moves.length };
+  }
+  throw new Error('решатель не взломал код за 12 попыток');
+}
+
+/**
+ * Поток событий игры (SSE) на http.request: { status, headers, raw, events, json }, wait(event, pred, ms),
+ * until(fn, ms, what), close(). json — тело отказа (не 200).
+ */
+function stream(u, { uni = UNI, c = '' } = {}) {
+  return new Promise((resolve, reject) => {
+    const h = { Host: HUB, Accept: 'text/event-stream' };
+    if (u.jar.size) h.Cookie = [...u.jar].map(([k, v]) => `${k}=${v}`).join('; ');
+    const s = { status: 0, headers: {}, raw: '', events: [], ended: false, json: null, subs: new Set() };
+    const poke = () => { for (const f of [...s.subs]) f(); };
+    s.until = (fn, ms, what) => new Promise((res, rej) => {
+      let t = null;
+      const check = () => {
+        const v = fn();
+        if (!v) return false;
+        clearTimeout(t);
+        s.subs.delete(check);
+        res(v);
+        return true;
+      };
+      if (check()) return;
+      t = setTimeout(() => { s.subs.delete(check); rej(new Error(`${what}: не дождался за ${ms} мс; в потоке: ${JSON.stringify(s.raw.slice(-300))}`)); }, ms);
+      s.subs.add(check);
+    });
+    s.wait = (name, pred, ms = 3000) => s.until(() => {
+      const e = s.events.find((x) => x.event === name && (!pred || pred(x.data)));
+      return e ? e.data : null;
+    }, ms, 'событие ' + name);
+    s.close = () => { try { rq.destroy(); } catch { /* уже */ } };
+    const q = [uni ? 'uni=' + uni : '', c ? 'c=' + c : ''].filter(Boolean).join('&');
+    const rq = http.request({ hostname: BASE.hostname, port: BASE.port, method: 'GET', path: `${G}/stream${q ? '?' + q : ''}`, headers: h }, (res) => {
+      s.status = res.statusCode;
+      s.headers = res.headers;
+      res.setEncoding('utf8');
+      let buf = '';
+      res.on('data', (chunk) => {
+        s.raw += chunk;
+        buf += chunk;
+        for (let i = buf.indexOf('\n\n'); i >= 0; i = buf.indexOf('\n\n')) {
+          const block = buf.slice(0, i);
+          buf = buf.slice(i + 2);
+          let event = null;
+          let data = '';
+          for (const line of block.split('\n')) {
+            if (line.startsWith('event: ')) event = line.slice(7);
+            else if (line.startsWith('data: ')) data += line.slice(6);
+          }
+          if (event) { let d = null; try { d = JSON.parse(data); } catch { d = data; } s.events.push({ event, data: d }); }
+        }
+        poke();
+      });
+      const end = () => {
+        if (s.ended) return;
+        s.ended = true;
+        if (s.status !== 200) { try { s.json = JSON.parse(s.raw); } catch { /* не JSON */ } }
+        poke();
+      };
+      res.on('end', end);
+      res.on('close', end);
+      resolve(s);
+    });
+    rq.on('error', (e) => { s.ended = true; poke(); if (!s.status) reject(e); });
+    rq.end();
+  });
+}
+
+async function runGame(st, boss, guest, limitsOn) {
+  let r;
+  // 1. Настройки и гость.
+  assert.equal(st.config.game, 'on', 'config.game (сервер с SOCIAL_GAME=on)');
+  const ga = await gamer('ga', `Гоша ${RUN}`);
+  assert.equal(ga.me.game, null, 'me.game — null, пока игру не нашёл');
+  expect(await gcall(null, 'GET', ''), 401, 'лобби гостю', 'auth');
+  ok('«Код»: config.game on, me.game null до первого входа, гостю лобби — 401');
+
+  // 2. Лобби: первый вход заводит счёт.
+  let lob = await lobbyOf(ga);
+  assert.deepEqual(lob.cfg, { attempts: 12, ttlH: 24, reactions: ['wave', 'like', 'wow', 'lol', 'fire', 'deal'], game: 'on' });
+  assert.deepEqual(lob.me, { wins: 0, losses: 0, draws: 0, streak: 0, bestStreak: 0 });
+  assert.deepEqual(lob.daily, { status: 'new', n: 0, left: 12 });
+  assert.deepEqual(lob.duels, []);
+  assert.equal(typeof lob.searching, 'number');
+  assert.deepEqual(await waitingOf(ga), { waiting: 0 });
+  ok('«Код»: лобби (cfg, счёт, «Код дня», игры), после него me.game = { waiting: 0 }');
+
+  // 3. Вызов ссылкой.
+  bad(await gcall(ga, 'POST', '/duels', { json: { mode: 'link', code: '1123' } }), 'код с повтором', 'Нужны четыре разные цифры', 'code');
+  bad(await gcall(ga, 'POST', '/duels', { json: { mode: 'nope', code: '4071' } }), 'неизвестный вид', undefined, 'mode');
+  const created = expect(await gcall(ga, 'POST', '/duels', { json: { mode: 'link', code: '4071' } }), 200, 'вызов ссылкой');
+  const d1 = created.duel;
+  assert.equal(created.matched, false);
+  assert.deepEqual([d1.kind, d1.status, d1.role, d1.me.code, d1.opp.user, d1.opp.gone, d1.outcome], ['link', 'open', 'creator', '4071', null, false, null]);
+  assert.match(d1.token, TOKEN_RE);
+  ok(`«Код»: код 1123 → 400 «Нужны четыре разные цифры»; вызов ссылкой открыт, код вызова ${d1.token}`);
+
+  // 4. Просмотр вызова: гостю (без вуза хозяина), самому хозяину, по чужому коду — 404.
+  let inv = expect(await gcall(null, 'GET', '/invite?t=' + d1.token, { headers: { 'X-Real-IP': '10.66.1.1' } }), 200, 'вызов гостю').invite;
+  assert.deepEqual([inv.id, inv.from.id, inv.from.uni, inv.from.uniShort, inv.mine, inv.expiresAt], [d1.id, ga.me.id, null, null, false, d1.deadlineAt]);
+  inv = expect(await gcall(ga, 'GET', '/invite?t=' + d1.token.toLowerCase()), 200, 'вызов хозяину').invite;
+  assert.equal(inv.mine, true);
+  assert.equal(inv.from.uni, UNI, 'вошедшему «мой вуз» хозяина виден');
+  expect(await gcall(ga, 'GET', '/invite?t=ZZZZZZ'), 404, 'чужой код вызова', 'not_found', 'Вызов истёк или уже принят');
+  expect(await gcall(ga, 'GET', '/invite?t=0OIL11'), 404, 'код не из алфавита', 'not_found', 'Вызов истёк или уже принят');
+  ok('«Код»: просмотр вызова — гостю без вуза хозяина, хозяину mine:true; неизвестный код — 404 «Вызов истёк или уже принят»');
+
+  // 5. CSRF.
+  const gb = await gamer('gb', `Боря ${RUN}`);
+  r = await call(gb.jar, 'POST', G + '/join', { json: { t: d1.token, code: '9352' } });
+  expect(r, 403, 'join без X-Para', 'csrf');
+  ok('«Код»: POST /join без X-Para → 403 csrf');
+
+  // 6. Поток: заголовки, retry, hello, ping.
+  const sa = await stream(ga);
+  assert.equal(sa.status, 200, 'поток: ' + sa.raw.slice(0, 200));
+  assert.match(sa.headers['content-type'] || '', /^text\/event-stream/);
+  assert.match(sa.headers['cache-control'] || '', /no-store/);
+  assert.equal(sa.headers['x-accel-buffering'], 'no');
+  assert.equal(sa.headers['x-robots-tag'], 'noindex');
+  await sa.wait('hello', null, 2000);
+  assert.ok(sa.raw.startsWith('retry: 3000\n\n'), 'сначала retry: 3000');
+  assert.ok(sa.raw.includes('event: hello\ndata: {"now":'), 'затем hello');
+  const t6 = Date.now();
+  await sa.wait('ping', null, 2500);
+  ok(`«Код»: поток — text/event-stream, no-store, X-Accel-Buffering: no, noindex; retry: 3000, hello, ping через ${Date.now() - t6} мс`);
+
+  // 7. gb принимает вызов — у ga в потоке событие duel.
+  const j = expect(await gcall(gb, 'POST', '/join', { json: { t: d1.token, code: '9352' } }), 200, 'принять вызов').duel;
+  assert.deepEqual([j.status, j.role, j.me.code, j.opp.user.id, j.token], ['active', 'joiner', '9352', ga.me.id, null]);
+  const evJoin = await sa.wait('duel', (d) => d.duel.id === d1.id && d.duel.status === 'active', 2000);
+  assert.deepEqual([evJoin.duel.role, evJoin.duel.opp.user.id, evJoin.duel.opp.live], ['creator', gb.me.id, false]);
+  await sa.wait('lobby', (d) => typeof d.waiting === 'number', 2000);
+  sa.close();
+  expect(await gcall(gb, 'GET', '/invite?t=' + d1.token), 404, 'принятый вызов', 'not_found', 'Вызов истёк или уже принят');
+  const j2 = expect(await gcall(gb, 'POST', '/join', { json: { t: d1.token, code: '9352' } }), 200, 'повтор принятия').duel;
+  assert.deepEqual([j2.id, j2.status, j2.role, j2.me.code], [d1.id, 'active', 'joiner', '9352'], 'повтор — та же игра');
+  expect(await gcall(ga, 'POST', '/join', { json: { t: d1.token, code: '9352' } }), 404, 'принятый вызов другим', 'not_found',
+    'Вызов истёк или уже принят');
+  ok('«Код»: вызов принят (active) — у создателя в потоке duel и lobby; ссылка больше не работает; повтор принятия — та же игра');
+
+  // 8. Попытки: n, повтор той же попытки, повтор комбинации.
+  r = await duelGuess(ga, d1.id, '1234', 2);
+  expect(r, 409, 'n не тот', 'conflict', 'Состояние игры изменилось');
+  assert.equal(r.json.field, 'n');
+  let dv = expect(await duelGuess(ga, d1.id, '1234', 1), 200, 'попытка 1').duel;
+  assert.deepEqual(dv.me.moves, [{ g: '1234', ...evaluate('9352', '1234') }]);
+  assert.equal(dv.me.left, 11);
+  const again = expect(await duelGuess(ga, d1.id, '1234', 1), 200, 'та же попытка ещё раз').duel;
+  assert.equal(again.me.moves.length, 1, 'повтор не тратит попытку');
+  bad(await duelGuess(ga, d1.id, '1234', 2), 'повтор комбинации', 'Эта комбинация уже была', 'guess');
+  bad(await duelGuess(ga, d1.id, '12345', 2), 'пять цифр', 'Нужны четыре разные цифры', 'guess');
+  ok('«Код»: попытка — ответ ●○ как evaluate; чужой n → 409; повтор той же — 200 без траты; повтор комбинации → 400');
+
+  // 9. Соперник видит только отметки, не цифры и не код.
+  const gbView = await duelOf(gb, d1.id);
+  assert.equal(gbView.outcome, null);
+  assert.ok(!JSON.stringify(gbView).includes('4071'), 'код ga не виден до конца игры');
+  assert.equal(gbView.opp.n, 1);
+  assert.deepEqual(gbView.opp.marks, [evaluate('9352', '1234')]);
+  assert.ok(!JSON.stringify(gbView.opp).includes('1234'), 'попытки соперника цифрами не видны');
+  const gc = await gamer('gc', `Вика ${RUN}`);
+  expect(await gcall(gc, 'GET', `/duels/${d1.id}`), 404, 'чужая дуэль', 'not_found', 'Игра не найдена');
+  expect(await gcall(gc, 'GET', '/duels/abc'), 404, 'кривой id', 'not_found', 'Игра не найдена');
+  ok('«Код»: сопернику — число попыток и отметки ●○, без цифр и кода; чужому — 404 «Игра не найдена»');
+
+  // 10. ga взламывает; gb промахивается, пока не сделает столько же — ga выигрывает досрочно.
+  const before = { a: (await lobbyOf(ga)).me, b: (await lobbyOf(gb)).me };
+  const { n: s } = await solve(ga, { duelId: d1.id, known: dv.me.moves });
+  dv = await duelOf(ga, d1.id);
+  assert.deepEqual([dv.status, dv.me.res, dv.me.score], ['active', 'cracked', s]);
+  const miss = ALL_CODES.filter((c) => c !== '4071');
+  let fin = null;
+  for (let i = 1; i <= s; i++) {
+    fin = expect(await duelGuess(gb, d1.id, miss[i - 1], i), 200, 'промах gb ' + i).duel;
+    if (i < s) assert.equal(fin.status, 'active', `после ${i} из ${s} попыток gb игра ещё идёт`);
+  }
+  assert.deepEqual([fin.status, fin.outcome.winner, fin.outcome.reason, fin.outcome.oppCode, fin.me.res],
+    ['done', 'opp', 'early', '4071', null]);
+  const aFin = await duelOf(ga, d1.id);
+  assert.deepEqual([aFin.outcome.winner, aFin.outcome.oppCode, aFin.canRematch], ['me', '9352', true]);
+  const after = { a: (await lobbyOf(ga)).me, b: (await lobbyOf(gb)).me };
+  assert.equal(after.a.wins, before.a.wins + 1);
+  assert.equal(after.b.losses, before.b.losses + 1);
+  assert.ok((await waitingOf(gb)).waiting >= 1, 'итог ждёт gb');
+  expect(await gcall(gb, 'POST', '/seen', { json: { ids: [d1.id] } }), 200, 'просмотрено');
+  assert.equal((await waitingOf(gb)).waiting, 0);
+  bad(await gcall(gb, 'POST', '/seen', { json: { ids: 'x' } }), 'seen не массив', undefined, 'ids');
+  expect(await duelGuess(gb, d1.id, miss[s], s + 1), 409, 'попытка после конца', 'conflict', 'Игра уже закончилась');
+  ok(`«Код»: ga взломал за ${s}, gb сделал ${s} — победа ga досрочно (early), код раскрыт; счёт +1/−1; seen снимает waiting`);
+
+  // 11. Случайный соперник: самая старая заявка без блокировки; счётчик ищущих — без заблокированных.
+  await drainQuick();
+  const gd = await gamer('gd', `Дима ${RUN}`);
+  const ge = await gamer('ge', `Ева ${RUN}`);
+  const qc = expect(await gcall(gc, 'POST', '/duels', { json: { mode: 'quick', code: '0123' } }), 200, 'поиск gc');
+  assert.deepEqual([qc.matched, qc.duel.kind, qc.duel.status], [false, 'quick', 'open']);
+  expect(await call(gd.jar, 'PUT', `/api/social/blocks/${gc.me.id}`, { json: {}, headers: W }), 200, 'gd блокирует gc');
+  const qd = expect(await gcall(gd, 'POST', '/duels', { json: { mode: 'quick', code: '4567' } }), 200, 'поиск gd');
+  assert.equal(qd.matched, false, 'gd не должен попасть к заблокированному gc');
+  const seeE = (await lobbyOf(ge)).searching;
+  const seeD = (await lobbyOf(gd)).searching;
+  assert.ok(seeE >= 2, 'ge видит двоих ищущих: ' + seeE);
+  assert.equal(seeD, seeE - 2, 'gd не считает себя и заблокированного gc');
+  const qe = expect(await gcall(ge, 'POST', '/duels', { json: { mode: 'quick', code: '8901' } }), 200, 'поиск ge');
+  assert.deepEqual([qe.matched, qe.duel.id, qe.duel.status, qe.duel.role, qe.duel.opp.user.id], [true, qc.duel.id, 'active', 'joiner', gc.me.id]);
+  const qd2 = expect(await gcall(gd, 'POST', '/duels', { json: { mode: 'quick', code: '4567' } }), 200, 'поиск gd ещё раз');
+  assert.deepEqual([qd2.matched, qd2.duel.id], [false, qd.duel.id]);
+  const qdLeft = expect(await gcall(gd, 'POST', `/duels/${qd.duel.id}/leave`), 200, 'отмена поиска').duel;
+  assert.deepEqual([qdLeft.status, qdLeft.outcome.reason], ['cancelled', 'cancelled']);
+  ok('«Код»: случайный соперник — пара с самой старой заявкой без блокировки; ищущие без заблокированных; повтор — та же заявка');
+
+  // 12. Вызов другу.
+  expect(await gcall(ga, 'POST', '/duels', { json: { mode: 'friend', code: '1357', to: gc.me.id } }), 403, 'вызов не другу',
+    'blocked', 'Нельзя вызвать этого пользователя');
+  expect(await call(ga.jar, 'POST', `/api/social/friends/${gb.me.id}`, { json: {}, headers: W }), 200, 'заявка ga → gb');
+  expect(await call(gb.jar, 'POST', `/api/social/friends/${ga.me.id}/accept`, { json: {}, headers: W }), 200, 'gb принял');
+  const w0 = (await waitingOf(gb)).waiting;
+  const fi = expect(await gcall(ga, 'POST', '/duels', { json: { mode: 'friend', code: '1357', to: gb.me.id } }), 200, 'вызов другу').duel;
+  assert.deepEqual([fi.kind, fi.status, fi.friends, fi.opp.user.id], ['friend', 'open', true, gb.me.id]);
+  assert.equal(expect(await gcall(ga, 'POST', '/duels', { json: { mode: 'friend', code: '1357', to: gb.me.id } }), 200, 'повтор').duel.id, fi.id,
+    'один открытый вызов на пару');
+  assert.equal((await waitingOf(gb)).waiting, w0 + 1, 'вызов ждёт друга');
+  lob = await lobbyOf(gb);
+  assert.equal(lob.duels[0].id, fi.id, 'вызовы — первыми');
+  assert.deepEqual([lob.duels[0].state, lob.duels[0].opp.id], ['invited', ga.me.id]);
+  assert.equal((await duelOf(gb, fi.id)).role, 'invited');
+  expect(await gcall(gb, 'POST', `/duels/${fi.id}/decline`), 200, 'отказ');
+  const declined = await duelOf(ga, fi.id);
+  assert.deepEqual([declined.status, declined.outcome.reason, declined.outcome.winner], ['cancelled', 'declined', 'none']);
+  expect(await gcall(gb, 'GET', `/duels/${fi.id}`), 404, 'отклонённый вызов адресату', 'not_found');
+  assert.equal((await waitingOf(gb)).waiting, w0);
+  ok('«Код»: вызов не другу → 403; другу — в лобби «Тебя вызывают» и в waiting; отказ → cancelled/declined');
+
+  // 13. Блокировка посреди игры: прервана без счёта; вызов заблокировавшему — как истёкший.
+  const fi2 = expect(await gcall(ga, 'POST', '/duels', { json: { mode: 'friend', code: '1357', to: gb.me.id } }), 200, 'вызов другу 2').duel;
+  const acc = expect(await gcall(gb, 'POST', `/duels/${fi2.id}/accept`, { json: { code: '2468' } }), 200, 'принять из лобби').duel;
+  assert.deepEqual([acc.status, acc.role, acc.me.code], ['active', 'joiner', '2468']);
+  expect(await duelGuess(ga, fi2.id, '0123', 1), 200, 'ход до блокировки');
+  const st13 = { a: (await lobbyOf(ga)).me, b: (await lobbyOf(gb)).me };
+  expect(await call(gb.jar, 'PUT', `/api/social/blocks/${ga.me.id}`, { json: {}, headers: W }), 200, 'gb блокирует ga');
+  const cutA = await duelOf(ga, fi2.id);
+  const cutB = await duelOf(gb, fi2.id);
+  // Причина наружу — просто «прервана»; карточки заблокированного/заблокировавшего в игре нет (но и не «Удалённый аккаунт»).
+  for (const x of [cutA, cutB]) {
+    assert.deepEqual([x.status, x.outcome.reason, x.outcome.winner, x.outcome.oppCode], ['cancelled', 'cancelled', 'none', null]);
+    assert.deepEqual([x.opp.user, x.opp.gone, x.opp.live, x.canRematch, x.rematch], [null, false, false, false, null]);
+  }
+  const oldA = await duelOf(ga, d1.id);
+  assert.deepEqual([oldA.status, oldA.opp.user, oldA.canRematch], ['done', null, false], 'и в прошлой игре карточки нет');
+  assert.deepEqual((await lobbyOf(ga)).me, st13.a, 'счёт ga не изменился');
+  assert.deepEqual((await lobbyOf(gb)).me, st13.b, 'счёт gb не изменился');
+  assert.ok(!(await lobbyOf(ga)).duels.some((x) => x.id === fi2.id || x.id === d1.id), 'игры с заблокированным не видны в лобби');
+  const l2 = expect(await gcall(ga, 'POST', '/duels', { json: { mode: 'link', code: '5678' } }), 200, 'новая ссылка ga').duel;
+  expect(await gcall(gb, 'GET', '/invite?t=' + l2.token), 404, 'просмотр при блокировке', 'not_found', 'Вызов истёк или уже принят');
+  expect(await gcall(gb, 'POST', '/join', { json: { t: l2.token, code: '9352' } }), 404, 'принять при блокировке', 'not_found',
+    'Вызов истёк или уже принят');
+  ok('«Код»: блокировка прерывает игру без счёта (наружу — cancelled), прячет её из лобби и карточку из игр; ссылка ga для gb — 404');
+
+  // 14. Реванш не-другу: взаимный, в лобби не виден; отказ — пауза 7 дней.
+  const qid = qc.duel.id;
+  const left = expect(await gcall(ge, 'POST', `/duels/${qid}/leave`), 200, 'ge сдаётся').duel;
+  assert.deepEqual([left.status, left.me.res, left.outcome.winner, left.outcome.reason], ['done', 'left', 'opp', 'left']);
+  let cv = await duelOf(gc, qid);
+  assert.deepEqual([cv.outcome.winner, cv.outcome.reason, cv.friends, cv.canRematch, cv.rematch], ['me', 'left', false, true, null]);
+  const wE = (await waitingOf(ge)).waiting;
+  const rm = expect(await gcall(gc, 'POST', `/duels/${qid}/rematch`, { json: { code: '1470' } }), 200, 'реванш gc').duel;
+  assert.deepEqual([rm.kind, rm.status, rm.role, rm.opp.user.id], ['rematch', 'open', 'creator', ge.me.id]);
+  assert.ok(!(await lobbyOf(ge)).duels.some((x) => x.id === rm.id), 'реванш не-друга не виден в лобби');
+  assert.equal((await waitingOf(ge)).waiting, wE, 'и не считается в waiting');
+  const ev = await duelOf(ge, qid);
+  assert.deepEqual([ev.rematch.id, ev.rematch.mine, ev.rematch.status, ev.canRematch], [rm.id, false, 'open', true]);
+  assert.equal((await duelOf(gc, qid)).canRematch, false, 'своё предложение ждёт');
+  const rm2 = expect(await gcall(ge, 'POST', `/duels/${qid}/rematch`, { json: { code: '2581' } }), 200, 'реванш ge').duel;
+  assert.deepEqual([rm2.id, rm2.status, rm2.role, rm2.kind], [rm.id, 'active', 'joiner', 'rematch']);
+  expect(await gcall(gc, 'POST', `/duels/${rm.id}/leave`), 200, 'gc сдаётся в реванше');
+  const rm3 = expect(await gcall(gc, 'POST', `/duels/${rm.id}/rematch`, { json: { code: '3692' } }), 200, 'реванш 2').duel;
+  assert.deepEqual([rm3.kind, rm3.status], ['rematch', 'open']);
+  const sc14 = await stream(gc);
+  await sc14.wait('hello');
+  expect(await gcall(ge, 'POST', `/duels/${rm3.id}/decline`), 200, 'ge отказался');
+  // Отказ меняет и итог исходной игры (поле rematch) — он приходит в поток вместе с самим реваншем.
+  await sc14.wait('duel', (d) => d.duel.id === rm.id && d.duel.rematch && d.duel.rematch.id === rm3.id
+    && d.duel.rematch.status === 'cancelled', 2000);
+  sc14.close();
+  expect(await gcall(gc, 'POST', `/duels/${qid}/rematch`, { json: { code: '1470' } }), 403, 'реванш после отказа', 'blocked',
+    'Реванш с этим игроком пока недоступен');
+  assert.equal((await duelOf(ge, rm.id)).canRematch, false, 'пауза 7 дней — кнопки нет');
+  ok('«Код»: реванш не-другу — только на экране итога, взаимный (второй «Реванш» начинает игру); отказ — в потоке и у исходной игры; после отказа — 403 на 7 дней');
+
+  // 15. Реакции: только сопернику в поток; неизвестная — 400; 6-я за 3 с — 429. «в игре» — сопернику.
+  const r1 = await gamer('gr1', `Рома ${RUN}`);
+  const r2 = await gamer('gr2', `Рита ${RUN}`);
+  expect(await gcall(r1, 'POST', '/duels', { json: { mode: 'quick', code: '0123' } }), 200, 'поиск r1');
+  const rq = expect(await gcall(r2, 'POST', '/duels', { json: { mode: 'quick', code: '4567' } }), 200, 'поиск r2');
+  assert.equal(rq.matched, true);
+  const rid = rq.duel.id;
+  const s1 = await stream(r1);
+  await s1.wait('hello');
+  const s2 = await stream(r2);
+  await s2.wait('hello');
+  await s1.wait('presence', (d) => d.duel === rid && d.live === true, 2000);
+  assert.equal((await duelOf(r1, rid)).opp.live, true, 'соперник «в игре»');
+  expect(await gcall(r1, 'POST', `/duels/${rid}/react`, { json: { r: 'fire' } }), 200, 'реакция');
+  await s2.wait('react', (d) => d.duel === rid && d.r === 'fire', 2000);
+  assert.ok(!s1.events.some((e) => e.event === 'react'), 'себе реакция не приходит');
+  bad(await gcall(r1, 'POST', `/duels/${rid}/react`, { json: { r: 'kiss' } }), 'чужая реакция', undefined, 'r');
+  if (limitsOn) {
+    const codes = [];
+    for (let i = 0; i < 5; i++) codes.push((await gcall(r1, 'POST', `/duels/${rid}/react`, { json: { r: 'wave' } })).status);
+    assert.deepEqual(codes, [200, 200, 200, 200, 429], '5 подряд, 6-я за 3 с — 429: ' + codes);
+  }
+  s1.close();
+  s2.close();
+  ok('«Код»: «в игре» — сопернику (presence), реакция — в его поток; неизвестная → 400 r; 6-я за 3 с → 429');
+
+  // 16. Сдаться и отменить свой вызов. expect — что было на экране: принятый вызов «Отменить вызов» не сдаёт.
+  bad(await gcall(r1, 'POST', `/duels/${rid}/leave`, { json: { expect: 'later' } }), 'expect не тот', undefined, 'expect');
+  let r16 = await gcall(r1, 'POST', `/duels/${rid}/leave`, { json: { expect: 'open' } });
+  expect(r16, 409, '«Отменить» у идущей игры', 'conflict', 'Состояние игры изменилось');
+  assert.equal(r16.json.field, 'status');
+  assert.equal((await duelOf(r1, rid)).status, 'active', 'игра идёт');
+  const lv = expect(await gcall(r1, 'POST', `/duels/${rid}/leave`, { json: { expect: 'active' } }), 200, 'сдаться').duel;
+  assert.deepEqual([lv.status, lv.me.res, lv.outcome.winner, lv.outcome.reason], ['done', 'left', 'opp', 'left']);
+  const w2 = await duelOf(r2, rid);
+  assert.deepEqual([w2.outcome.winner, w2.outcome.reason, w2.opp.res], ['me', 'left', 'left']);
+  expect(await gcall(r1, 'POST', `/duels/${rid}/leave`), 409, 'сдаться второй раз', 'conflict', 'Игра уже закончилась');
+  const l16 = expect(await gcall(r2, 'POST', '/duels', { json: { mode: 'link', code: '9876' } }), 200, 'ссылка r2').duel;
+  expect(await gcall(r2, 'POST', `/duels/${l16.id}/leave`, { json: { expect: 'active' } }), 409, '«Сдаться» у открытого вызова',
+    'conflict', 'Состояние игры изменилось');
+  const c16 = expect(await gcall(r2, 'POST', `/duels/${l16.id}/leave`, { json: { expect: 'open' } }), 200, 'отменить вызов').duel;
+  assert.deepEqual([c16.status, c16.outcome.reason, c16.token], ['cancelled', 'cancelled', null]);
+  expect(await gcall(r1, 'GET', '/invite?t=' + l16.token), 404, 'отменённая ссылка', 'not_found');
+  ok('«Код»: «Сдаться» — поражение (left), сопернику победа; отмена своего вызова — cancelled, ссылка не работает; '
+    + 'expect не совпал с игрой — 409');
+
+  // 17. Бан посреди игры: сопернику победа (left), поток — bye ban; забаненному — только чтение.
+  const gx = await gamer('gx', `Хасан ${RUN}`);
+  const gy = await gamer('gy', `Яна ${RUN}`);
+  expect(await gcall(gx, 'POST', '/duels', { json: { mode: 'quick', code: '0123' } }), 200, 'поиск gx');
+  const xq = expect(await gcall(gy, 'POST', '/duels', { json: { mode: 'quick', code: '4567' } }), 200, 'поиск gy');
+  assert.equal(xq.matched, true);
+  const sx = await stream(gx);
+  await sx.wait('hello');
+  expect(await admin(boss, { action: 'ban', target: { type: 'user', id: gx.me.id }, days: 1, reason: 'Проверка игры' }), 200, 'бан gx');
+  const bye = await sx.wait('bye', null, 2000);
+  assert.equal(bye.reason, 'ban');
+  await sx.until(() => sx.ended, 2000, 'конец потока после бана');
+  const yv = await duelOf(gy, xq.duel.id);
+  assert.deepEqual([yv.status, yv.outcome.winner, yv.outcome.reason], ['done', 'me', 'left']);
+  expect(await gcall(gx, 'POST', '/duels', { json: { mode: 'link', code: '0123' } }), 403, 'вызов при бане', 'banned');
+  expect(await gcall(gx, 'GET', ''), 200, 'лобби при бане');
+  const sx2 = await stream(gx);
+  await sx2.until(() => sx2.ended, 2000, 'отказ потока');
+  assert.deepEqual([sx2.status, sx2.json && sx2.json.code], [403, 'banned']);
+  ok('«Код»: бан — сопернику победа (left), поток bye { reason: ban }; забаненному лобби 200, вызов и поток — 403 banned');
+
+  // 18. Удаление аккаунта посреди игры: сопернику победа, соперник — «Удалённый аккаунт».
+  const gz1 = await gamer('gz1', `Зоя ${RUN}`);
+  const gz2 = await gamer('gz2', `Зара ${RUN}`);
+  expect(await gcall(gz1, 'POST', '/duels', { json: { mode: 'quick', code: '0123' } }), 200, 'поиск gz1');
+  const zq = expect(await gcall(gz2, 'POST', '/duels', { json: { mode: 'quick', code: '4567' } }), 200, 'поиск gz2');
+  assert.equal(zq.matched, true);
+  expect(await call(gz1.jar, 'DELETE', '/api/social/me', { json: { confirm: true }, headers: W }), 200, 'удаление gz1');
+  const zv = await duelOf(gz2, zq.duel.id);
+  assert.deepEqual([zv.status, zv.outcome.winner, zv.outcome.reason, zv.opp.user, zv.opp.gone], ['done', 'me', 'left', null, true]);
+  const zrow = (await lobbyOf(gz2)).duels.find((x) => x.id === zq.duel.id);
+  assert.deepEqual([zrow.state, zrow.opp, zrow.gone], ['won', null, true]);
+  ok('«Код»: удаление аккаунта — сопернику победа, opp.user null, gone: true (и в лобби)');
+
+  // 19. Потоки: 4-й вытесняет самый старый, через 5 с — max_age, выход — session.
+  const gs = await gamer('gs', `Соня ${RUN}`);
+  const ss = [];
+  for (let i = 0; i < 4; i++) {
+    ss.push(await stream(gs));
+    await ss[i].wait('hello');
+  }
+  assert.equal((await ss[0].wait('bye', null, 2000)).reason, 'replaced');
+  await ss[0].until(() => ss[0].ended, 2000, 'вытесненный поток закрыт');
+  assert.ok(!ss[1].events.some((e) => e.event === 'bye'), 'остальные живы');
+  const t19 = Date.now();
+  assert.equal((await ss[1].wait('bye', null, 7000)).reason, 'max_age');
+  const age = Date.now() - t19;
+  const s5 = await stream(gs);
+  await s5.wait('hello');
+  expect(await call(gs.jar, 'POST', '/api/auth/logout', { json: {}, headers: W }), 200, 'выход');
+  assert.equal((await s5.wait('bye', null, 2000)).reason, 'session');
+  for (const x of ss) x.close();
+  s5.close();
+  ok(`«Код»: 4-й поток → старому bye replaced; через ${Math.round(age / 100) / 10} с — bye max_age; выход → bye session`);
+
+  // 20. Просмотр вызова: только из приложения (X-Para); вошедшие — по своему ведёрку (общий IP класса не мешает),
+  //     гость — по IP и только промахи (ссылку из чата группы могут открыть все, подбирать коды — нет).
+  const h20 = await gamer('gh', `Хост ${RUN}`);
+  const l20 = expect(await gcall(h20, 'POST', '/duels', { json: { mode: 'link', code: '0123' } }), 200, 'ссылка для просмотров').duel;
+  r = await call(new Map(), 'GET', G + '/invite?t=' + l20.token, { headers: { 'Sec-Fetch-Site': 'cross-site' } });
+  expect(r, 403, 'просмотр без X-Para (картинка с чужой страницы)', 'csrf');
+  if (limitsOn) {
+    const ip = `10.99.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250) + 1}`;
+    const guestSee = (t) => gcall(null, 'GET', '/invite?t=' + t, { headers: { 'X-Real-IP': ip } });
+    const hits = [];
+    for (let i = 0; i < 12; i++) hits.push((await guestSee(l20.token)).status);
+    assert.deepEqual(hits, Array(12).fill(200), 'живой вызов гостю — без предела: ' + hits);
+    const codes = [];
+    for (let i = 0; i < 11; i++) codes.push((await guestSee('ZZZZZZ')).status);
+    assert.deepEqual(codes, [...Array(10).fill(404), 429], 'промахи гостя по IP: ' + codes);
+    const g20 = await gamer('gi', `Ира ${RUN}`);
+    expect(await gcall(g20, 'GET', '/invite?t=' + l20.token, { headers: { 'X-Real-IP': ip } }), 200, 'просмотр вошедшим с того же IP');
+    expect(await gcall(g20, 'POST', '/join', { json: { t: l20.token, code: '4567' }, headers: { 'X-Real-IP': ip } }), 200,
+      'принять с того же IP');
+    ok('«Код»: просмотр вызова без X-Para → 403 csrf; гостю живой вызов — без предела, 11-й промах с одного IP → 429; '
+      + 'вошедшему с того же IP — 200 (просмотр и принятие)');
+  } else ok('«Код»: просмотр вызова без X-Para → 403 csrf');
+
+  // 21. Не больше 5 открытых вызовов.
+  const gl = await gamer('gl', `Лена ${RUN}`);
+  for (let i = 0; i < 5; i++) expect(await gcall(gl, 'POST', '/duels', { json: { mode: 'link', code: '0123' } }), 200, 'вызов ' + (i + 1));
+  r = await gcall(gl, 'POST', '/duels', { json: { mode: 'link', code: '0123' } });
+  expect(r, 429, '6-й открытый вызов', 'rate', 'Слишком много вызовов ждут ответа — отмени какой-нибудь');
+  assert.equal(r.json.retryAfter, 3600);
+  ok('«Код»: 6-й открытый вызов → 429 «Слишком много вызовов ждут ответа — отмени какой-нибудь»');
+
+  // 22. «Код дня»: у каждого свой код; таблицы — «Все» только взрослые из поиска, «Друзья» — друзья.
+  let dd = expect(await gcall(ga, 'GET', '/daily'), 200, 'код дня').daily;
+  assert.deepEqual([dd.status, dd.n, dd.left, dd.code, dd.moves, dd.ms, dd.place], ['new', 0, 12, null, [], null, null]);
+  assert.match(dd.day, /^\d{4}-\d{2}-\d{2}$/);
+  r = await gcall(ga, 'POST', '/daily/guess', { json: { day: '2000-01-01', guess: '0123', n: 1 } });
+  expect(r, 409, 'вчерашний день', 'conflict', 'Новый день — код обновился');
+  assert.equal(r.json.field, 'day');
+  const sa22 = await solve(ga, { day: dd.day });
+  dd = sa22.data.daily;
+  assert.deepEqual([dd.status, dd.n, dd.streak, dd.bestStreak], ['cracked', sa22.n, 1, 1]);
+  assert.match(dd.code, /^\d{4}$/);
+  assert.equal(typeof dd.ms, 'number');
+  assert.ok(dd.place >= 1 && dd.total >= 1);
+  expect(await dailyGuess(ga, dd.day, '9876', sa22.n + 1), 409, 'после взлома', 'conflict', 'Игра уже закончилась');
+  assert.deepEqual((await lobbyOf(ga)).daily, { status: 'cracked', n: sa22.n, left: 12 - sa22.n });
+  const gm = await gamer('gm', `Мила ${RUN}`, { age: 'minor' });
+  const sm = await solve(gm, { day: dd.day });
+  assert.equal(sm.data.daily.status, 'cracked');
+  let board = expect(await gcall(ga, 'GET', '/daily/board?scope=all'), 200, 'таблица «Все»');
+  assert.equal(board.scope, 'all');
+  assert.ok(!board.items.some((x) => x.user.id === gm.me.id), 'несовершеннолетний не виден в «Все»');
+  assert.ok(board.me && board.items.some((x) => x.me && x.user.id === ga.me.id), 'своя строка');
+  const gmBoard = expect(await gcall(gm, 'GET', '/daily/board'), 200, 'таблица gm');
+  assert.ok(gmBoard.me && gmBoard.items.some((x) => x.me && x.user.id === gm.me.id), 'себя видит всегда');
+  let fb = expect(await gcall(ga, 'GET', '/daily/board?scope=friends'), 200, 'таблица «Друзья»');
+  assert.ok(!fb.items.some((x) => x.user.id === gm.me.id), 'пока не друзья');
+  expect(await call(ga.jar, 'POST', `/api/social/friends/${gm.me.id}`, { json: {}, headers: W }), 200, 'заявка ga → gm');
+  expect(await call(gm.jar, 'POST', `/api/social/friends/${ga.me.id}/accept`, { json: {}, headers: W }), 200, 'gm принял');
+  fb = expect(await gcall(ga, 'GET', '/daily/board?scope=friends'), 200, 'таблица «Друзья»');
+  assert.ok(fb.items.some((x) => x.user.id === gm.me.id), 'друг виден в «Друзья» в любом возрасте');
+  // Друг — во всех таблицах: его отсутствие во «Всех» не выдаёт возраст. Не другу он по-прежнему не виден.
+  board = expect(await gcall(ga, 'GET', '/daily/board?scope=all'), 200, 'таблица «Все» с другом');
+  assert.ok(board.items.some((x) => x.user.id === gm.me.id), 'друг 16–17 виден другу и во «Всех»');
+  const gbAll = expect(await gcall(gb, 'GET', '/daily/board?scope=all'), 200, 'таблица «Все» не друга');
+  assert.ok(!gbAll.items.some((x) => x.user.id === gm.me.id), 'не другу 16–17 не виден');
+  expect(await gcall(ga, 'GET', '/daily/board?scope=uni', { uni: '' }), 400, '«Мой вуз» без вуза', 'uni');
+  let ub = expect(await gcall(ga, 'GET', '/daily/board?scope=uni'), 200, '«Мой вуз»');
+  assert.ok(ub.me && ub.items.some((x) => x.me && x.user.id === ga.me.id), 'свой вуз — своя строка');
+  assert.ok(ub.items.some((x) => x.user.id === gm.me.id), 'друг из того же вуза (по профилю)');
+  bad(await gcall(ga, 'GET', '/daily/board?scope=world'), 'кривая таблица', undefined, 'scope');
+  // «Мой вуз» — по вузу из профиля, а не по адресу, с которого играли: скрыл вуз — нет ни в одной таблице вуза.
+  expect(await call(gm.jar, 'PATCH', '/api/social/me', { json: { uni: '' }, headers: W }), 200, 'gm скрыл вуз');
+  ub = expect(await gcall(ga, 'GET', '/daily/board?scope=uni'), 200, '«Мой вуз» после');
+  assert.ok(!ub.items.some((x) => x.user.id === gm.me.id), 'скрыл вуз — не в таблице вуза');
+  assert.ok(expect(await gcall(ga, 'GET', '/daily/board?scope=all'), 200, '«Все»').items.some((x) => x.user.id === gm.me.id));
+  expect(await call(ga.jar, 'PATCH', '/api/social/me', { json: { uni: 'tsue' }, headers: W }), 200, 'ga сменил вуз');
+  ub = expect(await gcall(ga, 'GET', '/daily/board?scope=uni'), 200, '«Мой вуз» по адресу КФУ');
+  assert.deepEqual([ub.me, ub.items.some((x) => x.user.id === ga.me.id)], [null, false], 'в таблице КФУ ga больше нет');
+  ub = expect(await gcall(ga, 'GET', '/daily/board?scope=uni', { uni: 'tsue' }), 200, '«Мой вуз» по адресу ТГЭУ');
+  assert.ok(ub.me && ub.items.some((x) => x.me && x.user.id === ga.me.id), 'ga — в таблице своего вуза из профиля');
+  ok(`«Код»: «Код дня» — свой код, взломан за ${sa22.n} (серия 1), вчерашний день → 409; «Все» без чужих 16–17, друзья — во всех `
+    + 'таблицах; «Мой вуз» — по вузу из профиля, без вуза → 400');
+
+  // 23. Вызов приняли, пока создатель подтверждал «Отменить вызов?»: 409, игра идёт, никому ничего не засчитано.
+  const ca = await gamer('ca', `Карим ${RUN}`);
+  const cb = await gamer('cb', `Катя ${RUN}`);
+  const l23 = expect(await gcall(ca, 'POST', '/duels', { json: { mode: 'link', code: '9876' } }), 200, 'ссылка ca').duel;
+  const st23 = { a: (await lobbyOf(ca)).me, b: (await lobbyOf(cb)).me };
+  expect(await gcall(cb, 'POST', '/join', { json: { t: l23.token, code: '1234' } }), 200, 'cb принял');
+  r = await gcall(ca, 'POST', `/duels/${l23.id}/leave`, { json: { expect: 'open' } });
+  expect(r, 409, 'отмена после принятия', 'conflict', 'Состояние игры изменилось');
+  assert.equal((await duelOf(ca, l23.id)).status, 'active', 'игра идёт');
+  assert.deepEqual([(await lobbyOf(ca)).me, (await lobbyOf(cb)).me], [st23.a, st23.b], 'счёт не изменился');
+  ok('«Код»: «Отменить вызов» после того, как его приняли (expect: open) — 409, игра идёт, не поражение');
+
+  // 24. Встречные вызовы друзей: второй не создаёт вторую игру, а принимает первый.
+  expect(await call(ca.jar, 'POST', `/api/social/friends/${cb.me.id}`, { json: {}, headers: W }), 200, 'заявка ca → cb');
+  expect(await call(cb.jar, 'POST', `/api/social/friends/${ca.me.id}/accept`, { json: {}, headers: W }), 200, 'cb принял');
+  const f24 = expect(await gcall(ca, 'POST', '/duels', { json: { mode: 'friend', code: '0123', to: cb.me.id } }), 200, 'ca → cb').duel;
+  const x24 = expect(await gcall(cb, 'POST', '/duels', { json: { mode: 'friend', code: '4567', to: ca.me.id } }), 200, 'cb → ca');
+  assert.deepEqual([x24.matched, x24.duel.id, x24.duel.status, x24.duel.role, x24.duel.me.code], [true, f24.id, 'active', 'joiner', '4567']);
+  assert.equal((await lobbyOf(ca)).duels.filter((x) => x.opp && x.opp.id === cb.me.id && x.status === 'open').length, 0,
+    'открытых вызовов пары нет');
+  ok('«Код»: встречный вызов другу принимает его вызов (matched, active) — двух открытых вызовов у пары не бывает');
+
+  // 25. «Случайный соперник»: повтор после потерянного ответа — та же игра, а не вторая с новым человеком.
+  await drainQuick();
+  const q1 = await gamer('q1', `Кью ${RUN}`);
+  const q2 = await gamer('q2', `Кьюта ${RUN}`);
+  const q3 = await gamer('q3', `Кьюба ${RUN}`);
+  const q1s = expect(await gcall(q1, 'POST', '/duels', { json: { mode: 'quick', code: '0123' } }), 200, 'поиск q1');
+  const q2s = expect(await gcall(q2, 'POST', '/duels', { json: { mode: 'quick', code: '4567' } }), 200, 'поиск q2');
+  assert.deepEqual([q2s.matched, q2s.duel.id], [true, q1s.duel.id]);
+  const q3s = expect(await gcall(q3, 'POST', '/duels', { json: { mode: 'quick', code: '8901' } }), 200, 'поиск q3');
+  assert.equal(q3s.matched, false);
+  const q2r = expect(await gcall(q2, 'POST', '/duels', { json: { mode: 'quick', code: '4567' } }), 200, 'повтор q2');
+  assert.deepEqual([q2r.matched, q2r.duel.id, q2r.duel.status], [true, q1s.duel.id, 'active'], 'повтор q2 — та же игра');
+  const q1r = expect(await gcall(q1, 'POST', '/duels', { json: { mode: 'quick', code: '0123' } }), 200, 'повтор q1');
+  assert.deepEqual([q1r.matched, q1r.duel.id], [true, q1s.duel.id], 'повтор хозяина заявки — та же игра');
+  assert.equal((await duelOf(q3, q3s.duel.id)).status, 'open', 'заявка q3 цела');
+  expect(await gcall(q3, 'POST', `/duels/${q3s.duel.id}/leave`, { json: { expect: 'open' } }), 200, 'q3 отменил поиск');
+  ok('«Код»: повтор «Случайного соперника» тем же кодом в течение минуты — та же игра (и у принявшего, и у хозяина заявки)');
+
+  // 26. «в игре»: вернулся в игру раньше, чем ушло «вышел» (5 с), — соперник всё равно получает live: true.
+  const pa = await gamer('pa', `Павел ${RUN}`);
+  const pb = await gamer('pb', `Полина ${RUN}`);
+  const l26 = expect(await gcall(pa, 'POST', '/duels', { json: { mode: 'link', code: '0123' } }), 200, 'ссылка pa').duel;
+  const tabA = 'smoke' + RUN + 'tabA';
+  const spa = await stream(pa, { c: tabA });
+  await spa.wait('hello');
+  const spb = await stream(pb);
+  await spb.wait('hello');
+  spa.close();
+  await sleep(300);
+  const j26 = expect(await gcall(pb, 'POST', '/join', { json: { t: l26.token, code: '4567' } }), 200, 'pb принял').duel;
+  assert.equal(j26.opp.live, false, 'pa только что закрыл поток');
+  const spa2 = await stream(pa, { c: tabA });
+  await spa2.wait('hello');
+  await spb.wait('presence', (d) => d.duel === l26.id && d.live === true, 2000);
+  // Та же вкладка переподключилась, а старое соединение ещё висит (сеть пропала молча): старое закрыто тихо.
+  const spa3 = await stream(pa, { c: tabA });
+  await spa3.wait('hello');
+  await spa2.until(() => spa2.ended, 2000, 'старое соединение вкладки закрыто');
+  assert.ok(!spa2.events.some((e) => e.event === 'bye'), 'без bye');
+  assert.equal((await duelOf(pb, l26.id)).opp.live, true, 'pa по-прежнему «в игре»');
+  assert.ok(!spb.events.some((e) => e.event === 'presence' && e.data.live === false), 'сопернику «вышел» не приходило');
+  for (const x of [spa3, spb]) x.close();
+  ok('«Код»: возврат в игру за 5 с — сопернику presence live: true; переподключение той же вкладки (c=) тихо заменяет старый поток');
+
+  await gameFixtureForReadonly();
+}
+
+/** Пул случайного соперника должен быть пуст (остатки прошлых прогонов на той же базе): разобрать их. */
+async function drainQuick() {
+  const p = await gamer('gq', `Пул ${RUN}`);
+  for (let i = 0; i < 3; i++) {
+    if (!(await lobbyOf(p)).searching) return;
+    const q = expect(await gcall(p, 'POST', '/duels', { json: { mode: 'quick', code: '0123' } }), 200, 'разбор пула');
+    expect(await gcall(p, 'POST', `/duels/${q.duel.id}/leave`), 200, 'разбор пула: выйти');
+    if (!q.matched) return;
+  }
+}
+
+/** Прогону readonly: у постоянной пары smgame_roa → smgame_rob открытый вызов другу и идущая игра. */
+async function gameFixtureForReadonly() {
+  const ra = await login('smgame_roa');
+  const rb = await login('smgame_rob');
+  if (ra.me.needsProfile) await onboard(ra, 'smgame_roa', 'Рая');
+  if (rb.me.needsProfile) await onboard(rb, 'smgame_rob', 'Роберт');
+  expect(await call(ra.jar, 'POST', `/api/social/friends/${rb.me.id}`, { json: {}, headers: W }), 200, 'readonly: заявка');
+  expect(await call(rb.jar, 'POST', `/api/social/friends/${ra.me.id}/accept`, { json: {}, headers: W }), 200, 'readonly: дружба');
+  const la = await lobbyOf(ra);
+  const withB = (x) => x.opp && x.opp.id === rb.me.id;
+  if (!la.duels.some((x) => withB(x) && x.kind === 'friend' && x.state === 'wait_join')) {
+    expect(await gcall(ra, 'POST', '/duels', { json: { mode: 'friend', code: '0123', to: rb.me.id } }), 200, 'readonly: вызов другу');
+  }
+  if (!la.duels.some((x) => withB(x) && x.status === 'active')) {
+    const l = expect(await gcall(ra, 'POST', '/duels', { json: { mode: 'link', code: '4567' } }), 200, 'readonly: ссылка').duel;
+    expect(await gcall(rb, 'POST', '/join', { json: { t: l.token, code: '8901' } }), 200, 'readonly: принять');
+  }
+  ok('«Код»: для прогона readonly у smgame_roa / smgame_rob есть вызов другу и идущая игра');
 }
 
 
@@ -1499,6 +2131,35 @@ async function runReadonly() {
   expect(await call(tmp.jar, 'DELETE', '/api/social/me', { json: { confirm: true }, headers: W }), 200, 'удаление аккаунта');
   expect(await call(bob.jar, 'POST', '/api/auth/logout', { json: {}, headers: W }), 200, 'выход');
   ok('readonly: жалоба, блок, отказ/отмена, удаление фото и своего поста, правила, скрыть себя, удаление аккаунта, выход — работают');
+
+  // ── «Код» в readonly: читать и поток — можно; новые игры — нет; «Сдаться», «Отказаться», seen — можно ──
+  const aliceGame = (await meOf(alice.jar)).game;
+  assert.ok(aliceGame === null || typeof aliceGame.waiting === 'number', 'me.game в readonly');
+  expect(await gcall(alice, 'GET', ''), 200, 'лобби в readonly');
+  await ro(await gcall(alice, 'POST', '/duels', { json: { mode: 'link', code: '4071' } }), 'новый вызов');
+  await ro(await gcall(alice, 'POST', '/join', { json: { t: 'ZZZZZZ', code: '4071' } }), 'принять вызов');
+  await ro(await gcall(alice, 'POST', '/daily/guess', { json: { day: '2026-01-01', guess: '0123', n: 1 } }), 'попытка «Кода дня»');
+  expect(await gcall(alice, 'GET', '/daily'), 200, '«Код дня» в readonly');
+  const ra = await login('smgame_roa');
+  const rb = await login('smgame_rob');
+  const act = ra.me.needsProfile ? null
+    : (await lobbyOf(ra)).duels.find((x) => x.status === 'active' && x.opp && x.opp.id === rb.me.id);
+  const inv = rb.me.needsProfile ? null
+    : (await lobbyOf(rb)).duels.find((x) => x.state === 'invited' && x.opp && x.opp.id === ra.me.id);
+  if (act) {
+    await ro(await gcall(ra, 'POST', `/duels/${act.id}/guess`, { json: { guess: '0123', n: act.myN + 1 } }), 'попытка в дуэли');
+    await ro(await gcall(ra, 'POST', `/duels/${act.id}/react`, { json: { r: 'wave' } }), 'реакция');
+    const d = expect(await gcall(ra, 'POST', `/duels/${act.id}/leave`, { json: { expect: 'active' } }), 200, 'сдаться в readonly').duel;
+    assert.deepEqual([d.status, d.me.res], ['done', 'left']);
+  }
+  if (inv) expect(await gcall(rb, 'POST', `/duels/${inv.id}/decline`), 200, 'отказаться в readonly');
+  expect(await gcall(rb, 'POST', '/seen', { json: { ids: act ? [act.id] : [] } }), 200, 'seen в readonly');
+  const s = await stream(alice);
+  assert.equal(s.status, 200, 'поток в readonly: ' + s.raw.slice(0, 200));
+  await s.wait('hello');
+  s.close();
+  if (!act || !inv) console.log('     (у smgame_roa / smgame_rob нет игр от прогона A — «Сдаться» и «Отказаться» проверены не полностью)');
+  ok('readonly: «Код» — лобби и «Код дня» читаются, поток открывается (hello); новые игры и попытки → 403 readonly; сдаться, отказаться, seen — 200');
 }
 
 async function runOff() {
@@ -1509,6 +2170,13 @@ async function runOff() {
   assert.equal(signed.mode, 'off');
   assert.equal(signed.user.id, X.me.id);
   ok('off: /api/auth/me отвечает mode:"off", вход разработчика работает');
+  // «Код» в off: маршрутов нет, в приложении — только бот.
+  assert.equal(signed.config.game, 'off', 'config.game в off');
+  assert.equal(signed.user.game, null, 'me.game в off');
+  expect(await call(X.jar, 'GET', G), 404, 'игра в off', 'not_found', 'Нет такого адреса API');
+  expect(await call(X.jar, 'GET', G + '/stream'), 404, 'поток игры в off', 'not_found');
+  expect(await call(X.jar, 'POST', G + '/duels', { json: { mode: 'link', code: '4071' }, headers: W }), 404, 'вызов в off', 'not_found');
+  ok('off: «Код» — config.game off, me.game null, /api/social/games → 404 not_found');
   // Фото, друзей и жалоб в off нет: Me не ведёт на недоступный аватар и не зажигает значки (у alice из seed есть и то, и другое).
   const alice = await login('alice');
   const boss = await login('boss');
@@ -1556,12 +2224,40 @@ async function runOff() {
   ok('off: выход и удаление аккаунта работают; расписание работает');
 }
 
+// ═══════════════ Прогон E: SOCIAL_GAME=friends ═══════════════
+
+async function runGameFriends() {
+  const guest = new Map();
+  const st = await commonChecks(guest);
+  assert.equal(st.config.game, 'friends', 'сервер должен идти с SOCIAL_GAME=friends');
+  const fa = await gamer('fa', `Фарид ${RUN}`);
+  const fb = await gamer('fb', `Фатима ${RUN}`);
+  const lob = await lobbyOf(fa);
+  assert.deepEqual([lob.cfg.game, lob.searching], ['friends', 0]);
+  expect(await gcall(fa, 'POST', '/duels', { json: { mode: 'quick', code: '0123' } }), 403, 'случайный соперник', 'forbidden',
+    'Случайный соперник сейчас выключен');
+  expect(await gcall(fa, 'GET', '/daily/board?scope=all'), 403, '«Все»', 'forbidden', 'Общие таблицы сейчас выключены');
+  expect(await gcall(fa, 'GET', '/daily/board?scope=uni'), 403, '«Мой вуз»', 'forbidden', 'Общие таблицы сейчас выключены');
+  expect(await gcall(fa, 'GET', '/daily/board?scope=friends'), 200, '«Друзья»');
+  const dv = expect(await gcall(fa, 'GET', '/daily'), 200, '«Код дня»').daily;
+  assert.deepEqual([dv.place, dv.total], [null, 0], 'места в общей таблице нет');
+  ok('friends: случайный соперник и таблицы «Все»/«Мой вуз» → 403 forbidden; searching 0; «Друзья» работает');
+  const l = expect(await gcall(fa, 'POST', '/duels', { json: { mode: 'link', code: '4071' } }), 200, 'ссылка').duel;
+  expect(await gcall(fb, 'POST', '/join', { json: { t: l.token, code: '9352' } }), 200, 'принять');
+  expect(await call(fa.jar, 'POST', `/api/social/friends/${fb.me.id}`, { json: {}, headers: W }), 200, 'заявка');
+  expect(await call(fb.jar, 'POST', `/api/social/friends/${fa.me.id}/accept`, { json: {}, headers: W }), 200, 'дружба');
+  const f = expect(await gcall(fa, 'POST', '/duels', { json: { mode: 'friend', code: '1357', to: fb.me.id } }), 200, 'вызов другу').duel;
+  assert.equal(f.kind, 'friend');
+  ok('friends: вызов ссылкой и вызов другу работают');
+}
+
 async function main() {
   const t0 = Date.now();
   console.log(`Дымовой тест обсуждений: ${BASE.origin} · вуз ${UNI} · режим ${MODE}${NEW_ACCOUNT ? ' · новый аккаунт' : ''} · метка ${RUN}\n`);
   if (MODE === 'readonly') await runReadonly();
   else if (MODE === 'off') await runOff();
   else if (NEW_ACCOUNT) await runNewAccount();
+  else if (process.env.SMOKE_GAME === 'friends') await runGameFriends();
   else await runMain();
   const n10 = step % 10;
   const n100 = step % 100;

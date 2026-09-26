@@ -13,7 +13,8 @@ export type AuthIntent = 'signin' | 'delete';
 export type AuthOutcome =
   | 'ok' | 'cancelled' | 'expired' | 'failed' | 'browser' | 'limited' | 'unavailable' | 'unverified' | 'consent' | 'none';
 export type AuthReason =
-  | 'post' | 'reply' | 'like' | 'friend' | 'block' | 'report' | 'profile' | 'search' | 'account' | 'delete' | 'expired';
+  | 'post' | 'reply' | 'like' | 'friend' | 'block' | 'report' | 'profile' | 'search' | 'account' | 'delete' | 'expired'
+  | 'game';
 export type ErrorCode =
   | 'invalid' | 'uni' | 'auth' | 'profile' | 'rules' | 'banned' | 'readonly' | 'forbidden' | 'csrf' | 'blocked'
   | 'not_found' | 'conflict' | 'too_large' | 'media_type' | 'rate' | 'server' | 'disk' | 'network';
@@ -49,7 +50,9 @@ export interface Limits {
   mediaBytes: number; thumbBytes: number; mediaSide: number; thumbSide: number; avatarSide: number;
   name: number; bio: number; usernameMin: number; usernameMax: number; note: number;
 }
-export interface SocialConfig { rulesVersion: number; minAge: number; limits: Limits }
+/** Мини-игра «Код» (SOCIAL_GAME): on — всё; friends — без случайного соперника и общих таблиц; off — только бот. */
+export type GameMode = 'on' | 'friends' | 'off';
+export interface SocialConfig { rulesVersion: number; minAge: number; limits: Limits; game: GameMode }
 /** GET /api/auth/me. В режиме 'off' маршрут остаётся (ради удаления аккаунта); 404 клиент понимает так же, как 'off' без аккаунта. */
 export interface AuthState { user: Me | null; google: boolean; dev: boolean; mode: SocialMode; config: SocialConfig }
 
@@ -111,6 +114,8 @@ export interface Me {
   counts: { friends: number; posts: number };
   usernameNextChange: string | null; // когда снова можно сменить @имя; null — можно сейчас
   createdAt: string;
+  /** Мини-игра «Код»: сколько игр ждут (ход, итог, вызов друга). null — игру не находил или она выключена. */
+  game: { waiting: number } | null;
 }
 
 /** Публикация и ответ — одна форма (одна таблица на сервере). */
@@ -246,3 +251,60 @@ export interface AuditItem {
   id: number; ts: string; actor: { id: number; username: string | null } | null;
   action: string; target: string | null; uni: string | null; info: Record<string, unknown>;
 }
+
+// ─── Мини-игра «Код» (/api/social/games, CONTRACT.md §I): быки и коровы на цифрах флип-часов ───
+
+export type DuelKind = 'link' | 'friend' | 'quick' | 'rematch';
+export type DuelStatus = 'open' | 'active' | 'done' | 'expired' | 'cancelled';
+export type DuelRes = 'cracked' | 'failed' | 'timeout' | 'left' | null;
+export type DuelReason = 'score' | 'early' | 'left' | 'timeout' | 'blocked' | 'banned' | 'deleted' | 'declined' | 'expired' | 'cancelled';
+export type GameReaction = 'wave' | 'like' | 'wow' | 'lol' | 'fire' | 'deal';
+/** Своя попытка: цифры и ответ (● на месте, ○ не на месте). */
+export interface GameMove { g: string; on: number; near: number }
+/** Попытка соперника: только ответ, цифр не видно никогда. */
+export interface GameMark { on: number; near: number }
+
+export interface DuelView {
+  id: number; v: number; kind: DuelKind; status: DuelStatus;
+  role: 'creator' | 'joiner' | 'invited';          // invited: открытый вызов мне
+  token: string | null;                            // только создателю, kind 'link', status 'open'
+  createdAt: string; deadlineAt: string;
+  friends: boolean;
+  me: { code: string | null; moves: GameMove[]; left: number; res: DuelRes; score: number | null };
+  opp: {
+    user: UserCard | null; gone: boolean;          // gone: аккаунт удалён
+    n: number; marks: GameMark[]; res: DuelRes; score: number | null; live: boolean;
+  };
+  outcome: null | { winner: 'me' | 'opp' | 'draw' | 'none'; reason: DuelReason; oppCode: string | null };
+  rematch: null | { id: number; mine: boolean; status: DuelStatus };   // последний реванш этой игры
+  canRematch: boolean;
+}
+
+export interface DuelRow {
+  id: number; v: number; kind: DuelKind; status: DuelStatus;
+  state: 'turn' | 'wait_join' | 'wait_opp' | 'invited' | 'won' | 'lost' | 'draw' | 'expired' | 'cancelled';
+  opp: UserCard | null; gone: boolean; myN: number; oppN: number;
+  myScore: number | null; oppScore: number | null; unseen: boolean; deadlineAt: string; reason: DuelReason | null;
+}
+export type DailyStatus = 'new' | 'playing' | 'cracked' | 'failed';
+export interface GameLobby {
+  me: { wins: number; losses: number; draws: number; streak: number; bestStreak: number };
+  daily: { status: DailyStatus; n: number; left: number };
+  duels: DuelRow[];
+  searching: number;     // другие в пуле случайного соперника (без заблокированных); 0 в режиме friends
+  cfg: { attempts: number; ttlH: number; reactions: GameReaction[]; game: 'on' | 'friends' };
+}
+export interface DailyView {
+  day: string; status: DailyStatus;
+  moves: GameMove[]; n: number; left: number; ms: number | null;
+  code: string | null;                   // только когда закончен
+  place: number | null; total: number;   // таблица «Все»; место показываем при total ≥ 3
+  streak: number; bestStreak: number;
+}
+export type BoardScope = 'all' | 'uni' | 'friends';
+export interface DailyBoard {
+  day: string; scope: BoardScope;
+  items: { place: number; user: UserCard; n: number; ms: number; me: boolean }[];
+  me: { place: number; n: number; ms: number } | null; total: number;
+}
+export interface GameInvite { id: number; from: UserCard; expiresAt: string; mine: boolean }

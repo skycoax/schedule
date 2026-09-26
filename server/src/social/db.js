@@ -259,7 +259,73 @@ export const SCHEMA_V6 = `
 ALTER TABLE users ADD COLUMN badge TEXT;
 `;
 
-const MIGRATIONS = [SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6];
+// Мини-игра «Код» (game.js, CONTRACT.md §I): быки и коровы на четырёх разных цифрах. Счёт игрока, дуэли
+// (вызов ссылкой, другу, случайный соперник, реванш) и «Код дня». Всё решает сервер, без таймеров на игру:
+// сроки проверяются при чтении и раз в 10 минут. game_meta.beat — отметка «сервер жив» (продление сроков после простоя).
+export const SCHEMA_V7 = `
+CREATE TABLE IF NOT EXISTS game_players (
+  user_id     INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  wins        INTEGER NOT NULL DEFAULT 0,
+  losses      INTEGER NOT NULL DEFAULT 0,
+  draws       INTEGER NOT NULL DEFAULT 0,
+  streak      INTEGER NOT NULL DEFAULT 0,
+  best_streak INTEGER NOT NULL DEFAULT 0,
+  streak_day  TEXT,                         -- последний взломанный «Код дня», 'YYYY-MM-DD' (Ташкент)
+  found_at    TEXT NOT NULL                 -- первый GET /api/social/games
+);
+
+CREATE TABLE IF NOT EXISTS game_duels (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind        TEXT    NOT NULL CHECK (kind IN ('link','friend','quick','rematch')),
+  status      TEXT    NOT NULL CHECK (status IN ('open','active','done','expired','cancelled')),
+  token       TEXT    UNIQUE,               -- только kind='link'; NULL, когда игра кончилась, истекла или отменена
+  a_id        INTEGER REFERENCES users(id) ON DELETE SET NULL,   -- создатель
+  b_id        INTEGER REFERENCES users(id) ON DELETE SET NULL,   -- принявший
+  to_id       INTEGER REFERENCES users(id) ON DELETE SET NULL,   -- адресат (friend, rematch)
+  rematch_of  INTEGER REFERENCES game_duels(id) ON DELETE SET NULL,
+  a_code      TEXT    NOT NULL,
+  b_code      TEXT,
+  a_moves     TEXT    NOT NULL DEFAULT '[]',  -- [["1074",2,2,"2026-09-26T10:00:00.000Z"], …]
+  b_moves     TEXT    NOT NULL DEFAULT '[]',
+  a_res       TEXT CHECK (a_res IN ('cracked','failed','timeout','left')),
+  b_res       TEXT CHECK (b_res IN ('cracked','failed','timeout','left')),
+  winner      TEXT CHECK (winner IN ('a','b','draw','none')),
+  reason      TEXT CHECK (reason IN ('score','early','left','timeout','blocked','banned','deleted',
+                                     'declined','expired','cancelled')),
+  a_seen      INTEGER NOT NULL DEFAULT 1,
+  b_seen      INTEGER NOT NULL DEFAULT 1,
+  v           INTEGER NOT NULL DEFAULT 1,
+  created_at  TEXT    NOT NULL,
+  joined_at   TEXT,
+  deadline_at TEXT    NOT NULL,
+  finished_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_gd_quick    ON game_duels (created_at) WHERE status = 'open' AND kind = 'quick';
+CREATE INDEX IF NOT EXISTS idx_gd_a        ON game_duels (a_id, status);
+CREATE INDEX IF NOT EXISTS idx_gd_b        ON game_duels (b_id, status);
+CREATE INDEX IF NOT EXISTS idx_gd_to       ON game_duels (to_id) WHERE to_id IS NOT NULL;   -- и для ON DELETE SET NULL
+CREATE INDEX IF NOT EXISTS idx_gd_deadline ON game_duels (deadline_at) WHERE status IN ('open','active');
+CREATE INDEX IF NOT EXISTS idx_gd_finished ON game_duels (finished_at);
+CREATE INDEX IF NOT EXISTS idx_gd_rematch  ON game_duels (rematch_of) WHERE rematch_of IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS game_daily (
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  day         TEXT    NOT NULL,             -- 'YYYY-MM-DD', Asia/Tashkent
+  code        TEXT    NOT NULL,
+  moves       TEXT    NOT NULL DEFAULT '[]',
+  n           INTEGER NOT NULL DEFAULT 0,
+  solved      INTEGER NOT NULL DEFAULT 0 CHECK (solved IN (0,1,2)),   -- 0 играет, 1 взломан, 2 не взломан
+  started_at  TEXT    NOT NULL,
+  finished_at TEXT,
+  ms          INTEGER,
+  PRIMARY KEY (user_id, day)
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS idx_gdaily_board ON game_daily (day, n, ms) WHERE solved = 1;
+
+CREATE TABLE IF NOT EXISTS game_meta (k TEXT PRIMARY KEY, v TEXT NOT NULL) WITHOUT ROWID;   -- 'beat'
+`;
+
+const MIGRATIONS = [SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6, SCHEMA_V7];
 
 /** Открыть (и при необходимости создать) social.db и довести схему до последней версии. */
 export function openSocialDb(dir = config.dataDir) {

@@ -11,6 +11,8 @@ import { cleanText, tooLong, lineCount, countLinks, maskProfanity } from './text
 import { usersByIds, userCardOf, uniShortOf } from './users.js';
 import { mediaByPost, unlinkMedia, MEDIA_ID_RE } from './media.js';
 import { audit, resolveReports } from './moderation.js';
+import { forfeitAll } from './game-db.js';
+import { closeStreams, publishDuels } from './game-stream.js';
 
 export const CATEGORY_IDS = ['study', 'schedule', 'events', 'company', 'lost', 'other'];
 
@@ -186,10 +188,12 @@ export function deletePost(db, p, by) {
 /**
  * Удалить аккаунт целиком (§C.4 deleteAccount): лайки, ответы, публикации, отпечаток бана, удержание @имени,
  * строка users (каскад: сессии, фото, друзья, блокировки; жалобщик обезличивается), свои записи журнала.
- * Файлы — после COMMIT.
+ * Игры «Код» — сначала итог соперникам (forfeitAll: идущие — «сдался»), потом каскад убирает счёт и «Код дня»,
+ * а законченные дуэли остаются у соперников как «Удалённый аккаунт» (до 30 дней). Файлы — после COMMIT.
  */
 export function deleteAccount(ctx, u) {
   const db = ctx.db;
+  let duels = [];
   const files = tx(db, () => {
     const now = nowIso();
     const out = db.prepare('SELECT id, thumb_bytes FROM media WHERE owner_id = ?').all(u.id);
@@ -216,6 +220,7 @@ export function deleteAccount(ctx, u) {
     db.prepare('UPDATE held_usernames SET user_id = NULL WHERE user_id = ?').run(u.id);
     const left = db.prepare('SELECT COUNT(*) n FROM posts WHERE author_id = ? AND deleted_at IS NULL').get(u.id).n;
     if (left) throw new Error('deleteAccount: остались живые посты');
+    duels = forfeitAll(db, u.id, 'deleted');
     db.prepare('DELETE FROM users WHERE id = ?').run(u.id);
     // Записи журнала о самом человеке (смены @имени; auth.login — от ранних версий) уходят вместе
     // с аккаунтом. Остаются решения модераторов — без текстов, 180 дней.
@@ -225,6 +230,8 @@ export function deleteAccount(ctx, u) {
     return out;
   });
   unlinkMedia(files);
+  closeStreams(u.id, 'session');
+  publishDuels(ctx, duels);
 }
 
 // ─── Ввод публикации и ответа (§B.4) ───

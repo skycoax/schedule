@@ -164,7 +164,7 @@
   color:#ff453a;font-size:16px;font-weight:600}
 
 @media (prefers-reduced-motion: reduce){
-  .ie, .ix, .ix.is-leaving, .ix-shade, .iv__pop, .ix__frame, .ix__frame > img, .ic__controls, .ic__after, .iv__who,
+  .ie, .ix, .ix.is-leaving, .gx, .gx.is-leaving, .ix-shade, .iv__pop, .ix__frame, .ix__frame > img, .ic__controls, .ic__after, .iv__who,
   .iv__bars i::after, .ia__cell, .ia__body, .ia__det{animation:none}
   .ic__flash{animation-duration:200ms}
 }

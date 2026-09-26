@@ -83,8 +83,14 @@ server/src/social/
   limits.js      ведёрки частоты (в памяти) и дневные пределы (по базе)
   jobs.js        уборка: входы, баны, фото-сироты, сессии, сроки хранения, копия базы
   db.js          social.db и схема (PRAGMA user_version)
+  game.js        мини-игра «Код»: маршруты /api/social/games (лобби, дуэли, «Код дня», таблицы), исход по срокам
+  game-logic.js  её правила без базы: evaluate, validCode, settle (единственное место, где решается исход)
+  game-db.js     запись исхода и счёта ровно один раз; хуки блокировки, бана и удаления аккаунта; Me.game
+  game-stream.js поток событий игры (SSE): реестр соединений, ping, «в игре», bye
 server/test/social-smoke.mjs   дымовой тест всех маршрутов
 server/test/social-seed.mjs    наполнение для разработки (alice, bob, mia до 18, boss — модератор)
+server/test/game-logic.test.mjs  правила «Кода», исход ровно один раз, сила бота (node --test)
+web/src/game/                  «Код» в приложении: вход по 5 касаниям часов (entry.ts), экраны, бот для тренировки
 ```
 
 Данные: `data/social.db` (одна база на все вузы), `data/media/` (фото), `data/backup/` (копии базы за 7 дней).
@@ -100,15 +106,17 @@ server/test/social-seed.mjs    наполнение для разработки 
 | `SOCIAL_ADMIN_EMAILS` | пусто | почты модераторов через запятую |
 | `SOCIAL_SALT` | `IP_SALT` | соль отпечатков банов (длинная случайная строка) |
 | `SOCIAL_MODE` | `on` | `on` \| `readonly` \| `off` — аварийный выключатель |
+| `SOCIAL_GAME` | `on` | `on` \| `friends` \| `off` — игра с людьми; friends — без случайного соперника и общих таблиц; off — только бот |
 | `SOCIAL_MIN_AGE` | `16` | возраст для аккаунта (13–18); тексты политики — то же число |
 | `SOCIAL_REPORT_THRESHOLD` | `3` | сколько учитываемых жалоб скрывают пост |
 | `SOCIAL_REPORTER_MIN_AGE_H` | `24` | жалобы аккаунтов моложе — не учитываются для автоскрытия |
 | `MEDIA_DIR` | `<DATA_DIR>/media` | папка фото |
-| `PARA_ORIGIN`, `DEV_LOGIN`, `DEV_HUB`, `SOCIAL_NEW_ACCOUNT_H`, `SOCIAL_RATE_LIMITS`, `SOCIAL_DEV_GOOGLE_TOKEN_URL` | — | только для разработки, в production не действуют |
+| `PARA_ORIGIN`, `DEV_LOGIN`, `DEV_HUB`, `SOCIAL_NEW_ACCOUNT_H`, `SOCIAL_RATE_LIMITS`, `SOCIAL_DEV_GOOGLE_TOKEN_URL`, `GAME_PING_MS`, `GAME_STREAM_MAX_MS` | — | только для разработки, в production не действуют |
 
 Аварийный выключатель: `SOCIAL_MODE=readonly` (писать нельзя; жалобы, блокировки, удаление своего и аккаунта,
 выход работают) или `off` (обсуждений нет; вход ради удаления, выход и удаление аккаунта работают), затем
-`sudo systemctl restart schedule-api`.
+`sudo systemctl restart schedule-api`. Только мини-игра «Код»: `SOCIAL_GAME=friends` (без случайного соперника и общих
+таблиц) или `off` (с людьми не играть, остаётся бот). Её схема — social.db V7; контракт — `docs/social/CONTRACT.md` §I.
 
 Правила обсуждений меняются по существу (`web/src/social/rules.ts`, `server/hub/rules.html`) — **вместе с ними
 поднять `social.rulesVersion` в `server/src/config.js`**: все примут правила заново.
@@ -119,14 +127,17 @@ server/test/social-seed.mjs    наполнение для разработки 
 P=8792; DATA="$TEMP/para-data-$P"; mkdir -p "$DATA"
 cd server && NODE_ENV=development DEV_LOGIN=1 DEV_HUB=1 PARA_ORIGIN=http://be.localhost:$P NO_POLL=1 \
   SOCIAL_ADMIN_EMAILS=boss@dev.local SOCIAL_REPORTER_MIN_AGE_H=0 SOCIAL_NEW_ACCOUNT_H=0 \
+  GAME_PING_MS=1000 GAME_STREAM_MAX_MS=5000 \
   PORT=$P DATA_DIR="$DATA" WEB_DIR=../web/dist node --experimental-sqlite src/index.js
 # в другом терминале, из корня проекта:
 node server/test/social-smoke.mjs http://127.0.0.1:8792 kfu     # «Всё прошло: N проверок.»
 node server/test/social-seed.mjs  http://127.0.0.1:8792 kfu     # наполнение для интерфейса (можно повторять)
+node --test server/test/game-logic.test.mjs                      # правила «Кода» (сервер не нужен)
 ```
 
 Другие прогоны теста: `SMOKE_NEW_ACCOUNT=1` (сервер с `SOCIAL_NEW_ACCOUNT_H=24`, ≈ 6 минут), `SMOKE_MODE=readonly`
-и `SMOKE_MODE=off` (сервер с тем же `SOCIAL_MODE`, после seed), `SMOKE_GOOGLE_PORT=9901` (вход через поддельный
+и `SMOKE_MODE=off` (сервер с тем же `SOCIAL_MODE`, после seed), `SMOKE_GAME=friends` (сервер с `SOCIAL_GAME=friends`),
+`SMOKE_GOOGLE_PORT=9901` (вход через поддельный
 Google: сервер с `GOOGLE_CLIENT_ID=smoke.apps.googleusercontent.com GOOGLE_CLIENT_SECRET=smoke
 SOCIAL_DEV_GOOGLE_TOKEN_URL=http://127.0.0.1:9901/token`). Подробности — в начале `social-smoke.mjs`.
 

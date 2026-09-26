@@ -290,7 +290,18 @@ svg{display:block}
 }
 
 /* ─── Герой ─── */
-.hero{padding:18px 16px 16px;margin-bottom:16px}
+.hero{position:relative;padding:18px 16px 16px;margin-bottom:16px}
+/* Секрет игры «Код» (game/entry.ts): часы и герой без часов — цель быстрых нажатий. Без двойного нажатия
+   для увеличения (в viewport нет maximum-scale) и без выделения цифр; текст героя без часов выделяется как был. */
+.clk-tap{touch-action:manipulation;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;
+  -webkit-tap-highlight-color:transparent;transition:transform 120ms}
+.hero.is-egg{touch-action:manipulation;-webkit-tap-highlight-color:transparent;transition:transform 120ms}
+.clk-tap.is-press, .hero.is-egg.is-press{transform:scale(.98)}
+/* Точка «Тебя ждёт игра»: зона нажатия 36 × 36 в правом верхнем углу, сама точка — 6 px. */
+.hero__dot{position:absolute;top:0;right:0;z-index:1;display:grid;place-items:center;width:36px;height:36px;
+  padding:0;border:0;background:transparent;-webkit-tap-highlight-color:transparent}
+.hero__dot i{width:6px;height:6px;border-radius:50%;background:var(--ink-100);opacity:.7}
+.hero__dot:focus-visible{outline:2px solid var(--c1);outline-offset:-4px;border-radius:12px}
 .hero__lbl{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
   color:var(--green-ink);margin-bottom:6px}
 .hero__lbl.is-idle{color:var(--ink-30)}

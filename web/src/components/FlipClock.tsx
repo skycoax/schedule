@@ -1,8 +1,9 @@
 // Флип-часы в стиле Apple: каждая цифра — створка табло, при смене доигрывает
 // переворот. Перенос идеи flipTo() из старой страницы на React.
+// FlipDigit — отдельно: из тех же створок игра «Код» (web/src/game) собирает свои цифры.
 import { useEffect, useState } from 'react';
 
-function FlipDigit({ char }: { char: string }) {
+export function FlipDigit({ char, className }: { char: string; className?: string }) {
   const [st, setSt] = useState({ cur: char, prev: char, flip: false });
 
   useEffect(() => {
@@ -15,7 +16,7 @@ function FlipDigit({ char }: { char: string }) {
 
   const { cur, prev, flip } = st;
   return (
-    <span className="fl">
+    <span className={'fl' + (className ? ' ' + className : '')}>
       <b className="u"><i>{cur}</i></b>
       <b className="l"><i>{flip ? prev : cur}</i></b>
       {flip && (
@@ -28,8 +29,9 @@ function FlipDigit({ char }: { char: string }) {
   );
 }
 
-export function FlipClock({ digits, labels }: { digits: string; labels: [string, string] }) {
-  const d = digits.padStart(4, '0').slice(0, 4);
+/** override — 4 знака вместо digits, пока задан (игра «Код» открыта: «??:??»). */
+export function FlipClock({ digits, labels, override }: { digits: string; labels: [string, string]; override?: string }) {
+  const d = override ? override.padEnd(4, '?').slice(0, 4) : digits.padStart(4, '0').slice(0, 4);
   return (
     <div className="clk">
       <div className="clk__d">

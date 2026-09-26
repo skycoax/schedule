@@ -150,11 +150,15 @@ async function call<T>(method: Method, path: string, o: {
   params?: Record<string, string | number | null | undefined>;
   body?: unknown;
   signal?: AbortSignal;
+  /** X-Para: 1 и у GET — там, где сервер его требует (просмотр вызова в игру: чужая страница его не пошлёт). */
+  para?: boolean;
 } = {}): Promise<T> {
   const init: RequestInit = { method, credentials: 'same-origin', cache: 'no-store', signal: o.signal };
   if (method !== 'GET') {
     init.headers = { 'Content-Type': 'application/json', 'X-Para': '1' };
     init.body = JSON.stringify(o.body ?? {});
+  } else if (o.para) {
+    init.headers = { 'X-Para': '1' };
   }
   let res: Response;
   try {
@@ -204,6 +208,9 @@ function sendJpeg<T>(method: 'POST' | 'PUT', path: string, params: Record<string
     xhr.send(blob);
   });
 }
+
+/** Общий транспорт для мини-игры «Код» (game/api.ts): те же правила §B.1 и разбор ошибок §B.3. */
+export { call as apiCall };
 
 const enc = encodeURIComponent;
 

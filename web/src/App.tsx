@@ -12,6 +12,7 @@ import { scrollToTop, useReselect } from './shell/NavBar';
 import { useUniversityMenu } from './shell/useUniversityMenu';
 import { useHideTabBar } from './ui/bar';
 import { openLayerCount } from './ui/layers';
+import { useGameRequest } from './game/entry';
 import { ScheduleNav } from './components/ScheduleNav';
 import { ScheduleTitle, uniShort } from './components/ScheduleTitle';
 import { ChangesSheet } from './components/ChangesSheet';
@@ -108,6 +109,11 @@ function StudentApp({ active, command, onContext, theme, setRole }: ScheduleSlot
   const [reviewsOpen, setReviewsOpen] = useState(false);
   const [promptOpen, setPromptOpen] = useState(false);
   const [changesOpen, setChangesOpen] = useState(false);
+  // Игра «Код» открыта: окна расписания (отзыв, «на главный экран») поверх неё не показываем — ждут её закрытия.
+  const gameOpen = useGameRequest().status !== 'closed';
+  const gameOpenRef = useRef(gameOpen);
+  gameOpenRef.current = gameOpen;
+  const [installLater, setInstallLater] = useState(false);
   const [seenTs, setSeenTs] = useState(() => store('seenTs') || '');
   const [reviews, setReviews] = useState<ReviewsData | null>(null);
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -246,7 +252,7 @@ function StudentApp({ active, command, onContext, theme, setRole }: ScheduleSlot
   const overlayOpenRef = useRef(false);
   useEffect(() => {
     overlayOpenRef.current = !active || consent || picker.open || installOpen || docOpen || statsOpen
-      || reviewsOpen || promptOpen || changesOpen || openLayerCount(['tab']) > 0;
+      || reviewsOpen || promptOpen || changesOpen || gameOpen || openLayerCount(['tab']) > 0;
   });
 
   // Приглашение оценить — триггер 1: пара только что закончилась (самый живой момент спросить).
@@ -283,6 +289,13 @@ function StudentApp({ active, command, onContext, theme, setRole }: ScheduleSlot
     }, delay);
     return () => clearTimeout(t);
   }, []);
+
+  // «На главный экран», отложенное до закрытия игры (pickGroup): оверлей игры успел уйти.
+  useEffect(() => {
+    if (!installLater || gameOpen || !active) return;
+    const t = setTimeout(() => { setInstallLater(false); setInstallOpen(true); }, 400);
+    return () => clearTimeout(t);
+  }, [installLater, gameOpen, active]);
 
   const pickerOpen = () => setPicker({ open: true, first: false });
   const nav = (withChanges: boolean) => active && (
@@ -342,7 +355,12 @@ function StudentApp({ active, command, onContext, theme, setRole }: ScheduleSlot
     // После первой настройки предлагаем закрепить на экране (там же личная ссылка) —
     // если человек всё ещё на расписании (ссылка из «Обсуждений» могла увести на другую вкладку).
     if (wasFirst && !store('homeShown') && !isStandalone()) {
-      setTimeout(() => { if (activeRef.current) setInstallOpen(true); }, 500);
+      // Пришли по ссылке-вызову (?duel=) — игра уже открылась поверх расписания: предложим после неё.
+      setTimeout(() => {
+        if (!activeRef.current) return;
+        if (gameOpenRef.current) setInstallLater(true);
+        else setInstallOpen(true);
+      }, 500);
     }
   };
   const closeInstall = () => { store('homeShown', '1'); setInstallOpen(false); };
@@ -447,7 +465,7 @@ function StudentApp({ active, command, onContext, theme, setRole }: ScheduleSlot
       <LazyModal panel={statsModal} open={statsOpen} props={{ open: statsOpen, onClose: () => setStatsOpen(false) }}
         onFail={() => setStatsOpen(false)} />
       <ReviewsModal open={reviewsOpen} initialRating={rateInit} onClose={closeReviews} />
-      <ReviewPrompt open={promptOpen} onClose={closePrompt} />
+      <ReviewPrompt open={promptOpen && !gameOpen} onClose={closePrompt} />
       {uniMenu.element}
     </>
   );

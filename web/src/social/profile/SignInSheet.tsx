@@ -28,11 +28,12 @@ const TITLE: Record<AuthReason, string> = {
   account: 'Вход в Para',
   delete: 'Удаление аккаунта',
   expired: 'Сессия истекла — войди снова',
+  game: 'Войди, чтобы играть с другими',
 };
 
 const ICON: Record<AuthReason, IconName> = {
   post: 'compose', reply: 'reply', like: 'heart', friend: 'people', block: 'hand', report: 'flag',
-  profile: 'person', search: 'search', account: 'person', delete: 'trash', expired: 'person',
+  profile: 'person', search: 'search', account: 'person', delete: 'trash', expired: 'person', game: 'grid',
 };
 
 /** Удаление, пока вход через Google не настроен (как на странице /delete-account, но на «ты»). */

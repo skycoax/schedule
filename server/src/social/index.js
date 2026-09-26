@@ -7,6 +7,7 @@
 //   users.js — Me, имена, профили, друзья · posts.js — лента и ветки · media.js — фото
 //   jpeg.js — очистка JPEG · text.js — очистка текста и мат · moderation.js — жалобы и модератор
 //   limits.js — пределы частоты · jobs.js — фоновые задачи
+//   game.js — мини-игра «Код» (маршруты) · game-logic.js — её правила · game-db.js — исход и хуки · game-stream.js — поток событий
 import { mkdirSync } from 'node:fs';
 import { social, googleConfigured } from '../config.js';
 import { openSocialDb } from './db.js';
@@ -18,6 +19,7 @@ import { userRoutes, accountRoutes } from './users.js';
 import { mediaRoutes } from './media.js';
 import { adminRoutes } from './moderation.js';
 import { startJobs } from './jobs.js';
+import { gameRoutes, startGame } from './game.js';
 
 export const SOCIAL_PATH = /^\/api\/(auth|social|media)(\/|$)/;
 
@@ -57,7 +59,7 @@ export async function registerSocial(app, { hub, tenants }) {
 
   // 2) Строка при старте — без значений настроек.
   log.info({ mode: social.mode, google: googleConfigured() ? 'настроен' : 'не настроен',
-    admins: social.adminEmails.size, dev: social.devLogin, minAge: social.minAge }, 'обсуждения');
+    admins: social.adminEmails.size, dev: social.devLogin, minAge: social.minAge, game: social.game }, 'обсуждения');
   if (social.devLoginIgnored) log.error('DEV_LOGIN=1 в production игнорируется');
   if (social.google.clientId && !social.google.clientId.endsWith('.apps.googleusercontent.com')) {
     log.warn('GOOGLE_CLIENT_ID выглядит странно');
@@ -86,6 +88,8 @@ export async function registerSocial(app, { hub, tenants }) {
       userRoutes(inst, ctx);
       mediaRoutes(inst, ctx);
       adminRoutes(inst, ctx);
+      // Мини-игра «Код»: SOCIAL_GAME=off (или SOCIAL_MODE=off) — маршрутов нет, общий 404; в приложении остаётся бот.
+      if (social.game !== 'off') gameRoutes(inst, ctx);
     }
 
     // Неизвестные адреса — 404 JSON (не setNotFoundHandler: он общий с корнем).
@@ -99,6 +103,7 @@ export async function registerSocial(app, { hub, tenants }) {
     });
   });
 
-  // 4) Фоновые задачи.
+  // 4) Фоновые задачи; у игры — «пульс» и продление сроков после простоя (во всех режимах).
   startJobs(ctx);
+  startGame(ctx);
 }

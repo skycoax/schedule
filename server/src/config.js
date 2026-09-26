@@ -78,5 +78,13 @@ export const social = {
   // Для строки в журнале при старте: DEV_LOGIN=1 в production — ошибка настройки (он всё равно не действует).
   devLoginIgnored: prod && env.DEV_LOGIN === '1',
   production: prod,
+  // Мини-игра «Код» (game.js): on — всё; friends — без случайного соперника и общих таблиц; off — только бот
+  // в приложении (маршрутов игры нет). SOCIAL_MODE=off выключает и игру.
+  game: ['on', 'friends', 'off'].includes(env.SOCIAL_GAME) ? env.SOCIAL_GAME : 'on',
+  // Только для разработки и дымового теста: как часто ping в потоке игры и сколько живёт одно соединение.
+  gamePingMs: !prod && Number(env.GAME_PING_MS) > 0 ? Math.max(200, Number(env.GAME_PING_MS)) : 20_000,
+  gameStreamMaxMs: !prod && Number(env.GAME_STREAM_MAX_MS) > 0 ? Math.max(2000, Number(env.GAME_STREAM_MAX_MS)) : 900_000,
 };
 export const googleConfigured = () => !!(social.google.clientId && social.google.clientSecret);
+/** Режим игры для приложения и маршрутов: 'on' | 'friends' | 'off' (off — и при SOCIAL_MODE=off). */
+export const gameMode = () => (social.mode === 'off' ? 'off' : social.game);

@@ -1,8 +1,12 @@
 // Герой экрана «Сегодня»: что идёт/следующее и обратный отсчёт флип-часами.
+// Секрет: пять быстрых нажатий на часы (или на весь герой, когда часов нет) открывают игру «Код»
+// (game/entry.ts); пока она открыта, часы показывают «??:??». Точка в углу — в игре кто-то ждёт.
+import type { JSX } from 'react';
 import type { Group } from '../types';
 import { parseCell, pairsOf, pairCount, type CellInfo } from '../lib/parse';
 import { minutesOf, hhmm, plural, DAYS } from '../lib/format';
 import { FlipClock } from './FlipClock';
+import { openGame, useGameDot, useGameRequest, useSecretTaps } from '../game/entry';
 
 function meta(info: CellInfo, g?: Group, day?: string, i?: number): string {
   // Совместная пара — коротко в той же строке; список групп есть в карточке дня.
@@ -45,12 +49,27 @@ function heroState(g: Group, nowMin: number, nowDay: string): Hero {
   return { kind: 'idle', label: 'На сегодня всё', title: 'Пар больше нет', sub: '' };
 }
 
+/** Точка «Тебя ждёт игра»: нажатие сразу открывает игру (без пяти нажатий). */
+function GameDot(): JSX.Element {
+  return (
+    <button type="button" className="hero__dot" aria-label="Тебя ждёт игра"
+      onClick={(e) => openGame({ originEl: e.currentTarget })}>
+      <i />
+    </button>
+  );
+}
+
 export function Hero({ group, nowMin, nowDay }: { group: Group; nowMin: number; nowDay: string }) {
   const h = heroState(group, nowMin, nowDay);
+  // Хуки — до раннего выхода: счётчик нажатий переживает смену «идёт пара» ↔ «на сегодня всё».
+  const { className: tapClass, ...taps } = useSecretTaps(h.kind === 'idle' ? 'hero' : 'clock');
+  const game = useGameRequest();
+  const dot = useGameDot();
 
   if (h.kind === 'idle') {
     return (
-      <div className="hero">
+      <div className={'hero ' + tapClass} {...taps}>
+        {dot && <GameDot />}
         <div className="hero__lbl is-idle">{h.label}</div>
         <div className="hero__title">{h.title}</div>
         {h.sub && <div className="hero__meta">{h.sub}</div>}
@@ -65,8 +84,11 @@ export function Hero({ group, nowMin, nowDay }: { group: Group; nowMin: number; 
 
   return (
     <div className="hero">
+      {dot && <GameDot />}
       <div className="hero__lbl">{h.label}</div>
-      <FlipClock digits={cp.d} labels={[cp.a, cp.b]} />
+      <div className={tapClass} {...taps}>
+        <FlipClock digits={cp.d} labels={[cp.a, cp.b]} override={game.status !== 'closed' ? '????' : undefined} />
+      </div>
       <div className="hero__cap">{h.cap}</div>
       <div className="hero__bar"><i style={{ width: Math.max(0, Math.min(1, done)) * 100 + '%' }} /></div>
       <div className="hero__title">{h.title}</div>

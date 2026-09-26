@@ -1,7 +1,7 @@
 // Фоновые задачи «Обсуждений» (CONTRACT.md §C.7): setInterval(...).unref(), каждая в try/catch.
-//   10 мин — старые входы, истёкшие баны, полные ведёрки;
+//   10 мин — старые входы, истёкшие баны, полные ведёрки, игры «Код» с истёкшим сроком;
 //   1 ч   — неотправленные фото, брошенные аватары, файлы без строки в базе, истёкшие сессии;
-//   24 ч  — сроки хранения (журнал, жалобы, «надгробия», удержанные имена, отпечатки банов) и копия базы.
+//   24 ч  — сроки хранения (журнал, жалобы, «надгробия», удержанные имена, отпечатки банов, игры) и копия базы.
 // В SOCIAL_MODE=off работают те же функции (удаление аккаунта остаётся, данные чистятся по срокам).
 import { readdirSync, statSync, rmSync, mkdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -10,6 +10,8 @@ import { tx, nowIso, HOUR, DAY } from './db.js';
 import { audit } from './moderation.js';
 import { sweepBuckets } from './limits.js';
 import { unlinkMedia } from './media.js';
+import { settleExpired, sweepReactCounters } from './game.js';
+import { tashkentDay } from './game-logic.js';
 
 const MIN = 60_000;
 const FILE_RE = /^([A-Za-z0-9_-]{22})(_t)?\.jpg$/;
@@ -24,7 +26,7 @@ function every(ms, name, log, fn) {
   return run;
 }
 
-/** Каждые 10 минут: входы старше 10 минут, истёкшие временные баны, полные ведёрки. */
+/** Каждые 10 минут: входы старше 10 минут, истёкшие временные баны, полные ведёрки, итоги игр по сроку. */
 export function tenMinuteJob(ctx) {
   const db = ctx.db;
   db.prepare('DELETE FROM oauth_states WHERE created_at < ?').run(nowIso(Date.now() - 10 * MIN));
@@ -37,6 +39,8 @@ export function tenMinuteJob(ctx) {
     if (r.changes === 1) audit(db, null, 'user.unban', 'u:' + id, null, { expired: true });
   }
   sweepBuckets();
+  settleExpired(ctx);
+  sweepReactCounters();
 }
 
 /**
@@ -114,6 +118,12 @@ export function dailyJob(ctx) {
     db.prepare('DELETE FROM held_usernames WHERE until < ?').run(iso(now));
     db.prepare('DELETE FROM ban_marks WHERE (until IS NOT NULL AND until < ?) OR created_at < ?')
       .run(iso(now), iso(now - 365 * DAY));
+    // Игра «Код»: законченные дуэли — 30 дней, «Код дня» — 90 дней; недоигранные прошлые дни — «не взломан».
+    // Счёт (game_players) живёт, пока есть аккаунт.
+    db.prepare(`DELETE FROM game_duels WHERE status IN ('done','expired','cancelled')
+      AND COALESCE(finished_at, created_at) < ?`).run(iso(now - 30 * DAY));
+    db.prepare('DELETE FROM game_daily WHERE day < ?').run(tashkentDay(now - 90 * DAY));
+    db.prepare('UPDATE game_daily SET solved = 2, finished_at = ? WHERE solved = 0 AND day < ?').run(iso(now), tashkentDay(now));
   });
   backup(ctx);
 }

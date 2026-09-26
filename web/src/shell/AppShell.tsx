@@ -29,6 +29,8 @@ import { hideBoot } from '../lib/boot';
 import { TabBar } from './TabBar';
 import { LargeTitle, NavBar } from './NavBar';
 import { readDeepLink, type DeepLink } from './deeplink';
+import { closeGame, openGame, registerGameHost, useGameRequest } from '../game/entry';
+import type { GameHostProps } from '../game/GameHost';
 import './shell.css';
 
 export interface AppShellProps {
@@ -97,6 +99,8 @@ export function lazyWithReload<P>(importer: () => Promise<{ default: ComponentTy
 const chatPanel = lazyWithReload<ChatTabProps>(() => import('../social/chat/ChatTab'));
 const profilePanel = lazyWithReload<ProfileTabProps>(() => import('../social/profile/ProfileTab'));
 const authPanel = lazyWithReload<Record<string, never>>(() => import('../social/profile/AuthHost'));
+/** Игра «Код» (game/): открывается пятью нажатиями на часы героя, точкой на герое или ссылкой ?duel= / ?game=1. */
+const gamePanel = lazyWithReload<GameHostProps>(() => import('../game/GameHost'));
 
 // ─── Оболочка ──────────────────────────────────────────────────────────────
 
@@ -214,6 +218,9 @@ function HubShell({ theme, role, setRole, renderSchedule, dl }: AppShellProps & 
   const barHiddenRef = useRef(barHidden);
   barHiddenRef.current = barHidden;
   useKeyboardWatcher();
+  const game = useGameRequest();
+  // До эффектов расписания: первый onContext (ссылка ?duel=, ?game=1) уже может открыть игру.
+  useLayoutEffect(() => registerGameHost(), []);
 
   // Сменили режим (студент ↔ преподаватель) — прежний контекст больше не про этот режим.
   const [ctxRole, setCtxRole] = useState(role);
@@ -379,6 +386,9 @@ function HubShell({ theme, role, setRole, renderSchedule, dl }: AppShellProps & 
         if (h.profile) setProfileLink(h.profile);
       });
     }
+    // Вызов в игру по ссылке (?duel=) или «открыть игру» (?game=1): уже после согласия, группы и вуза.
+    if (dl.duel) openGame({ duel: dl.duel });
+    else if (dl.game) openGame({});
 
     if (navigator.onLine !== false) {
       idle(() => {
@@ -386,12 +396,14 @@ function HubShell({ theme, role, setRole, renderSchedule, dl }: AppShellProps & 
         if (mode !== 'off') void chatPanel.load();
         void profilePanel.load();
         void authPanel.load();
+        // Игру уже находили — пусть её файл будет в кеше: тренировка с ботом работает и без сети.
+        if (store('game_found')) void gamePanel.load();
       }, 4000);
     }
 
     // Подсказка про «Обсуждения» — один раз, через 2 с после расписания.
     if (!ls('coach_chat') && s.mode !== 'off') coachLater();
-  }, [select, coachLater]);
+  }, [select, coachLater, dl]);
 
   const closeCoach = useCallback(() => {
     ls('coach_chat', '1');
@@ -464,6 +476,7 @@ function HubShell({ theme, role, setRole, renderSchedule, dl }: AppShellProps & 
         <Coach onOpen={() => { closeCoach(); void select('chat'); }} onClose={closeCoach} />
       )}
 
+      <LazyModal panel={gamePanel} open={!!game.req} props={{ req: game.req, onClose: closeGame }} onFail={closeGame} />
       {session.prompt && (
         <ErrorBoundary fallback={() => <AuthHostFailed />}>
           <Suspense fallback={null}><Auth /></Suspense>

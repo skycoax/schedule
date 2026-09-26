@@ -2989,6 +2989,240 @@ Phase 4  lead integration gate (§G.7) → owner deploys (§F.6)
 
 ---
 
+## I. Мини-игра «Код» (schema V7)
+
+A hidden multiplayer easter egg: Bulls and Cows on the flip-clock digits. Five taps on the `Hero` clock open it (web:
+`web/src/game/`). Everything is asynchronous and decided by the server; all state is in `social.db`; outcomes are settled
+lazily (on every read or write of a duel) and every 10 minutes (`settleExpired`); there are no per-game timers. Nothing ever
+needs two people online at once: «live» (the opponent's attempts in real time, «в игре», reactions) is a bonus over SSE.
+Server files: `game-logic.js` (pure rules), `game-db.js` (settle + stats + hooks; imports only `db.js` and `game-logic.js`),
+`game-stream.js` (SSE registry; imports only `http.js` and `limits.js`), `game.js` (routes, view builders, boards, jobs).
+
+### I.1 Rules
+
+- A code and an attempt are 4 **different** digits 0–9 (a leading zero is allowed; 5040 codes). Answer: `on` (●, right digit,
+  right place) and `near` (○, in the code but elsewhere); the order of the marks says nothing about which digit is which.
+  Example: code 4071, attempt 1074 → ●●○○. Cracked at 4 ●. `ATTEMPTS = 12`, `FAIL_SCORE = 13`, `TTL_MS = 24 h`.
+- Repeating an earlier attempt → `400 invalid` field `guess` «Эта комбинация уже была» (no attempt is spent).
+- **Duel** (a race, no turns): the creator sets a code when creating; the other player sets theirs when accepting. Score = attempts
+  needed to crack; not cracked in 12, or not finished before the deadline = 13. Lower score wins; equal = draw (13 : 13 too).
+  An open challenge must be accepted within 24 h (`expired`, nothing counted); once both codes are set, both have 24 h
+  (`deadline_at = joined_at + 24h`). «Сдаться» (`left`) = a loss. Cancelling an unaccepted challenge has no consequences.
+- **Reactions**: `wave`👋 `like`👍 `wow`😮 `lol`😂 `fire`🔥 `deal`🤝; active duels only; never stored; bucket `gameReact`
+  and at most 20 per duel per player (in memory).
+- **«Код дня»**: each person gets their own code for the day (`randomCode()`, `crypto.randomInt`, stored on the first attempt;
+  no HMAC, no salt). Day = Asia/Tashkent: `tashkentDay(ms) = new Date(ms + 5*3600e3).toISOString().slice(0,10)`. 12 attempts.
+  Ranking: fewer attempts → smaller `ms` (first to last attempt, server time; 1 attempt → 0) → earlier `finished_at`. Not cracked
+  → no place, the code is revealed. Streak: solve on day D — `streak_day = D−1` → +1, `= D` → unchanged, else → 1;
+  `best_streak = max`; the displayed streak is 0 when `streak_day < D−1`.
+- **Training with the bot** is local only (`web/src/game/bot.ts`, `store('game_bot')`), never touches the server.
+
+**`settle(d, now)`** — the single pure function that decides outcomes. Input `{status, deadlineAt, a:{n,res}, b:{n,res}}`,
+`res ∈ null | 'cracked' | 'failed' | 'timeout' | 'left'`; `score(side) = cracked ? n : failed|timeout ? 13 : null`.
+
+| # | Condition (in order) | Result |
+|---|---|---|
+| 1 | `status='open'` | `now ≥ deadlineAt` → `{status:'expired', reason:'expired', winner:'none'}`, else `null` |
+| 2 | `status≠'active'` | `null` |
+| 3 | a side has `res='left'` | `done`, the other side wins, reason `left` |
+| 4 | `now ≥ deadlineAt` | every side with `res=null` gets `timeout` (13); `timedOut = true` |
+| 5 | both scores non-null | lower wins, equal → `draw`; reason `timedOut ? 'timeout' : 'score'` |
+| 6 | `sa≠null, sb=null, b.n ≥ sa` (and mirror) | the final side wins, reason `early` (the other's `res` stays null; never for 13) |
+| 7 | otherwise | `null` (the game continues) |
+
+Stats change only inside `UPDATE game_duels SET status='done' … WHERE id=? AND status='active' AND v=?` with `changes === 1`
+(`finishDuel`), so a duel is counted exactly once.
+
+### I.2 Modes and kill switches
+
+| State | Game routes | Client |
+|---|---|---|
+| `SOCIAL_MODE=off` or `SOCIAL_GAME=off` | not registered → catch‑all `404 not_found` | `config.game='off'`, `me.game=null`: training only |
+| `SOCIAL_MODE=readonly` | reads and the stream work; writes → `403 readonly`, except `leave`, `decline`, `seen` (guard S) | «Игры с людьми временно на паузе» |
+| `SOCIAL_GAME=friends` | quick → `403 forbidden` «Случайный соперник сейчас выключен»; board `scope=all\|uni` → `403 forbidden` «Общие таблицы сейчас выключены»; `searching` is 0; `DailyView.place=null, total=0` | no «Случайный соперник»; tables: «Друзья» only |
+
+`config.js`: `social.game` (`SOCIAL_GAME`, default `on`), dev-only `gamePingMs` (`GAME_PING_MS`, default 20000, min 200) and
+`gameStreamMaxMs` (`GAME_STREAM_MAX_MS`, default 900000, min 2000); `gameMode() = social.mode === 'off' ? 'off' : social.game`.
+`rulesVersion` and `policyVersion` do not change.
+
+### I.3 Schema V7 (`SCHEMA_V7` in `db.js`)
+
+Tables `game_players` (stats and streak; created on the first `GET /api/social/games` or the first game), `game_duels`
+(`kind` link|friend|quick|rematch; `status` open|active|done|expired|cancelled; `token` only for a link — kept after accept so a
+retried join is idempotent, NULL once the duel is done, expired or cancelled; previews and joins require `status='open'`;
+`a_id` creator, `b_id` joiner, `to_id` addressee — all `ON DELETE SET NULL`; `rematch_of`; codes; moves as JSON
+`[["1074",2,2,"<iso>"], …]`; `a_res`/`b_res`; `winner` a|b|draw|none; `reason`; `a_seen`/`b_seen`; `v`; `created_at`,
+`joined_at`, `deadline_at`, `finished_at`; `idx_gd_to` is partial on `to_id IS NOT NULL`, so the `ON DELETE SET NULL` action of an
+account deletion uses it), `game_daily` (PK `(user_id, day)`; no university column — «Мой вуз» uses the profile's `users.uni`;
+`solved` 0 playing / 1 cracked / 2 not cracked; `ms`), `game_meta` (`'beat'`). DDL verbatim in `server/src/social/db.js`.
+
+Write rules: every write is `tx()` with no await inside; `v = v + 1` on every change of game state (not on `seen`);
+`publish*` only after COMMIT, never throws. Seen flags on done/expired/cancelled: 0 for every participant except the one
+whose action caused it (leaver, decliner, canceller); a finish by an attempt, expiry and timeout clear both.
+
+### I.4 API (`/api/social/games`, envelope and hooks as §B.1; **no U guard** except `daily/board?scope=uni`)
+
+Order in each handler: guards → validation → rate limit → transaction. Common texts:
+`code`/`guess` not 4 distinct digits → `400 invalid` «Нужны четыре разные цифры»; repeated guess → `400` «Эта комбинация уже была»;
+stale `n` → `409 conflict` field `n` «Состояние игры изменилось»; `n === moves.length` with the same guess as the last one → **200**
+(idempotent retry); duel not active or my side final → `409 conflict` field `status` «Игра уже закончилась»;
+`:id` not `^\d{1,12}$` or not a participant → `404 not_found` «Игра не найдена».
+
+| # | Route | Guards | Buckets / caps | Body → response |
+|---|---|---|---|---|
+| 1 | `GET /api/social/games` | S | read | → `GameLobby`. Creates `game_players`; lazily settles own expired rows |
+| 2 | `GET …/daily` | S | read | → `{daily: DailyView}`; creates nothing; own unfinished rows of past days → solved 2 |
+| 3 | `POST …/daily/guess` | SPNM | gameGuess | `{day, guess, n}` → `{daily}`; `day ≠ today` → `409` field `day` «Новый день — код обновился» |
+| 4 | `GET …/daily/board?scope=all\|uni\|friends` | S (+U for `uni`) | read | → `DailyBoard` (top 50, today) |
+| 5 | `POST …/duels` | SPNM | gameNew, cap `game`, open limits, active limit | `{mode:'link'\|'friend'\|'quick', code, to?}` → `{duel, matched}`. First settles my own rows past their deadline. `friend`: an accepted, active, unblocked friend, else `403 blocked` «Нельзя вызвать этого пользователя»; my open invite to that friend → returned; the friend's open `friend`/`rematch` invite to me → accepted instead (`matched: true`, the duel is active — one open invite per pair, never two crossing ones). `quick`: my open search → returned; the same code paired within the last 60 s (as joiner or as host) → that duel, `matched: true` (a retry after a lost response); else pair FIFO or create |
+| 6 | `GET …/invite?t=TOKEN` | none (guests); requires `X-Para: 1` (else `403 csrf`) | gameJoin: signed in → `u:<id>`; guest → by IP, charged only on a 404 (checked before) | → `{invite: GameInvite}` (`from` without uni for guests). Unknown, expired, taken, host inactive, blocked → `404` «Вызов истёк или уже принят» |
+| 7 | `POST …/join` | SPNM | gameJoin by `u:<id>`, cap, active limit | `{t, code}` → `{duel}`; own token → `400 invalid` «Это твой вызов — отправь ссылку другу»; already accepted by me (a retry) → 200 with that duel |
+| 8 | `POST …/duels/:id/accept` | SPNM | gameJoin by `u:<id>`, cap, active limit | `{code}` → `{duel}`; `to_id = me`, open, creator active, no block; already accepted by me → 200 |
+| 9 | `POST …/duels/:id/decline` | S | gameNew | `{}` → `{}`; `to_id = me`, open → cancelled/declined |
+| 10 | `GET …/duels/:id` | S | read | → `{duel}`; participants (a, b; `to_id` while open) |
+| 11 | `POST …/duels/:id/guess` | SPNM | gameGuess | `{guess, n}` → `{duel}` |
+| 12 | `POST …/duels/:id/react` | SPNM | gameReact, ≤ 20 per duel | `{r}` → `{}`; active only; unknown `r` → `400` field `r` |
+| 13 | `POST …/duels/:id/leave` | S | gameNew | `{expect?: 'open'\|'active'}` → `{duel}`; own open → cancelled/cancelled; open invite to me → declined; active → my `res='left'`. `expect` is what the screen showed («Отменить вызов/поиск» → `'open'`, «Сдаться» → `'active'`); an open/active duel in the other state → `409 conflict` field `status` «Состояние игры изменилось» (an invite accepted while its cancel was being confirmed is never a loss); other `expect` → `400` field `expect` |
+| 14 | `POST …/duels/:id/rematch` | SPNM | gameNew, cap, open limits, active limit | `{code}` → `{duel}`; first settles my own rows past their deadline (an expired offer can be neither accepted nor returned); source done, opponent active and not blocked (else `403 blocked` «Реванш с этим игроком пока недоступен»). (a) an active rematch of this duel → returned; (b) the opponent's open counter‑offer → accepted; (c) my open offer → returned; (d) new: friends → `kind 'friend'` (lobby invite), others → `kind 'rematch'` (mutual, visible only on the result screen). Non‑friends: a `rematch` offer of this pair that expired or was declined within 7 days → `403 blocked` |
+| 15 | `POST …/seen` | S | read | `{ids: int[≤30]}` → `{}`; publishes `lobby` to self |
+| 16 | `GET …/stream` | S, N | gameStream by user; ≤ 300 total | SSE (§I.6) |
+
+**Open limits** (in the transaction, `429 rate`, `retryAfter: 3600`): ≤ 5 own open link/friend/rematch invites → «Слишком много
+вызовов ждут ответа — отмени какой-нибудь»; ≤ 1 open quick search (a repeat returns it); ≤ 20 active duels → «Слишком много
+начатых игр — сначала доиграй», checked for whoever joins and for whoever creates an invite, a search or a rematch offer. The host
+of an invite is not re-checked when it is accepted, so the overshoot is at most 6 (5 invites + 1 search).
+
+**Quick pairing** (in the transaction): the oldest open `quick` entry of someone else with `deadline_at > now`, owner active,
+no block in either direction (`ORDER BY created_at`); `UPDATE … SET status='active', b_id, b_code, joined_at=now,
+deadline_at=now+24h, v=v+1 WHERE id=? AND status='open' AND deadline_at>now` (the same statement for #7, #8, #14, #5 friend);
+`changes ≠ 1` → one more candidate, then my own entry.
+
+**Boards.** `scope=all`: `d.day=today AND d.solved=1 AND (u.id=$me OR (u.status='active' AND (accepted friend OR (u.searchable=1
+AND u.age_group='adult'))))` and no block either way; `uni` adds `u.uni=$tenant` — the profile's «мой вуз» (for every row, mine too;
+a hidden uni is in no uni board); `friends` keeps only «accepted friend». Friends are in every scope, so a friend of any age who is
+missing from «Все» cannot give away that they are 16–17. Order `n, ms, finished_at`, top 50; `total` = the visible count; my place
+= 1 + visible rows strictly better.
+
+**Me and auth.** `GET /api/auth/me` → `user.game: {waiting} | null`, `config.game: 'on'|'friends'|'off'`. `gameMeOf`: no
+`game_players` row → `null`; else `waiting` = my active duels with my `res` null + my unseen done/expired/cancelled rows within
+7 days whose opponent is not blocked either way (what the lobby can show) + open `kind='friend'` invites to me. An open non‑friend
+`rematch` is never counted and never listed for its addressee. When more than 30 rows qualify for the lobby, #1 marks my unseen
+finished rows that did not make the 30 as seen (they cannot be opened), so the hero dot never stays on for them.
+
+### I.5 Types (`web/src/social/types.ts`, mirrored exactly by the server)
+
+```ts
+type DuelKind = 'link' | 'friend' | 'quick' | 'rematch';
+type DuelStatus = 'open' | 'active' | 'done' | 'expired' | 'cancelled';
+type DuelRes = 'cracked' | 'failed' | 'timeout' | 'left' | null;
+type DuelReason = 'score'|'early'|'left'|'timeout'|'blocked'|'banned'|'deleted'|'declined'|'expired'|'cancelled';
+type GameReaction = 'wave' | 'like' | 'wow' | 'lol' | 'fire' | 'deal';
+interface GameMove { g: string; on: number; near: number }
+interface GameMark { on: number; near: number }
+interface DuelView {
+  id: number; v: number; kind: DuelKind; status: DuelStatus;
+  role: 'creator' | 'joiner' | 'invited';          // invited: open duel addressed to me
+  token: string | null;                            // creator only, kind 'link', status 'open'
+  createdAt: string; deadlineAt: string;
+  friends: boolean;
+  me:  { code: string | null; moves: GameMove[]; left: number; res: DuelRes; score: number | null };
+  opp: { user: UserCard | null; gone: boolean;     // gone: the opponent's account was deleted
+         n: number; marks: GameMark[]; res: DuelRes; score: number | null; live: boolean };
+  outcome: null | { winner: 'me' | 'opp' | 'draw' | 'none'; reason: DuelReason; oppCode: string | null };
+  rematch: null | { id: number; mine: boolean; status: DuelStatus };   // latest duel with rematch_of = this id (done only)
+  canRematch: boolean;                             // done, opp active and not blocked, not in cooldown, no own/active offer
+}
+interface DuelRow {
+  id: number; v: number; kind: DuelKind; status: DuelStatus;
+  state: 'turn' | 'wait_join' | 'wait_opp' | 'invited' | 'won' | 'lost' | 'draw' | 'expired' | 'cancelled';
+  opp: UserCard | null; gone: boolean; myN: number; oppN: number;
+  myScore: number | null; oppScore: number | null; unseen: boolean; deadlineAt: string; reason: DuelReason | null;
+}
+interface GameLobby {
+  me: { wins: number; losses: number; draws: number; streak: number; bestStreak: number };
+  daily: { status: 'new' | 'playing' | 'cracked' | 'failed'; n: number; left: number };
+  duels: DuelRow[];      // invited first, then turn, then by COALESCE(finished_at, joined_at, created_at) DESC;
+                         // open/active + finished within 7 days; ≤ 30; rows with a blocked opponent hidden
+  searching: number;     // others in the quick pool (per viewer, minus blocked); 0 in 'friends' mode
+  cfg: { attempts: 12; ttlH: 24; reactions: GameReaction[]; game: 'on' | 'friends' };
+}
+interface DailyView {
+  day: string; status: 'new' | 'playing' | 'cracked' | 'failed';
+  moves: GameMove[]; n: number; left: number; ms: number | null;
+  code: string | null;          // only when finished
+  place: number | null; total: number;   // scope 'all' (null/0 in 'friends' mode); the client shows the place when total ≥ 3
+  streak: number; bestStreak: number;
+}
+interface DailyBoard { day: string; scope: 'all' | 'uni' | 'friends';
+  items: { place: number; user: UserCard; n: number; ms: number; me: boolean }[];
+  me: { place: number; n: number; ms: number } | null; total: number }
+interface GameInvite { id: number; from: UserCard; expiresAt: string; mine: boolean }
+```
+
+**Never sent:** the opponent's code while `status ≠ 'done'`, and the opponent's guess digits ever (only `marks` — ●○ against
+MY code). `opp.live` = the opponent has an open stream AND the duel is active. Reason `'blocked'` is stored but sent as
+`'cancelled'` (in `outcome` and `DuelRow.reason`). A pair with a block either way gets `opp.user = null` (with `gone: false`),
+`rematch = null`, `canRematch = false`, `live = false` — the blocked person never sees the blocker's current card through a duel.
+
+**Accepted risk.** A code's 4 distinct digits are revealed to the opponent at the end of a duel; a player can use a solver (the
+game cannot prevent it); there are no prizes, and stats are visible only to their owner, so neither matters. People exchange no
+free text: only existing identity, 4 digits, ●○ counts and 6 preset emoji.
+
+### I.6 SSE: `GET /api/social/games/stream`
+
+Before hijack (normal JSON errors): `guard('SN')`, `limit('gameStream','u:'+id)`, ≥ 300 connections → `503 server` «Игра
+перегружена — попробуй чуть позже». Then: capture `reply.getHeader('set-cookie')` (the session slide), `reply.hijack()`,
+`writeHead(200, {content-type: text/event-stream; charset=utf-8, cache-control: no-store, x-accel-buffering: no,
+x-robots-tag: noindex, connection: keep-alive, set-cookie?})`, `setKeepAlive(true, 20000)`, `setNoDelay`, `setTimeout(0)`,
+write `retry: 3000\n\n` then `hello`. nginx needs no change (no buffering, no gzip for event-stream, ping < 60 s).
+
+Registry `Map<userId, Set<Conn>>`: ≤ 3 per user (a 4th sends the oldest `bye replaced`); cleanup on the response `close`;
+`writableLength > 65536` → destroy. `?c=` (`^[A-Za-z0-9_-]{8,24}$`, random per `GameStream` instance): a new connection with the
+same user and `c` silently destroys the older one (no `bye`, no presence change) — a tab that reconnected after a silent network
+drop does not leave a ghost that looks «в игре» or takes one of the 3 places. Events (`event: <name>\ndata: <json>\n\n`, no `id:`, no replay; resync = refetch):
+
+| Event | Payload | When |
+|---|---|---|
+| `hello` | `{now}` | right after connecting |
+| `ping` | `{now}` | one global `setInterval(gamePingMs)` (20 s) to every connection |
+| `duel` | `{duel: DuelView}` | built per recipient, to both participants (and the addressee of an open friend invite) after any change; a change of a rematch (`rematch_of`) also re-sends its source duel (its `rematch`/`canRematch`), one level |
+| `lobby` | `{waiting}` | to participants after any published duel change, and to self after `seen` |
+| `react` | `{duel, r}` | to the opponent only |
+| `presence` | `{duel, live}` | to the opponent in each active duel on every 0→1 of connections (at once, also when it cancels a pending «left») and 1→0 (after 5 s) |
+| `bye` | `{reason: 'max_age'\|'replaced'\|'session'\|'ban'}` | lifetime `gameStreamMaxMs` (15 min), 4th connection, logout/deletion, ban; then `end()` |
+
+### I.7 Limits (`limits.js`)
+
+`gameGuess [3, 1 s]`, `gameNew [6, 2 min]` (create, quick, rematch, leave, decline), `gameJoin [10, 1 min]` (preview, join,
+accept — by `u:<id>` when signed in: a campus Wi‑Fi or CGNAT address is shared by many; a guest preview by `ipKey(req)`, charged only
+when it misses), `gameReact [5, 3 s]`, `gameStream [10, 30 s]` per user. Daily cap `game: [40, 15]`
+«Лимит игр на сегодня исчерпан — попробуй завтра» — duels created (`a_id`, `created_at`) plus joined (`b_id`, `joined_at`) in 24 h.
+
+### I.8 Hooks, background work, retention
+
+- Block (`PUT /api/social/blocks/:id`, same tx): `cancelDuelsBetween` — every open/active duel of the pair (a/b or a/to_id,
+  either order) → cancelled/blocked, winner none, seen 0 for both, no stats; then `publishDuels`.
+- Ban (`moderation.js`, same tx) and account deletion (`posts.js deleteAccount`, before `DELETE FROM users`): `forfeitAll` — own
+  open duels → cancelled/cancelled; open invites to them → cancelled/declined; active → their `res='left'` → `finishDuel` (the
+  opponent wins with reason `left`, which the UI never names as a ban; stats count). After the tx: `closeStreams(id, 'ban' |
+  'session')` and `publishDuels`. Deletion then cascades `game_players`/`game_daily`; finished duels stay for the opponent as
+  «Удалённый аккаунт» (`opp.user=null, gone=true`) for at most 30 days.
+- Logout: `all === true ? closeStreams(id, 'session') : closeStreamsBySid(sid)`.
+- `tenMinuteJob`: `settleExpired` (≤ 500 open/active rows past the deadline, one tx each, then publish) and `sweepReactCounters`.
+- `dailyJob` (retention tx): finished duels older than 30 days deleted; `game_daily` older than 90 days deleted; unfinished past
+  days → `solved=2`. `game_players` stays while the account exists.
+- `startGame` (all modes): every 60 s `game_meta.beat = now`; at startup, if `now − beat > 10 min`, every open/active
+  `deadline_at` moves by `min(gap, 6 h)` (one tx, `v+1`). A normal deploy extends nothing.
+
+### I.9 Tests
+
+`node --test server/test/game-logic.test.mjs` (rules, settle table, exactly-once `finishDuel` on a temporary DB, hooks; the web bot
+through `--experimental-strip-types`, 2000 seeded games averaging 6.5–8.5, skipped when unavailable) and the «Код» section of
+`social-smoke.mjs` (server with `GAME_PING_MS=1000 GAME_STREAM_MAX_MS=5000`), plus its readonly/off cases and the optional
+`SMOKE_GAME=friends` run against a server with `SOCIAL_GAME=friends`.
+
+---
+
 ## Open questions (owner decisions; the defaults above apply until answered)
 
 - **Q1.** Minimum age and Play target audience.
