@@ -1,6 +1,6 @@
 // Пользователи (только модераторам): сводка, поиск по имени, @имени и почте, список аккаунтов — новые сверху.
 // Нажатие раскрывает подробности: почта, данные Google, возраст, регистрация, входы и устройства; оттуда —
-// профиль (там «•••» — ограничить, сбросить, снять ограничение). Google ID, списка друзей и того, кто
+// значок у имени (галочка, корона…; можно и себе) и профиль (там «•••» — ограничить, сбросить, снять ограничение). Google ID, списка друзей и того, кто
 // на кого жаловался, здесь нет (политика конфиденциальности, «Модерация»).
 // Грузится лениво, как и «Жалобы».
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -11,10 +11,14 @@ import { Button } from '../../ui/Button';
 import { Icon } from '../../ui/icons';
 import { Spinner } from '../../ui/Spinner';
 import { socialApi } from '../api';
+import { useSession } from '../session';
+import { toast } from '../../ui/Toast';
+import { errText } from '../chat/PostCard';
 import { banText } from '../format';
-import type { AdminUser, AdminUsersStats } from '../types';
+import type { AdminUser, AdminUsersStats, UserBadge } from '../types';
 import { Avatar } from '../ui/Avatar';
-import { TeamBadge } from '../ui/Badges';
+import { NameBadge, badgeInfo } from '../ui/Badges';
+import { pickBadge } from '../ui/BadgePicker';
 import { ListSkeleton, LoadError } from './ProfileHeader';
 import { failText, isAbort } from './UsernameField';
 import './profile.css';
@@ -47,7 +51,9 @@ function Stats({ st }: { st: AdminUsersStats }): JSX.Element {
   );
 }
 
-function Row({ u, onOpen }: { u: AdminUser; onOpen: (username: string) => void }): JSX.Element {
+type OnBadge = (u: AdminUser, badge: UserBadge | null) => void;
+
+function Row({ u, onOpen, onBadge }: { u: AdminUser; onOpen: (username: string) => void; onBadge: OnBadge }): JSX.Element {
   const [open, setOpen] = useState(false);
   const meta = [u.username ? '@' + u.username : 'профиль не заполнен', u.uniShort || ''].filter(Boolean).join(' · ');
   const counts = [
@@ -62,7 +68,7 @@ function Row({ u, onOpen }: { u: AdminUser; onOpen: (username: string) => void }
       <span className="adm-row__main">
         <span className="adm-row__top">
           <span className="adm-row__name">{u.name || 'Без имени'}</span>
-          {u.team && <TeamBadge />}
+          <NameBadge u={u} />
           <span className="adm-row__date" title="Дата регистрации">{dateOf(u.createdAt)}</span>
         </span>
         <span className="adm-row__meta">{meta}</span>
@@ -86,7 +92,7 @@ function Row({ u, onOpen }: { u: AdminUser; onOpen: (username: string) => void }
       <button type="button" className="adm-row__btn" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
         {body}<Icon name="chevronDown" size={16} className="adm-row__chev" />
       </button>
-      {open && <Details u={u} onOpen={onOpen} />}
+      {open && <Details u={u} onOpen={onOpen} onBadge={onBadge} />}
     </li>
   );
 }
@@ -99,8 +105,24 @@ const whenOf = (iso: string | null) => (iso ? DATE_TIME.format(Date.parse(iso)) 
 const dayOf = (d: string | null) => (d ? DATE_Y.format(Date.parse(d + 'T12:00:00Z')) : '—');
 
 /** Подробности аккаунта (только модераторам): почта, данные Google, регистрация, входы и устройства. */
-function Details({ u, onOpen }: { u: AdminUser; onOpen: (username: string) => void }): JSX.Element {
+function Details({ u, onOpen, onBadge }: { u: AdminUser; onOpen: (username: string) => void; onBadge: OnBadge }): JSX.Element {
+  const [busy, setBusy] = useState(false);
+  const badge = async () => {
+    const b = await pickBadge({ name: u.name + (u.username ? ' · @' + u.username : ''), current: u.badge || null });
+    if (b === undefined || b === (u.badge || null)) return;
+    setBusy(true);
+    try {
+      await socialApi.adminAction({ action: 'badge', target: { type: 'user', id: u.id }, badge: b });
+      onBadge(u, b);
+      toast(b ? 'Значок выдан' : 'Значок убран');
+    } catch (e) {
+      toast(errText(e), { kind: 'error' });
+    } finally {
+      setBusy(false);
+    }
+  };
   const rows: [string, string][] = [
+    ['Значок', badgeInfo(u.badge)?.label || '—'],
     ['Почта', u.email + (u.emailVerified ? '' : ' (не подтверждена)')],
     ['Имя в Google', u.google.name || '—'],
     ['Возраст', u.age === 'minor' ? '16–17 лет (отметил при входе)' : '16 и старше'],
@@ -127,6 +149,7 @@ function Details({ u, onOpen }: { u: AdminUser; onOpen: (username: string) => vo
       </dl>
       <div className="adm-det__acts">
         {u.username && <Button variant="tinted" size={32} onClick={() => onOpen(u.username!)}>Открыть профиль</Button>}
+        <Button variant="tinted" size={32} busy={busy} onClick={() => void badge()}>{u.badge ? 'Изменить значок' : 'Выдать значок'}</Button>
         <a className="ui-btn ui-btn--plain ui-btn--32" href={'mailto:' + u.email}>Написать на почту</a>
       </div>
     </div>
@@ -143,6 +166,12 @@ export function AdminUsersView(p: {
   const [list, setList] = useState<ListState>({ items: [], next: null, loading: true, error: '' });
   const [stats, setStats] = useState<AdminUsersStats | null>(null);
   const ctrl = useRef<AbortController | null>(null);
+  const s = useSession();
+  // Значок выдан — меняем строку; себе — обновляем и свой профиль.
+  const onBadge: OnBadge = (u, badge) => {
+    setList((l) => ({ ...l, items: l.items.map((x) => (x.id === u.id ? { ...x, badge } : x)) }));
+    if (s.me && s.me.id === u.id) void s.refresh();
+  };
 
   // Поиск — через 300 мс после последней буквы.
   useEffect(() => {
@@ -178,7 +207,7 @@ export function AdminUsersView(p: {
     body = (
       <>
         <ul className="adm-list">
-          {list.items.map((u) => <Row key={u.id} u={u} onOpen={p.onOpenUser} />)}
+          {list.items.map((u) => <Row key={u.id} u={u} onOpen={p.onOpenUser} onBadge={onBadge} />)}
         </ul>
         {list.next && (
           <div className="prof-more">

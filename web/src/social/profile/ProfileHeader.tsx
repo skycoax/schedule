@@ -7,7 +7,7 @@ import { plural } from '../../lib/plural';
 import { Button } from '../../ui/Button';
 import { Icon } from '../../ui/icons';
 import { Avatar } from '../ui/Avatar';
-import { TeamBadge } from '../ui/Badges';
+import { NameBadge } from '../ui/Badges';
 import { PhotoViewer } from '../ui/PhotoViewer';
 import type { Links, MediaRef } from '../types';
 import './profile.css';
@@ -116,7 +116,7 @@ export function ProfileHeader(p: {
         <div className="prof-hd__who">
           <h2 className="prof-hd__name">
             <span className="prof-hd__name-t">{u.name}</span>
-            {u.team && <TeamBadge />}
+            <NameBadge u={u} />
           </h2>
           {(u.username || uni) && (
             <p className="prof-hd__meta">

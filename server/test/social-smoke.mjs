@@ -1019,8 +1019,8 @@ async function runMain() {
   // ── Профиль (#22) и его публикации по курсору (#23) ──
   const pp = expect(await call(B.jar, 'GET', `/api/social/users/${A.me.username}`), 200, 'профиль A для B');
   assert.deepEqual(Object.keys(pp).sort(), ['next', 'posts', 'user']);
-  assert.deepEqual(Object.keys(pp.user).sort(), ['avatar', 'avatarFull', 'banned', 'bio', 'canFriend', 'counts', 'id', 'links',
-    'linksHidden', 'name', 'relation', 'since', 'team', 'uni', 'uniShort', 'username'].sort());
+  assert.deepEqual(Object.keys(pp.user).sort(), ['avatar', 'avatarFull', 'badge', 'banned', 'bio', 'canFriend', 'counts', 'id',
+    'links', 'linksHidden', 'name', 'relation', 'since', 'team', 'uni', 'uniShort', 'username'].sort());
   assert.ok(pp.posts.length > 0 && pp.posts.length <= 10, 'первые 10 публикаций');
   assert.ok(pp.posts.every((p, i, a) => p.rootId === null && !p.deleted && (i === 0 || a[i - 1].id > p.id)), 'только публикации, новые сверху');
   assert.equal(pp.user.counts.posts >= pp.posts.length, true);
@@ -1267,6 +1267,26 @@ async function runMain() {
   assert.ok(byMail.items.some((x) => x.id === aNow.id), 'поиск по почте');
   expect(await call(boss.jar, 'GET', '/api/social/admin/users?cursor=abc'), 400, 'кривой курсор', 'invalid');
   ok('админка «Пользователи»: только модератору; почта, возраст и входы видны, Google ID — нет; поиск и страницы');
+
+  // Значки у имени: выдаёт только модератор (и себе тоже), видно всем в карточке и профиле, null — убрать.
+  const badgeAct = (who, target, badge) => call(who.jar, 'POST', '/api/social/admin/action',
+    { json: { action: 'badge', target, badge }, headers: W });
+  expect(await badgeAct(B, { type: 'user', id: A.me.id }, 'crown'), 403, 'значок не модератором', 'forbidden');
+  bad(await badgeAct(boss, { type: 'user', id: A.me.id }, 'unicorn'), 'неизвестный значок', undefined, 'badge');
+  bad(await badgeAct(boss, { type: 'user', id: A.me.id }, undefined), 'значок без значения', undefined, 'badge');
+  expect(await badgeAct(boss, { type: 'user', id: 999999999 }, 'star'), 404, 'значок несуществующему');
+  expect(await badgeAct(boss, { type: 'user', id: A.me.id }, 'crown'), 200, 'значок «корона»');
+  assert.equal(expect(await call(B.jar, 'GET', `/api/social/users/${A.me.username}`), 200, 'профиль со значком').user.badge, 'crown');
+  assert.equal((await meOf(A.jar)).badge, 'crown', 'свой значок в Me');
+  const aBadge = expect(await call(boss.jar, 'GET', `/api/social/admin/users?q=${encodeURIComponent('@' + aNow.username)}`), 200, 'админка');
+  assert.equal(aBadge.items.find((x) => x.id === aNow.id).badge, 'crown');
+  expect(await badgeAct(boss, { type: 'user', id: boss.me.id }, 'blue'), 200, 'значок себе');
+  assert.equal((await meOf(boss.jar)).badge, 'blue');
+  expect(await badgeAct(boss, { type: 'user', id: A.me.id }, null), 200, 'убрать значок');
+  assert.equal(expect(await call(B.jar, 'GET', `/api/social/users/${A.me.username}`), 200, 'профиль без значка').user.badge, null);
+  const badgeAudit = expect(await call(boss.jar, 'GET', '/api/social/admin/audit'), 200, 'журнал');
+  assert.ok(badgeAudit.items.some((x) => x.action === 'user.badge'), 'значок в журнале');
+  ok('значки: только модератор (и себе), видны в профиле, Me и админке, «убрать», журнал');
 
   const B2 = await login(`sm_${RUN}_b`);
   expect(await call(A.jar, 'POST', '/api/auth/logout', { json: {}, headers: W }), 200, 'выход');

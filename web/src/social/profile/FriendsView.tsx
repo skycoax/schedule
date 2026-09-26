@@ -13,7 +13,7 @@ import { currentReturnTo, useSession } from '../session';
 import type { FriendLists, FriendRow } from '../types';
 import { Avatar } from '../ui/Avatar';
 import { EmptyState } from '../ui/EmptyState';
-import { TeamBadge } from '../ui/Badges';
+import { NameBadge } from '../ui/Badges';
 import { ListSkeleton, LoadError } from './ProfileHeader';
 import { failText, isAbort, toastFail } from './UsernameField';
 import './profile.css';
@@ -32,7 +32,7 @@ export function PersonRow(p: {
       <button type="button" className="frd-row__main" onClick={p.onOpen} aria-label={`${u.name}, @${u.username}`}>
         <Avatar user={u} size={44} />
         <span className="frd-row__txt">
-          <span className="frd-row__name"><span className="frd-row__name-t">{u.name}</span>{u.team && <TeamBadge />}</span>
+          <span className="frd-row__name"><span className="frd-row__name-t">{u.name}</span><NameBadge u={u} /></span>
           <span className="frd-row__sub">@{u.username}{u.uniShort ? ' · ' + u.uniShort : ''}</span>
         </span>
         {!p.children && <Icon name="chevronRight" size={16} className="frd-row__chev" />}

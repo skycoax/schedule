@@ -15,6 +15,7 @@ import { relTime } from '../format';
 import { INSTANT_REACTIONS } from '../types';
 import type { FriendInstant, InstantGroup, InstantReaction } from '../types';
 import { Avatar } from '../ui/Avatar';
+import { NameBadge } from '../ui/Badges';
 import { errText, handledBySession } from '../chat/PostCard';
 import { installSquircle } from './squircle';
 import './instants.css';
@@ -105,6 +106,7 @@ export function InstantViewer(p: {
         <div key={g.author.id} className={'iv__who' + (move.startsWith('author') ? ' is-new' : '')}>
           <Avatar user={g.author} size={32} />
           <span className="iv__name">{g.author.name}</span>
+          <NameBadge u={g.author} />
           <span className="iv__time">{relTime(it.createdAt)}</span>
         </div>
         <button type="button" className="ix__icon" aria-label="Снять свой момент" onClick={p.onCamera}><Icon name="plus" size={22} /></button>

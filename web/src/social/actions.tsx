@@ -308,6 +308,7 @@ export function useSocialActions(): {
           ? { id: 'mod-unban', label: 'Снять ограничение' }
           : { id: 'mod-ban', label: 'Ограничить…' });
         actions.push({ id: 'mod-reset', label: 'Сбросить профиль…' });
+        actions.push({ id: 'mod-badge', label: user.badge ? 'Изменить значок…' : 'Выдать значок…' });
       }
 
       const pick = await chooseAction({ actions });
@@ -336,6 +337,12 @@ export function useSocialActions(): {
           const field = RESET_FIELDS.find((x) => x.id === f);
           if (!field) return null;
           return (await moderate({ action: 'reset', target, fields: [field.id] }, 'Сброшено')) ? 'moderated' : null;
+        }
+        case 'mod-badge': {
+          const { pickBadge } = await import('./ui/BadgePicker');
+          const badge = await pickBadge({ name: user.name + ' · @' + u, current: user.badge || null });
+          if (badge === undefined || badge === (user.badge || null)) return null;
+          return (await moderate({ action: 'badge', target, badge }, badge ? 'Значок выдан' : 'Значок убран')) ? 'moderated' : null;
         }
         default:
           return null;

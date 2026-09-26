@@ -16,7 +16,7 @@ import { useSession } from '../session';
 import { REPORT_REASONS } from '../types';
 import type { AdminActionBody, AdminStats, MediaRef, ReportCase, ReportReason, ResetField } from '../types';
 import { Avatar } from '../ui/Avatar';
-import { TeamBadge } from '../ui/Badges';
+import { NameBadge } from '../ui/Badges';
 import { EmptyState } from '../ui/EmptyState';
 import { PhotoViewer } from '../ui/PhotoViewer';
 import { RichText } from '../ui/RichText';
@@ -119,7 +119,7 @@ function CaseCard(p: {
           <button type="button" className="mod-who__btn" onClick={() => p.onOpenUser(u.username)}>
             <Avatar user={u} size={40} />
             <span className="mod-who__txt">
-              <span className="mod-who__name">{u.name}{u.team && <TeamBadge />}</span>
+              <span className="mod-who__name">{u.name}<NameBadge u={u} /></span>
               <span className="mod-who__sub">@{u.username}{u.openReports > 1 ? ` · открытых жалоб: ${u.openReports}` : ''}</span>
             </span>
           </button>

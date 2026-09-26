@@ -132,7 +132,12 @@ export function avatarOf(ctx, avatarId) {
 
 /** Колонки для карточки (users AS u, LEFT JOIN media AS m ON m.id = u.avatar_id). */
 export const CARD_COLS = `u.id, u.username, u.name, u.avatar_id, u.uni, u.email, u.email_verified, u.status,
-  u.created_at, m.thumb_bytes AS av_thumb`;
+  u.badge, u.created_at, m.thumb_bytes AS av_thumb`;
+
+/** Значки у имени, которые выдаёт модератор (фронт — social/ui/Badges.tsx, те же id). */
+export const BADGES = ['blue', 'gold', 'gray', 'green', 'purple', 'crown', 'heart', 'star', 'fire', 'bolt', 'gem'];
+/** Значок из строки users: только известный (устаревший id не показывается). */
+export const badgeOf = (u) => (u && BADGES.includes(u.badge) ? u.badge : null);
 
 /** Строки users для карточек: Map(id → строка). */
 export function usersByIds(db, ids) {
@@ -155,6 +160,7 @@ export function userCardOf(ctx, u, guest = false) {
     uni: guest ? null : u.uni || null,
     uniShort: guest ? null : uniShortOf(ctx, u.uni),
     team: isAdmin(u),
+    badge: badgeOf(u),
   };
 }
 
@@ -198,6 +204,7 @@ export function meOf(ctx, u) {
     uni: u.uni || null,
     uniShort: uniShortOf(ctx, u.uni),
     team: admin,
+    badge: badgeOf(u),
     isAdmin: admin,
     email: maskEmail(u.email),
     age: u.age_group,

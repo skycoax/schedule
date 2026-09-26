@@ -15,7 +15,7 @@ import { postLink, useSocialActions } from '../actions';
 import { useSession } from '../session';
 import type { Me, Post } from '../types';
 import { Avatar } from '../ui/Avatar';
-import { TeamBadge, UniBadge } from '../ui/Badges';
+import { NameBadge, UniBadge } from '../ui/Badges';
 import { PhotoGrid } from '../ui/PhotoGrid';
 import { PhotoViewer } from '../ui/PhotoViewer';
 import { RichText } from '../ui/RichText';
@@ -211,7 +211,7 @@ export function PostCard(p: {
           {author
             ? <span className="post__name post__name--static" id={nameId}>{author.name}</span>
             : <span className="post__name post__name--gone" id={nameId}>Удалённый аккаунт</span>}
-          {author?.team && <TeamBadge />}
+          <NameBadge u={author} />
           {otherUni && <UniBadge short={post.uniShort as string} />}
           <time className="post__time" dateTime={post.createdAt} title={fullTime(post.createdAt)}>{relTime(post.createdAt)}</time>
           <button type="button" className="post__more" aria-label="Действия с постом" aria-haspopup="menu" onClick={() => void menu()}>

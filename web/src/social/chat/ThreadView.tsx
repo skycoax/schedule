@@ -19,7 +19,7 @@ import { postLink, useSocialActions } from '../actions';
 import { currentReturnTo, useSession } from '../session';
 import type { Post } from '../types';
 import { Avatar } from '../ui/Avatar';
-import { TeamBadge, UniBadge } from '../ui/Badges';
+import { NameBadge, UniBadge } from '../ui/Badges';
 import { EmptyState } from '../ui/EmptyState';
 import { PhotoGrid } from '../ui/PhotoGrid';
 import { PhotoViewer } from '../ui/PhotoViewer';
@@ -104,7 +104,7 @@ function ThreadMain(p: {
           {author
             ? <button type="button" className="thr__name" id={`t-${post.id}-name`} onClick={openUser}>{author.name}</button>
             : <span className="thr__name post__name--gone" id={`t-${post.id}-name`}>Удалённый аккаунт</span>}
-          {author?.team && <TeamBadge />}
+          <NameBadge u={author} />
           {otherUni && <UniBadge short={post.uniShort as string} />}
         </div>
         <time className="thr__time" dateTime={post.createdAt} title={fullTime(post.createdAt)}>{relTime(post.createdAt)}</time>

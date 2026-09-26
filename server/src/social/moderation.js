@@ -8,7 +8,7 @@ import {
 import { limit, keyOf, dailyCap, dayAgo } from './limits.js';
 import { cleanText, tooLong, fold } from './text.js';
 import { mediaRefsByIds, mediaUrl, thumbUrl, unlinkMedia } from './media.js';
-import { usersByIds, userCardOf, uniShortOf, friendCount } from './users.js';
+import { usersByIds, userCardOf, uniShortOf, friendCount, BADGES, badgeOf } from './users.js';
 import { postOut, deletePost, viewerOf } from './posts.js';
 import { canSeeInstant, instantById, deleteInstantRows } from './instant-access.js';
 
@@ -49,7 +49,7 @@ const REPORT_TEXT = {
   banReason: 'Укажи причину',
 };
 
-const ACTIONS = ['dismiss', 'hide', 'unhide', 'delete', 'ban', 'unban', 'reset'];
+const ACTIONS = ['dismiss', 'hide', 'unhide', 'delete', 'ban', 'unban', 'reset', 'badge'];
 const RESET_FIELDS = ['avatar', 'bio', 'links', 'name'];
 const CASE_PAGE = 30;
 const AUDIT_PAGE = 50;
@@ -328,6 +328,9 @@ export function adminRoutes(inst, ctx) {
       if (!reason || tooLong(reason, 200)) throw invalid(REPORT_TEXT.banReason, 'reason');
       if (b.hidePosts !== undefined && typeof b.hidePosts !== 'boolean') throw invalid(TEXT.invalid, 'hidePosts');
     }
+    // Значок у имени: один из BADGES или null — убрать. Выдаётся и себе (модератору), и автору поста/момента.
+    const badge = action === 'badge' ? (b.badge === null ? null : BADGES.includes(b.badge) ? b.badge : undefined) : null;
+    if (badge === undefined) throw invalid(TEXT.invalid, 'badge');
     if (action === 'reset') {
       if (!Array.isArray(b.fields) || !b.fields.length || b.fields.some((f) => !RESET_FIELDS.includes(f))) {
         throw invalid(TEXT.invalid, 'fields');
@@ -338,7 +341,7 @@ export function adminRoutes(inst, ctx) {
     // Цель: пост (для hide/unhide/delete/dismiss) и человек (для ban/unban/reset — сам или автор поста).
     const post = t.type === 'post' ? getPost.get(id) : null;
     const instant = t.type === 'instant' ? instantById(db, id) : null;
-    const userAction = ['ban', 'unban', 'reset'].includes(action);
+    const userAction = ['ban', 'unban', 'reset', 'badge'].includes(action);
     // Пост удалён (надгробие) или его строки уже нет (автор удалил ответ без ответов): hide/unhide/delete — 404;
     // dismiss закрывает жалобы, а ban/unban/reset действуют на автора из жалоб (reports.user_id).
     const lastReport = (t.type === 'post' && (!post || post.deleted_at)) || (t.type === 'instant' && !instant)
@@ -416,6 +419,9 @@ export function adminRoutes(inst, ctx) {
         if (files.length) db.prepare('DELETE FROM media WHERE id = ?').run(user.avatar_id);
         resolveReports(db, 'u:' + user.id, 'actioned', me.id);
         audit(db, me.id, 'user.reset', 'u:' + user.id, uni, { fields });
+      } else if (action === 'badge') {
+        db.prepare('UPDATE users SET badge = ? WHERE id = ?').run(badge, user.id);
+        audit(db, me.id, 'user.badge', 'u:' + user.id, uni, { badge });
       }
     });
     unlinkMedia(files);
@@ -449,7 +455,7 @@ export function adminRoutes(inst, ctx) {
   const USER_COLS = `u.id, u.username, u.name, u.avatar_id, u.uni, u.email, u.email_verified, u.status,
     u.banned_until, u.ban_reason, u.created_at, u.rules_version, u.rules_at, u.age_group, u.bio, u.tg, u.ig,
     u.google_name, u.google_locale, u.google_hd, u.google_picture, u.signup_host, u.signup_device,
-    u.last_login_at, u.login_count, m.thumb_bytes AS av_thumb,
+    u.last_login_at, u.login_count, u.badge, m.thumb_bytes AS av_thumb,
     (SELECT MAX(s.seen_at) FROM sessions s WHERE s.user_id = u.id) AS last_seen,
     (SELECT COUNT(*) FROM sessions s WHERE s.user_id = u.id AND s.expires_at > $now) AS n_sessions,
     (SELECT GROUP_CONCAT(DISTINCT s.device) FROM sessions s WHERE s.user_id = u.id AND s.device != '') AS devices,
@@ -484,6 +490,7 @@ export function adminRoutes(inst, ctx) {
       uniShort: uniShortOf(ctx, u.uni),
       createdAt: u.created_at,
       team: isAdmin(u),
+      badge: badgeOf(u),
       rulesAccepted: Number(u.rules_version) === social.rulesVersion,
       banned: banOf(u),
       counts: { posts: u.n_posts, replies: u.n_replies, likes: u.n_likes, friends: friendCount(db, u.id) },

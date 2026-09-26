@@ -254,7 +254,12 @@ ALTER TABLE instants ADD COLUMN audience TEXT NOT NULL DEFAULT 'friends' CHECK (
 CREATE INDEX IF NOT EXISTS idx_instants_uni ON instants (uni, expires_at);
 `;
 
-const MIGRATIONS = [SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5];
+// Значок у имени (галочка, корона, сердечко…), который выдаёт модератор; NULL — без значка. Список — users.js BADGES.
+export const SCHEMA_V6 = `
+ALTER TABLE users ADD COLUMN badge TEXT;
+`;
+
+const MIGRATIONS = [SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6];
 
 /** Открыть (и при необходимости создать) social.db и довести схему до последней версии. */
 export function openSocialDb(dir = config.dataDir) {

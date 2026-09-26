@@ -8,7 +8,7 @@ import { fmtCount, fullTime, relTime } from '../format';
 import { useSocialActions } from '../actions';
 import type { Post } from '../types';
 import { Avatar } from '../ui/Avatar';
-import { TeamBadge } from '../ui/Badges';
+import { NameBadge } from '../ui/Badges';
 import { PhotoGrid } from '../ui/PhotoGrid';
 import { PhotoViewer } from '../ui/PhotoViewer';
 import { RichText } from '../ui/RichText';
@@ -71,7 +71,7 @@ export function ReplyRow(p: {
           {author
             ? <button type="button" className="post__name" id={nameId} onClick={openUser}>{author.name}</button>
             : <span className="post__name post__name--gone" id={nameId}>Удалённый аккаунт</span>}
-          {author?.team && <TeamBadge />}
+          <NameBadge u={author} />
           <time className="post__time" dateTime={r.createdAt} title={fullTime(r.createdAt)}>{relTime(r.createdAt)}</time>
           <button type="button" className="post__more" aria-label="Действия с ответом" aria-haspopup="menu" onClick={() => void menu()}>
             <Icon name="ellipsis" size={20} />

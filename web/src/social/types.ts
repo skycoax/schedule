@@ -68,7 +68,11 @@ export interface UserCard {
   uni: string | null;           // «мой вуз», id. Гостю (в Post.author) всегда null; в ленте не показывается
   uniShort: string | null;      // 'ТГЭУ · Ташкент'. Гостю всегда null
   team: boolean;                // модератор Para → значок «Команда Para»
+  badge?: UserBadge | null;     // значок у имени, который выдал модератор (галочка, корона…)
 }
+
+/** Значки у имени (server/src/social/users.js BADGES, фронт — ui/Badges.tsx). */
+export type UserBadge = 'blue' | 'gold' | 'gray' | 'green' | 'purple' | 'crown' | 'heart' | 'star' | 'fire' | 'bolt' | 'gem';
 
 export interface UserProfile extends UserCard {
   avatarFull: string | null;    // 512
@@ -93,6 +97,7 @@ export interface Me {
   uni: string | null;
   uniShort: string | null;
   team: boolean;
+  badge?: UserBadge | null;
   isAdmin: boolean;
   email: string;                // только своё и замаскированное: 'a•••@gmail.com'
   age: AgeGroup;
@@ -150,7 +155,7 @@ export interface MePatch {
 export interface ReportBody { target: 'post' | 'user' | 'instant'; id: number; reason: ReportReason; note?: string }
 
 export type ReportTarget = { type: 'post'; id: number } | { type: 'user'; id: number } | { type: 'instant'; id: number };
-export type AdminAction = 'dismiss' | 'hide' | 'unhide' | 'delete' | 'ban' | 'unban' | 'reset';
+export type AdminAction = 'dismiss' | 'hide' | 'unhide' | 'delete' | 'ban' | 'unban' | 'reset' | 'badge';
 export type ResetField = 'avatar' | 'bio' | 'links' | 'name';
 export interface AdminActionBody {
   action: AdminAction;
@@ -159,6 +164,7 @@ export interface AdminActionBody {
   reason?: string;
   hidePosts?: boolean;
   fields?: ResetField[];
+  badge?: UserBadge | null;
 }
 /** Снимок цели на момент первой жалобы. */
 export interface ReportSnapshot {
@@ -224,7 +230,7 @@ export interface AdminStats {
 /** Пользователь в админке (GET /api/social/admin/users). Без почты, Google ID, возраста и списка друзей. */
 export interface AdminUser {
   id: number; username: string | null; name: string; avatar: string | null; uni: string | null; uniShort: string | null;
-  createdAt: string; team: boolean; rulesAccepted: boolean; banned: Ban | null;
+  createdAt: string; team: boolean; badge?: UserBadge | null; rulesAccepted: boolean; banned: Ban | null;
   counts: { posts: number; replies: number; likes: number; friends: number };
   reports: { open: number; total: number };
   // Только для админки (политика, «Модерация»): почта, возраст, данные Google, регистрация и входы.
