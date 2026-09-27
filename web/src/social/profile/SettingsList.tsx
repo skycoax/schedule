@@ -15,6 +15,7 @@ import type { IconName } from '../../ui/icons';
 import { useLayer } from '../../ui/layers';
 import { ListRow, ListSection } from '../../ui/List';
 import { Switch } from '../../ui/Switch';
+import { setNotify, useNotify } from '../../lib/notify';
 import { socialApi } from '../api';
 import { hiddenUsers } from '../local';
 import { LINKS } from '../rules';
@@ -178,6 +179,8 @@ export function SettingsList(p: {
         </ListSection>
       )}
 
+      <NotifySection signed={!!me && !!social} />
+
       {hiddenCount > 0 && (
         <ListSection header="Скрытые авторы">
           <ListRow label="Скрытые авторы" value={String(hiddenCount)} onClick={p.nav.hidden} />
@@ -220,5 +223,33 @@ export function SettingsList(p: {
       <PolicySheet open={docOpen} onClose={() => setDocOpen(false)} />
       {installOpen && <Install open url={installUrl} onClose={() => setInstallOpen(false)} />}
     </div>
+  );
+}
+
+/** «Уведомления»: что показывать на этом телефоне. Для чужих событий нужен вход — без него только пары. */
+function NotifySection({ signed }: { signed: boolean }): JSX.Element {
+  const sched = useNotify('sched');
+  const game = useNotify('game');
+  const friends = useNotify('friends');
+  const replies = useNotify('replies');
+  return (
+    <ListSection header="Уведомления" footer="Пока приложение открыто. Выключенное просто не показывается.">
+      <CtlRow label="Изменения пар" icon={{ name: 'calendar', color: 'var(--c1)' }} sw>
+        <Switch label="Уведомлять об изменениях пар" checked={sched} onChange={(v) => setNotify('sched', v)} />
+      </CtlRow>
+      {signed && (
+        <>
+          <CtlRow label="Приглашения в игру" icon={{ name: 'plane', color: 'var(--c3)' }} sw>
+            <Switch label="Показывать приглашения в покер" checked={game} onChange={(v) => setNotify('game', v)} />
+          </CtlRow>
+          <CtlRow label="Заявки в друзья" icon={{ name: 'people', color: 'var(--c2)' }} sw>
+            <Switch label="Уведомлять о заявках в друзья" checked={friends} onChange={(v) => setNotify('friends', v)} />
+          </CtlRow>
+          <CtlRow label="Ответы на мои посты" icon={{ name: 'comment', color: 'var(--c5)' }} sw>
+            <Switch label="Уведомлять об ответах" checked={replies} onChange={(v) => setNotify('replies', v)} />
+          </CtlRow>
+        </>
+      )}
+    </ListSection>
   );
 }

@@ -7,6 +7,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { brand } from '../brand';
 import { SseStream } from '../lib/sse';
 import { toast } from '../ui/Toast';
+import { notifyOn } from '../lib/notify';
 import { emit, useSocialEvents } from './events';
 import { useSession } from './session';
 import type { GameInvite, Post, Relation, UserCard } from './types';
@@ -19,7 +20,7 @@ const inviteSubs = new Set<() => void>();
 const keyOf = (v: GameInvite) => v.from.id + ':' + String(v.at);
 
 export function setInvite(v: GameInvite | null): void {
-  if (v && dismissed.has(keyOf(v))) return;
+  if (v && (dismissed.has(keyOf(v)) || !notifyOn('game'))) return;
   invite = v;
   inviteSubs.forEach((f) => f());
 }
@@ -47,8 +48,10 @@ export function useLive(): void {
     set.add(id);
     if (set.size > SEEN_MAX) set.delete(set.values().next().value as number);
   };
+  // Свои посты этого запуска — чтобы сказать «Новый ответ», когда на них отвечают.
+  const mine = useRef(new Set<number>());
   useSocialEvents((e) => {
-    if (e.type === 'post-created') remember(e.post.id);
+    if (e.type === 'post-created') { remember(e.post.id); if (e.post.rootId === null) mine.current.add(e.post.id); }
     else if (e.type === 'reply-created') remember(e.reply.id);
   });
 
@@ -72,6 +75,10 @@ export function useLive(): void {
         if (!r || typeof r.id !== 'number' || seen.current.has(r.id)) return;
         remember(r.id);
         emit({ type: 'reply-created', reply: r });
+        const me = sRef.current.me;
+        const toMe = !!me && r.author?.id !== me.id
+          && ((r.rootId !== null && mine.current.has(r.rootId)) || (!!me.username && r.replyTo?.username === me.username));
+        if (toMe && notifyOn('replies')) toast('Новый ответ — ' + (r.author?.name || 'кто-то') + ': ' + r.text.slice(0, 60));
       },
       likes: (d) => {
         if (typeof d.id === 'number' && typeof d.likes === 'number') emit({ type: 'likes', id: d.id, likes: d.likes });
@@ -84,8 +91,10 @@ export function useLive(): void {
         const rel = d.relation as Relation;
         if (!u || typeof u.id !== 'number' || typeof rel !== 'string') return;
         emit({ type: 'relation', userId: u.id, relation: rel });
-        if (rel === 'incoming') toast(u.name + ' хочет добавить тебя в друзья');
-        else if (rel === 'friends') toast(u.name + ' теперь в друзьях');
+        if (notifyOn('friends')) {
+          if (rel === 'incoming') toast(u.name + ' хочет добавить тебя в друзья');
+          else if (rel === 'friends') toast(u.name + ' теперь в друзьях');
+        }
         refreshMe();
       },
       me: () => refreshMe(),

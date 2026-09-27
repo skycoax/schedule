@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import { useNotify } from './lib/notify';
 import { getSchedule, getReviews, getSummary, type ReviewsData, type Summary } from './api';
 import type { Schedule, Group, ChangeItem } from './types';
 import { store } from './lib/store';
@@ -215,13 +216,15 @@ function StudentApp({ active, command, onContext, theme, setRole }: ScheduleSlot
       + 'group=' + encodeURIComponent(group.key) + '&ok=1' + (cid ? '&u=' + encodeURIComponent(cid) : '')
     : '';
 
+  // Уведомления об изменениях пар выключены — точку правок не показываем.
+  const schedNotify = useNotify('sched');
   // Оболочке — что показывать в «Профиле» и точке на вкладке. Только когда группа выбрана
   // человеком (не запасная первая из списка) и есть согласие.
   useEffect(() => {
     if (!agreed || !sel || !group) return;
-    onContext({ kind: 'group', title: gname, subtitle, unseenChanges: unseen, installUrl: myUrl });
+    onContext({ kind: 'group', title: gname, subtitle, unseenChanges: schedNotify && unseen, installUrl: myUrl });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agreed, sel, gname, subtitle, unseen, myUrl]);
+  }, [agreed, sel, gname, subtitle, unseen, myUrl, schedNotify]);
 
   // Онбординг (согласие → роль → группа) — без нижних вкладок.
   useHideTabBar(active && (!agreed || consent || rolePick || (picker.open && picker.first)), 'onboarding');
