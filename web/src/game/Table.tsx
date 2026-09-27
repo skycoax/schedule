@@ -9,7 +9,8 @@ import { NameBadge } from '../social/ui/Badges';
 import { reducedMotion } from '../social/instants/motion';
 import type { GameReaction, PokerSeat, PokerView } from '../social/types';
 import { PlayingCard } from './Card';
-import { BotFace, Seat, TimerRing, emojiOf, lastText } from './Seat';
+import { BOT_NAME, BotOrb } from './BotOrb';
+import { Seat, TimerRing, emojiOf, lastText } from './Seat';
 import type { SeatPos } from './Seat';
 import { flyChips, useTween } from './fx';
 import { boardOnly, chips as fmt, evaluate, heat, parseCard } from './logic';
@@ -33,7 +34,6 @@ const POS: SeatPos[] = ['bottom', 'left', 'top', 'right'];
 
 export function Table(p: {
   view: PokerView; now: () => number; floats: Record<number, Float>;
-  canSit: boolean; sitLabel: string; onSit: () => void;
   onSeatMenu: (s: PokerSeat) => void; onMyAvatar: () => void;
   children?: ReactNode;      // строка действий / статуса под своими картами
 }): JSX.Element {
@@ -97,7 +97,7 @@ export function Table(p: {
     if (!result || !hand) return null;
     const names = result.winners.map((w) => {
       const s = v.seats[w.seat];
-      const who = s ? (s.bot ? 'Бот Para' : s.masked || !s.user ? 'Игрок' : mySeat === w.seat ? 'Ты' : s.user.name) : 'Игрок';
+      const who = s ? (s.bot ? BOT_NAME : s.masked || !s.user ? 'Игрок' : mySeat === w.seat ? 'Ты' : s.user.name) : 'Игрок';
       return { who, amount: w.amount, name: w.name };
     });
     if (!names.length) return null;
@@ -131,8 +131,8 @@ export function Table(p: {
           return (
             <Seat key={i} s={s} pos={pos} isMe={false} hand={hand} now={p.now} deck={deck}
               float={p.floats[i] || null}
-              onTap={s ? (tappable ? () => p.onSeatMenu(s) : undefined) : (p.canSit ? p.onSit : undefined)}
-              sitLabel={p.canSit ? p.sitLabel : undefined} tapLabel={s?.user ? s.user.name + ' — меню' : undefined} />
+              onTap={s && tappable ? () => p.onSeatMenu(s) : undefined}
+              tapLabel={s?.user ? s.user.name + ' — меню' : undefined} />
           );
         })}
       </div>
@@ -162,8 +162,8 @@ export function Table(p: {
         )}
         {!hand && !v.countdown && (
           <p className="pk-hint">
-            {humans === 0 ? 'За столом пусто. Сядь — если никого нет, сыграет бот.'
-              : mySeat !== null ? 'Ждём игроков…' : 'За столом ' + humans + '. Садись.'}
+            {humans === 0 ? 'Стол пуст. Присоединяйся — с тобой сыграет Para.'
+              : mySeat !== null ? 'Ждём игроков…' : 'За столом ' + humans + '. Присоединяйся.'}
           </p>
         )}
       </div>
@@ -196,12 +196,12 @@ function MeRow(p: { s: PokerSeat; hand: PokerView['hand']; now: () => number; fl
   const chips = useTween(s.chips);
   const hand = p.hand;
   const isTurn = !!hand?.turn && hand.turn.seat === s.seat && !hand.result;
-  const status = s.reserved ? 'в игре со следующей раздачи' : s.leaving ? 'встанешь после раздачи' : s.allIn && s.inHand && !s.folded ? 'олл-ин' : '';
+  const status = s.reserved ? 'в игре со следующей раздачи' : s.leaving ? 'выйдешь после раздачи' : s.allIn && s.inHand && !s.folded ? 'олл-ин' : '';
   return (
     <div className={'pk-me' + (isTurn ? ' is-turn' : '')} data-seat={s.seat} style={{ '--seat': s.seat } as CSSProperties}>
       <button type="button" className="pk-me__av" aria-label="Реакция" onClick={p.onTap}>
         {isTurn && hand?.turn && <TimerRing deadline={hand.turn.deadline} now={p.now} size={48} />}
-        {s.bot ? <BotFace size={40} /> : <Avatar user={s.user} size={40} />}
+        {s.bot ? <BotOrb size={40} /> : <Avatar user={s.user} size={40} />}
         {s.dealer && <span className="pk-seat__d" aria-label="Дилер">D</span>}
         {p.float && <span key={p.float.k} className="pk-seat__float" aria-hidden="true">{emojiOf(p.float.r)}</span>}
       </button>

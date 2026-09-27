@@ -1,12 +1,14 @@
 // Место за столом: карты (рубашкой или вскрытые), фото с кольцом таймера, имя со значком, стек, ставка перед
 // местом, пузырь последнего действия, кнопка дилера, всплывающая реакция, «+240 · Две пары» победителю.
-// Пустое место — кнопка «Сесть». Своё место внизу рисуется без карт: они крупно, отдельно (Table).
+// Пустое место — тихий кружок (присоединяются одной кнопкой внизу, место выбирает сервер). Бот — «Para» с живым
+// орбом и меткой «бот». Своё место внизу рисуется без карт: они крупно, отдельно (Table).
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, JSX } from 'react';
 import { Avatar } from '../social/ui/Avatar';
 import { NameBadge } from '../social/ui/Badges';
 import { reducedMotion } from '../social/instants/motion';
 import type { GameReaction, PokerHand, PokerLast, PokerSeat } from '../social/types';
+import { BOT_NAME, BotOrb } from './BotOrb';
 import { PlayingCard } from './Card';
 import { chips as fmt } from './logic';
 import { useTween } from './fx';
@@ -30,21 +32,6 @@ export function lastText(l: { a: PokerLast; amount: number } | null): string {
   if (!l) return '';
   const t = LAST[l.a] || '';
   return l.amount > 0 && l.a !== 'fold' && l.a !== 'check' ? t + ' ' + fmt(l.amount) : t;
-}
-
-/** Робот вместо фото у бота. */
-export function BotFace({ size = 44 }: { size?: number }): JSX.Element {
-  return (
-    <span className="pk-bot" style={{ width: size, height: size }} aria-hidden="true">
-      <svg viewBox="0 0 44 44" width={size} height={size}>
-        <rect x="11" y="15" width="22" height="17" rx="6" fill="none" stroke="currentColor" strokeWidth="1.8" />
-        <circle cx="17.5" cy="23.5" r="2.2" fill="currentColor" />
-        <circle cx="26.5" cy="23.5" r="2.2" fill="currentColor" />
-        <path d="M22 15v-4M19.5 9h5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-        <path d="M18 28.5h8" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-      </svg>
-    </span>
-  );
 }
 
 /** Кольцо таймера вокруг фото: убывает от полного к пустому к deadline (время сервера через now()). */
@@ -84,7 +71,6 @@ export function Seat(p: {
   hand: PokerHand | null; now: () => number; deck: Element | null;
   float?: Float | null;
   onTap?: () => void; tapLabel?: string;
-  sitLabel?: string;              // пустое место: «Сесть» (или ничего — не кнопка)
 }): JSX.Element {
   const s = p.s;
   const hand = p.hand;
@@ -110,21 +96,14 @@ export function Seat(p: {
   }, [shownCards, s?.folded]);
 
   const cls = ['pk-seat', 'pk-seat--' + p.pos, s ? '' : 'pk-seat--empty', isTurn ? 'is-turn' : '', s?.folded ? 'is-folded' : '',
+    s?.bot ? 'is-bot' : '',
     s?.away ? 'is-away' : '', s?.reserved ? 'is-reserved' : '', winner ? 'is-win' : '', p.isMe ? 'is-me' : '',
     s && hand?.result && s.inHand && !winner && !s.folded ? 'is-lost' : ''].filter(Boolean).join(' ');
 
-  if (!s) {
-    return p.sitLabel && p.onTap
-      ? (
-        <button type="button" className={cls} onClick={p.onTap} aria-label={p.sitLabel}>
-          <span className="pk-seat__free"><span className="pk-seat__plus">+</span><span>{p.sitLabel}</span></span>
-        </button>
-      )
-      : <div className={cls} aria-hidden="true"><span className="pk-seat__free is-quiet"><span>Свободно</span></span></div>;
-  }
+  if (!s) return <div className={cls} aria-hidden="true"><span className="pk-seat__free" /></div>;
 
-  const name = s.bot ? 'Бот Para' : s.masked || !s.user ? 'Игрок' : s.user.name;
-  const status = s.reserved ? 'ждёт раздачи' : s.leaving ? 'встаёт' : s.away ? 'отошёл' : s.allIn && s.inHand && !s.folded ? 'олл-ин' : '';
+  const name = s.bot ? BOT_NAME : s.masked || !s.user ? 'Игрок' : s.user.name;
+  const status = s.reserved ? 'ждёт раздачи' : s.leaving ? 'выходит' : s.away ? 'отошёл' : s.allIn && s.inHand && !s.folded ? 'олл-ин' : '';
   const cards = shownCards || ghost;
   const faceUp = !!revealed || (!!shownCards && shownCards[0] !== '?');
   const winCards = hand?.result ? hand.result.winners.flatMap((w) => w.cards) : [];
@@ -142,11 +121,14 @@ export function Seat(p: {
       )}
       <div className="pk-seat__av">
         {isTurn && hand?.turn && <TimerRing deadline={hand.turn.deadline} now={p.now} size={52} />}
-        {s.bot ? <BotFace size={44} /> : <Avatar user={s.masked ? null : s.user} size={44} />}
+        {s.bot ? <BotOrb size={44} /> : <Avatar user={s.masked ? null : s.user} size={44} />}
         {s.dealer && <span className="pk-seat__d" aria-label="Дилер">D</span>}
         {p.float && <span key={p.float.k} className="pk-seat__float" aria-hidden="true">{emojiOf(p.float.r)}</span>}
       </div>
-      <div className="pk-seat__name"><span>{name}</span>{!s.bot && !s.masked && s.user && <NameBadge u={s.user} />}</div>
+      <div className="pk-seat__name" aria-label={s.bot ? name + ', бот' : undefined}>
+        <span>{name}</span>{s.bot && <span className="pk-seat__tag" aria-hidden="true">бот</span>}
+        {!s.bot && !s.masked && s.user && <NameBadge u={s.user} />}
+      </div>
       <div className="pk-seat__chips">{fmt(chips)}</div>
       {status && <div className="pk-seat__st">{status}</div>}
       {s.bet > 0 && (

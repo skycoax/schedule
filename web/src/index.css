@@ -297,6 +297,43 @@ svg{display:block}
   -webkit-tap-highlight-color:transparent;transition:transform 120ms}
 .hero.is-egg{touch-action:manipulation;-webkit-tap-highlight-color:transparent;transition:transform 120ms}
 .clk-tap.is-press, .hero.is-egg.is-press{transform:scale(.98)}
+/* Подсказка про пасхалку (game/entry.ts useEggHint): часы мягко светятся цветом приложения, по цифрам пробегает блик;
+   карточка без часов — пульсирует рамкой. Рядом — пузырь «Попробуй нажать на часы 5 раз» и пять точек. */
+.clk-wrap, .hero-wrap{position:relative}
+.clk-tap.is-hint{border-radius:16px;animation:egg-ring 2.4s ease-out infinite}
+.clk-tap.is-hint .clk__d{animation:egg-glow 2.4s ease-in-out infinite}
+.clk-tap.is-hint .fl::before{content:'';position:absolute;inset:0;z-index:5;border-radius:13px;pointer-events:none;
+  background:linear-gradient(105deg,transparent 38%,rgba(255,255,255,.55) 50%,transparent 62%) no-repeat;
+  background-size:260% 100%;animation:egg-shine 2.4s ease-in-out infinite}
+.clk-tap.is-hint .fl:nth-child(2)::before{animation-delay:.08s}
+.clk-tap.is-hint .fl:nth-child(4)::before{animation-delay:.16s}
+.clk-tap.is-hint .fl:nth-child(5)::before{animation-delay:.24s}
+.hero.is-egg.is-hint{animation:egg-ring 2.4s ease-out infinite}
+@keyframes egg-glow{0%,100%{filter:drop-shadow(0 0 0 transparent)}50%{filter:drop-shadow(0 0 14px color-mix(in srgb,var(--c1) 55%,transparent))}}
+@keyframes egg-shine{0%{background-position:130% 0}55%,100%{background-position:-30% 0}}
+@keyframes egg-ring{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--c1) 45%,transparent)}70%,100%{box-shadow:0 0 0 12px transparent}}
+.egg-hint{position:absolute;left:50%;top:calc(100% + 10px);z-index:6;display:flex;align-items:center;gap:10px;
+  width:max-content;max-width:calc(100vw - 48px);padding:8px 6px 8px 14px;border-radius:16px;transform:translateX(-50%);
+  background:var(--bar-glass-solid);box-shadow:inset 0 0 0 1px var(--glass-edge),var(--glass-shadow);
+  animation:egg-in 320ms cubic-bezier(.2,.9,.22,1) both}
+/* Хвостик вверх — к часам. */
+.egg-hint::before{content:'';position:absolute;left:50%;top:-6px;width:12px;height:12px;margin-left:-6px;
+  background:var(--bar-glass-solid);transform:rotate(45deg);border-radius:3px 0 0 0;box-shadow:-1px -1px 0 0 var(--glass-edge)}
+.egg-hint--idle{top:auto;bottom:-6px;transform:translate(-50%,50%)}
+.egg-hint__t{position:relative;font:500 14px/1.3 var(--font);color:var(--ink-100);white-space:nowrap}
+.egg-hint__dots{position:relative;display:flex;gap:4px}
+.egg-hint__dots i{width:6px;height:6px;border-radius:50%;background:var(--ink-30);transition:background-color 150ms,transform 150ms}
+.egg-hint__dots i.on{background:var(--c1);transform:scale(1.25)}
+.egg-hint__x{position:relative;flex:none;display:grid;place-items:center;width:30px;height:30px;border-radius:50%;
+  color:var(--ink-60);-webkit-tap-highlight-color:transparent}
+.egg-hint__x:active{background:var(--fill)}
+@keyframes egg-in{from{opacity:0;transform:translate(-50%,6px) scale(.96)}}
+.egg-hint--idle{animation-name:egg-in-idle}
+@keyframes egg-in-idle{from{opacity:0;transform:translate(-50%,calc(50% + 6px)) scale(.96)}}
+@media (prefers-reduced-motion: reduce){
+  .clk-tap.is-hint, .hero.is-egg.is-hint, .clk-tap.is-hint .clk__d, .clk-tap.is-hint .fl::before, .egg-hint{animation:none}
+  .clk-tap.is-hint, .hero.is-egg.is-hint{box-shadow:0 0 0 2px color-mix(in srgb,var(--c1) 55%,transparent)}
+}
 /* Точка «Тебя ждёт игра»: зона нажатия 36 × 36 в правом верхнем углу, сама точка — 6 px. */
 .hero__dot{position:absolute;top:0;right:0;z-index:1;display:grid;place-items:center;width:36px;height:36px;
   padding:0;border:0;background:transparent;-webkit-tap-highlight-color:transparent}

@@ -23,6 +23,7 @@ import type { GameReq } from './entry';
 import { gameApi, streamUrl } from './api';
 import { useGameStream } from './stream';
 import { Actions } from './Actions';
+import { BOT_NAME } from './BotOrb';
 import { HowToSheet } from './HowToSheet';
 import { ReactRow, Table } from './Table';
 import type { Float } from './Table';
@@ -132,7 +133,7 @@ function GameRoot({ onClose }: { onClose: () => void }): JSX.Element {
   }, [myTurn]);
   const kickedShown = useRef(false);
   useEffect(() => {
-    if (me?.kicked === 'idle' && !kickedShown.current) { kickedShown.current = true; toast('Тебя убрали из-за стола — не было ходов'); }
+    if (me?.kicked === 'idle' && !kickedShown.current) { kickedShown.current = true; toast('Тебя вывели из игры — не было ходов'); }
     if (me?.state === 'seated') kickedShown.current = false;
   }, [me?.kicked, me?.state]);
 
@@ -160,7 +161,7 @@ function GameRoot({ onClose }: { onClose: () => void }): JSX.Element {
   const stand = async () => {
     const inHand = !!me && me.state === 'seated' && !!view?.hand && !view.hand.result && !!view.seats[me.seat ?? -1]?.inHand && !view.seats[me.seat ?? -1]?.folded;
     if (inHand) {
-      const ok = await confirmDialog({ title: 'Встать из-за стола?', message: 'Раздача идёт — карты будут сброшены.', confirm: 'Встать', destructive: true });
+      const ok = await confirmDialog({ title: 'Выйти из игры?', message: 'Раздача идёт — карты будут сброшены.', confirm: 'Выйти', destructive: true });
       if (!ok) return;
     }
     await run(() => gameApi.stand());
@@ -193,7 +194,7 @@ function GameRoot({ onClose }: { onClose: () => void }): JSX.Element {
   const menu = async () => {
     const seated = !!me && me.state !== 'none';
     const list = [{ id: 'how', label: 'Как играть' }];
-    if (seated) list.push({ id: 'stand', label: me!.state === 'leaving' ? 'Уже встаёшь…' : 'Встать из-за стола', role: 'destructive' } as { id: string; label: string });
+    if (seated) list.push({ id: 'stand', label: me!.state === 'leaving' ? 'Выйдешь после раздачи' : 'Выйти из игры', role: 'destructive' } as { id: string; label: string });
     const pick = await chooseAction({ actions: list });
     if (pick === 'how') setHowOpen(true);
     else if (pick === 'stand') void stand();
@@ -209,12 +210,12 @@ function GameRoot({ onClose }: { onClose: () => void }): JSX.Element {
       bottom = <Actions a={me.actions} hand={view.hand} seats={view.seats} big={view.blinds.big} busy={busy} onAct={act} />;
     } else if (me && me.state !== 'none') {
       const turnSeat = view.hand?.turn ? view.seats[view.hand.turn.seat] : null;
-      const who = turnSeat ? (turnSeat.bot ? 'Бот Para' : turnSeat.masked || !turnSeat.user ? 'Игрок' : turnSeat.user.name) : '';
+      const who = turnSeat ? (turnSeat.bot ? BOT_NAME : turnSeat.masked || !turnSeat.user ? 'Игрок' : turnSeat.user.name) : '';
       const botSeated = view.seats.some((x) => x && x.bot);
-      const text = me.state === 'reserved' ? 'Ты сядешь со следующей раздачи'
-        : me.state === 'leaving' ? 'Встанешь после раздачи'
+      const text = me.state === 'reserved' ? 'Ты в игре со следующей раздачи'
+        : me.state === 'leaving' ? 'Выйдешь после раздачи'
           : view.hand ? (!view.hand.result && who ? 'Ход: ' + who : '')
-            : view.countdown ? '' : humans < 2 && !botSeated ? 'Сейчас сядет бот' : humans >= 2 ? 'Ждём игроков…' : '';
+            : view.countdown ? '' : humans < 2 && !botSeated ? 'Сейчас подключится Para' : humans >= 2 ? 'Ждём игроков…' : '';
       bottom = (
         <div className="pk-status">
           {reactOpen && <ReactRow onPick={(r) => void react(r)} />}
@@ -225,14 +226,14 @@ function GameRoot({ onClose }: { onClose: () => void }): JSX.Element {
       const note = access === 'offline' ? 'Без интернета можно только смотреть'
         : access === 'readonly' ? 'Сейчас можно только смотреть'
           : access === 'banned' ? 'Пока действует ограничение, можно только смотреть'
-            : full ? 'Все места заняты — подожди, кто-нибудь встанет'
-              : view.hand && !view.hand.result ? 'Идёт раздача — сядешь со следующей' : '';
+            : full ? 'Все места заняты — подожди, кто-нибудь выйдет'
+              : view.hand && !view.hand.result ? 'Идёт раздача — присоединишься со следующей' : '';
       bottom = (
         <div className="pk-status">
           {note && <span>{note}</span>}
           {canSit && !full && (
             <button type="button" className="pk-btn pk-btn--main pk-btn--sit" disabled={busy} onClick={() => void sit()}>
-              {access === 'guest' ? 'Войти, чтобы сесть' : 'Сесть за стол'}
+              {access === 'guest' ? 'Войти и присоединиться' : 'Присоединиться'}
             </button>
           )}
         </div>
@@ -256,7 +257,7 @@ function GameRoot({ onClose }: { onClose: () => void }): JSX.Element {
               <button type="button" className="ix__icon" aria-label="Меню" aria-haspopup="menu" onClick={() => void menu()}><Icon name="ellipsis" size={24} /></button>
             </div>
             {view ? (
-              <Table view={view} now={now} floats={floats} canSit={canSit && !full} sitLabel="Сесть" onSit={() => void sit()}
+              <Table view={view} now={now} floats={floats}
                 onSeatMenu={(x) => void seatMenu(x)} onMyAvatar={() => setReactOpen((o) => !o)}>
                 {bottom}
               </Table>

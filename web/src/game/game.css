@@ -73,13 +73,10 @@ html.has-game .nudge{display:none}
 .pk-seat.is-folded .pk-seat__av, .pk-seat.is-folded .pk-seat__name, .pk-seat.is-folded .pk-seat__chips{opacity:.5}
 .pk-seat.is-away{opacity:.55}
 .pk-seat.is-lost .pk-seat__av{opacity:.7}
-.pk-seat__free{display:flex;flex-direction:column;align-items:center;gap:6px;width:64px;height:64px;justify-content:center;
-  border-radius:50%;background:rgba(255,255,255,.05);box-shadow:inset 0 0 0 1px dashed rgba(255,255,255,.2);
-  font-size:12px;color:rgba(255,255,255,.55);margin-top:34px}
-.pk-seat__free{box-shadow:none;border:1px dashed rgba(255,255,255,.22)}
-.pk-seat__free.is-quiet{border-color:rgba(255,255,255,.1);color:rgba(255,255,255,.28)}
-.pk-seat__plus{font-size:22px;line-height:1;color:#fff}
-.pk-seat--empty:active .pk-seat__free{background:rgba(255,255,255,.12)}
+/* Пустое место — тихий кружок: садятся одной кнопкой «Присоединиться», место выбирает сервер. */
+.pk-seat--empty{pointer-events:none}
+.pk-seat__free{display:block;width:44px;height:44px;margin-top:40px;border-radius:50%;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.07);background:rgba(255,255,255,.02)}
 .pk-seat__cards{display:flex;height:42px;margin-bottom:-6px}
 .pk-seat__cards .pc + .pc{margin-left:-9px}
 .pk-seat__cards .pc:first-child .pc__in{transform:rotate(-5deg)}
@@ -117,7 +114,12 @@ html.has-game .nudge{display:none}
 .pk-seat__win span{font-size:11px;color:rgba(0,0,0,.65)}
 .pk-seat__float{position:absolute;left:70%;top:-4px;font-size:22px;line-height:1;pointer-events:none;animation:pk-float 1.6s ease-out forwards}
 @keyframes pk-float{0%{opacity:0;transform:translateY(4px) scale(.7)}12%{opacity:1;transform:none}70%{opacity:1}100%{opacity:0;transform:translateY(-26px)}}
-.pk-bot{display:grid;place-items:center;border-radius:50%;background:#1c1c1e;color:#fff;box-shadow:inset 0 0 0 1px rgba(255,255,255,.14)}
+/* «Para» — живой орб в тёмном круге. */
+.pk-orb{position:relative;display:grid;place-items:center;flex:none;overflow:hidden;border-radius:50%;
+  background:radial-gradient(circle at 50% 42%,#1d1d21 0%,#0b0b0d 72%);box-shadow:inset 0 0 0 1px rgba(255,255,255,.14),0 4px 14px rgba(0,0,0,.5)}
+.pk-orb canvas{display:block}
+.pk-seat__tag{flex:none;margin-left:2px;padding:0 5px;border-radius:6px;background:rgba(255,255,255,.14);
+  font-size:10px;font-weight:600;line-height:15px;letter-spacing:.02em;color:rgba(255,255,255,.75)}
 
 /* ─── Своя строка и свои карты ─── */
 .pk-mine{display:flex;flex-direction:column;align-items:center;gap:8px;margin-bottom:8px}
