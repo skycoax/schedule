@@ -1,4 +1,4 @@
-// Игральная карта: тёмная, чёрно-белая, с белыми уголками-скобками и глубокой тенью. Рубашка — тонкая сетка.
+// Игральная карта: тёмная, простая — тонкая светлая рамка, лёгкий глянец и глубокая тень. Рубашка — тонкая штриховка.
 // Переворачивается (3D), прилетает из колоды (deal), уходит в сброс (muck). На сильной руке «тлеет»: бегущий по краю
 // свет и угольки; на очень сильной — ещё и искры. Победившая пятёрка на вскрытии подсвечивается, остальные гаснут.
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
@@ -80,10 +80,9 @@ export function PlayingCard(p: {
     <div ref={ref} className={cls} style={style} role="img" aria-label={up ? cardLabel(p.card) : 'закрытая карта'}>
       {p.heat ? <span className="pc__ring" aria-hidden="true"><i /></span> : null}
       <div className="pc__in">
-        <div className="pc__f pc__back"><i /><i /><i /><i /></div>
+        <div className="pc__f pc__back" />
         {face && (
           <div className={'pc__f pc__face' + (red ? ' is-red' : '')}>
-            <i /><i /><i /><i />
             <span className="pc__r">{rankText(p.card)}<Suit s={p.card[1]} className="pc__s" /></span>
             <Suit s={p.card[1]} className="pc__big" />
             <span className="pc__r pc__r--b">{rankText(p.card)}<Suit s={p.card[1]} className="pc__s" /></span>

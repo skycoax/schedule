@@ -79,7 +79,7 @@ export function FriendsView(p: {
   // Отношения поменялись в другом месте (профиль, поиск) — перечитываем.
   const debounce = useRef(0);
   useSocialEvents((e) => {
-    if (e.type !== 'relation' && e.type !== 'block' && e.type !== 'unblock') return;
+    if (e.type !== 'relation' && e.type !== 'block' && e.type !== 'unblock' && e.type !== 'resync') return;
     clearTimeout(debounce.current);
     debounce.current = window.setTimeout(load, 400);
   });

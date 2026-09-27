@@ -9,6 +9,7 @@
 //   limits.js — пределы частоты · jobs.js — фоновые задачи
 //   game.js — «Покер» (маршруты) · poker-table.js — стол, таймеры, view · poker-logic.js — карты и банки
 //   poker-bot.js — бот · game-stream.js — поток событий
+//   live.js — живые обновления приложения (поток SSE /api/social/live: чужие посты, ответы, заявки, приглашения)
 import { mkdirSync } from 'node:fs';
 import { social, googleConfigured } from '../config.js';
 import { openSocialDb } from './db.js';
@@ -21,6 +22,7 @@ import { mediaRoutes } from './media.js';
 import { adminRoutes } from './moderation.js';
 import { startJobs } from './jobs.js';
 import { gameRoutes } from './game.js';
+import { liveRoutes } from './live.js';
 
 export const SOCIAL_PATH = /^\/api\/(auth|social|media)(\/|$)/;
 
@@ -89,6 +91,7 @@ export async function registerSocial(app, { hub, tenants }) {
       userRoutes(inst, ctx);
       mediaRoutes(inst, ctx);
       adminRoutes(inst, ctx);
+      liveRoutes(inst, ctx);                         // GET /api/social/live — и в readonly (в off — общий 404)
       // «Покер»: SOCIAL_GAME=off (или SOCIAL_MODE=off) — маршрутов нет, общий 404, пасхалка в приложении молчит.
       if (social.game !== 'off') gameRoutes(inst, ctx);
     }

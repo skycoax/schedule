@@ -8,6 +8,7 @@ import type { JSX } from 'react';
 import { createPortal } from 'react-dom';
 import { Icon } from '../../ui/icons';
 import { socialApi } from '../api';
+import { useSocialEvents } from '../events';
 import { currentReturnTo, useSession } from '../session';
 import type { FriendInstant, InstantsFeed } from '../types';
 import { InstantCamera } from './InstantCamera';
@@ -44,6 +45,14 @@ export function InstantsHost(p: { active: boolean; hidden?: boolean }): JSX.Elem
     const t = window.setInterval(() => { if (!document.hidden) void load(); }, 60_000);
     return () => clearInterval(t);
   }, [p.active, load]);
+  // Друг снял или удалил момент (живые обновления) или приложение переподключилось — перечитать сразу.
+  const liveT = useRef(0);
+  useSocialEvents((e) => {
+    if (e.type !== 'instants' && e.type !== 'resync') return;
+    clearTimeout(liveT.current);
+    liveT.current = window.setTimeout(() => { void load(); }, 250);
+  });
+  useEffect(() => () => clearTimeout(liveT.current), []);
 
   const patch = useCallback((id: number, change: Partial<FriendInstant>) => {
     setFeed((f) => f && {

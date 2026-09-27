@@ -13,7 +13,9 @@ import { cleanText, tooLong, isProfane, maskProfanity, fold, graphemes } from '.
 import { mediaUrl, thumbUrl, unlinkMedia, MEDIA_ID_RE } from './media.js';
 import { audit } from './moderation.js';
 import { postsOut, deleteAccount, viewerOf } from './posts.js';
-import { humans as pokerHumans } from './poker-table.js';
+import { humans as pokerHumans, inviteOf as pokerInviteOf } from './poker-table.js';
+import { areFriends } from './instant-access.js';
+import { liveTo } from './live.js';
 
 // ─── Имя пользователя (§C.3, §B.4) ───
 
@@ -219,9 +221,23 @@ export function meOf(ctx, u) {
     counts: { friends: friendCount(db, u.id), posts },
     usernameNextChange: usernameNextChange(u),
     createdAt: u.created_at,
-    // «Покер»: сколько людей сейчас за столом; игра выключена — null.
-    game: gameMode() === 'off' ? null : { players: pokerHumans() },
+    // «Покер»: сколько людей сейчас за столом и приглашение друга (или null); игра выключена — null.
+    game: gameMode() === 'off' ? null : { players: pokerHumans(), invite: gameInviteOf(ctx, u.id) },
   };
+}
+
+/**
+ * Приглашение в покер для Me (§J.5): { from: UserCard, at } — только если оно не истекло (10 минут), пригласивший
+ * активен, между ними нет блокировки в любую сторону и они всё ещё друзья; иначе null.
+ */
+function gameInviteOf(ctx, uid) {
+  const inv = pokerInviteOf(uid);
+  if (!inv) return null;
+  const db = ctx.db;
+  const from = usersByIds(db, [inv.fromId]).get(inv.fromId);
+  if (!from || !from.username || from.status !== 'active') return null;
+  if (blockedEither(db, uid, from.id) || !areFriends(db, uid, from.id)) return null;
+  return { from: userCardOf(ctx, from, false), at: inv.at };
 }
 
 // ─── Отношения ───
@@ -233,6 +249,25 @@ export function blockedEither(db, a, b) {
   if (!a || !b) return false;
   return !!db.prepare(`SELECT 1 FROM blocks WHERE (blocker_id = ? AND blocked_id = ?) OR (blocker_id = ? AND blocked_id = ?)`)
     .get(a, b, b, a);
+}
+
+/**
+ * Живые обновления (live.js, §J.4): второму человеку toId — relation { user: карточка actor, relation } (его отношение
+ * к actor изменилось из-за действия actor) и, если withMe, me (счётчики заявок и друзей). Блокировку не раскрываем:
+ * при ней — ничего (как и если actor ограничен или без профиля — его карточку toId сейчас не увидел бы).
+ * После COMMIT; не бросает.
+ */
+function liveRelation(ctx, actorId, toId, relation, withMe = true) {
+  try {
+    const db = ctx.db;
+    if (blockedEither(db, actorId, toId)) return;
+    const a = usersByIds(db, [actorId]).get(actorId);
+    if (!a || !a.username || a.status !== 'active') return;
+    liveTo([toId], 'relation', { user: userCardOf(ctx, a, false), relation });
+    if (withMe) liveTo([toId], 'me', {});
+  } catch (err) {
+    ctx.log.warn({ msg: err && err.message }, 'живые обновления: друзья');
+  }
 }
 
 /** Отношение me → other: 'self' | 'blocked' (я заблокировал) | 'friends' | 'outgoing' | 'incoming' | 'none'. */
@@ -639,8 +674,9 @@ export function userRoutes(inst, ctx) {
     const incoming = !!row && row.requester_id === id;
     if (!incoming && t.friend_req !== 'all') throw blocked(FIELD_TEXT.friendClosed);
     limit('friend', 'u:' + me.id);
+    // Живые обновления: встречная заявка — это принятие (ему friends), новая — ему incoming; обоим случаям — и me.
     if (incoming) {
-      accept(me.id, id);
+      if (accept(me.id, id) === 1) liveRelation(ctx, me.id, id, 'friends');
       return ok({ relation: 'friends' });
     }
     const pending = db.prepare(`SELECT COUNT(*) n FROM friends
@@ -648,8 +684,9 @@ export function userRoutes(inst, ctx) {
     if (pending >= 50) throw new SocialError(429, 'rate', FIELD_TEXT.friendMany, { retryAfter: 3600 });
     const [lo, hi] = pair(me.id, id);
     const now = nowIso();
-    db.prepare(`INSERT OR IGNORE INTO friends (user_lo, user_hi, requester_id, status, created_at, updated_at)
-      VALUES (?,?,?,'pending',?,?)`).run(lo, hi, me.id, now, now);
+    const added = db.prepare(`INSERT OR IGNORE INTO friends (user_lo, user_hi, requester_id, status, created_at, updated_at)
+      VALUES (?,?,?,'pending',?,?)`).run(lo, hi, me.id, now, now).changes;
+    if (added === 1) liveRelation(ctx, me.id, id, 'incoming');
     return ok({ relation: 'outgoing' });
   });
 
@@ -664,6 +701,7 @@ export function userRoutes(inst, ctx) {
     if (!row || row.requester_id !== id || !t || t.status !== 'active' || !t.username) throw notFound(TEXT.requestGone);
     limit('friend', 'u:' + me.id);
     if (accept(me.id, id) !== 1) throw notFound(TEXT.requestGone);
+    liveRelation(ctx, me.id, id, 'friends');   // тому, кто звал: теперь друзья (+ me)
     return ok({ relation: 'friends' });
   });
 
@@ -674,8 +712,9 @@ export function userRoutes(inst, ctx) {
     bodyOf(req);
     limit('unfriend', 'u:' + me.id);
     const [lo, hi] = pair(me.id, id);
-    db.prepare(`DELETE FROM friends WHERE user_lo = ? AND user_hi = ? AND status = 'pending' AND requester_id = ?`)
-      .run(lo, hi, id);
+    const gone = db.prepare(`DELETE FROM friends WHERE user_lo = ? AND user_hi = ? AND status = 'pending' AND requester_id = ?`)
+      .run(lo, hi, id).changes;
+    if (gone === 1) liveRelation(ctx, me.id, id, 'none', false);   // тому, кто звал: none (его счётчики не меняются)
     return ok({ relation: id === me.id ? 'self' : relationOf(db, me.id, id) });
   });
 
@@ -686,8 +725,9 @@ export function userRoutes(inst, ctx) {
     bodyOf(req);
     limit('unfriend', 'u:' + me.id);
     const [lo, hi] = pair(me.id, id);
-    db.prepare(`DELETE FROM friends WHERE user_lo = ? AND user_hi = ? AND (status = 'accepted' OR requester_id = ?)`)
-      .run(lo, hi, me.id);
+    const gone = db.prepare(`DELETE FROM friends WHERE user_lo = ? AND user_hi = ? AND (status = 'accepted' OR requester_id = ?)`)
+      .run(lo, hi, me.id).changes;
+    if (gone === 1) liveRelation(ctx, me.id, id, 'none');   // второму: none (+ me — друзья или входящие заявки)
     return ok({ relation: id === me.id ? 'self' : relationOf(db, me.id, id) });
   });
 
@@ -703,7 +743,8 @@ export function userRoutes(inst, ctx) {
   });
 
   // #30 — заблокировать: дружба и заявки в обе стороны удаляются. Стол покера не трогаем: если оба уже за ним,
-  // каждый видит другого как «Игрока» (masked), см. poker-table.js.
+  // каждый видит другого как «Игрока» (masked), см. poker-table.js. Живых обновлений второму нет ни при блокировке,
+  // ни при снятии (блокировку не раскрываем).
   inst.put('/api/social/blocks/:userId', async (req) => {
     const me = guard(req, 'S');
     const id = userIdParam(req.params.userId);

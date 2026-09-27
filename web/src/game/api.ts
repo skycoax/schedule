@@ -1,7 +1,7 @@
 // Клиент API покера: /api/social/games/* (CONTRACT.md §I, формы — social/types.ts).
 // Транспорт общий с «Обсуждениями» (apiCall): uni=, X-Para у изменений, конверт {ok,data} и тексты ошибок.
 import { apiCall } from '../social/api';
-import type { GameReaction, PokerAction, PokerView } from '../social/types';
+import type { GameReaction, PokerAction, PokerTop, PokerTopScope, PokerView } from '../social/types';
 
 const base = '/api/social/games';
 
@@ -24,6 +24,18 @@ export const gameApi = {
   },
   async react(r: GameReaction): Promise<void> {
     await apiCall<unknown>('POST', base + '/react', { body: { r } });
+  },
+  /** Забрать ежедневный бонус: got — сколько фишек пришло, table — стол со свежим me. */
+  bonus(): Promise<{ got: number; table: PokerView }> {
+    return apiCall<{ got: number; table: PokerView }>('POST', base + '/bonus', { body: {} });
+  },
+  /** Рейтинг по фишкам: друзья или все (в «Все» — взрослые из поиска и друзья). */
+  top(scope: PokerTopScope, signal?: AbortSignal): Promise<PokerTop> {
+    return apiCall<PokerTop>('GET', base + '/top', { params: { scope }, signal });
+  },
+  /** Позвать друга: у него сразу появится «… зовёт тебя в покер». */
+  async invite(to: number): Promise<void> {
+    await apiCall<unknown>('POST', base + '/invite', { body: { to } });
   },
 };
 

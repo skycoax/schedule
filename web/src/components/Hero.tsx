@@ -70,7 +70,7 @@ function EggHint({ idle, count, onClose }: { idle: boolean; count: number; onClo
 /** Точка «За столом играют»: нажатие сразу открывает стол (без пяти нажатий). */
 function GameDot(): JSX.Element {
   return (
-    <button type="button" className="hero__dot" aria-label="За столом играют"
+    <button type="button" className="hero__dot" aria-label="Покер: за столом играют или ждёт бонус"
       onClick={(e) => openGame({ originEl: e.currentTarget })}>
       <i />
     </button>

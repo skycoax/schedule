@@ -29,8 +29,20 @@ html.has-game .nudge{display:none}
 .pk-root{display:flex;flex-direction:column}
 .pk{position:relative;flex:1;min-height:0;overflow:hidden}
 .pk-felt{position:absolute;left:3%;right:3%;top:2px;bottom:37%;border-radius:50%/46%;
-  background:radial-gradient(ellipse at 50% 38%,#202024 0%,#131316 52%,#09090b 100%);
-  box-shadow:inset 0 0 0 1px rgba(255,255,255,.07),inset 0 0 70px rgba(0,0,0,.55),0 24px 60px rgba(0,0,0,.65)}
+  background:radial-gradient(ellipse at 50% 34%,#1c1c20 0%,#121215 50%,#08080a 100%);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.1),inset 0 0 80px rgba(0,0,0,.6),0 0 46px rgba(255,255,255,.05),0 30px 70px rgba(0,0,0,.7)}
+/* Край стола — светящийся стеклянный кант; блик медленно обходит стол по кругу. */
+@property --pk-rim{syntax:'<angle>';inherits:false;initial-value:0deg}
+.pk-felt::before{content:'';position:absolute;inset:0;border-radius:inherit;padding:1.6px;pointer-events:none;
+  background:conic-gradient(from var(--pk-rim),rgba(255,255,255,.95),rgba(255,255,255,.14) 22%,rgba(255,255,255,.5) 42%,
+    rgba(255,255,255,.1) 64%,rgba(255,255,255,.45) 82%,rgba(255,255,255,.95));
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;
+  mask:linear-gradient(#000 0 0) content-box exclude,linear-gradient(#000 0 0);
+  filter:drop-shadow(0 0 5px rgba(255,255,255,.35));animation:pk-rim 14s linear infinite}
+@keyframes pk-rim{to{--pk-rim:360deg}}
+/* Внутренний отсвет у края — как у стекла. */
+.pk-felt::after{content:'';position:absolute;inset:10px;border-radius:inherit;pointer-events:none;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.04),inset 0 18px 40px rgba(255,255,255,.025)}
 .pk-ring-area{position:absolute;inset:0;pointer-events:none}
 .pk-ring-area > *{pointer-events:auto}
 .pk-center{position:absolute;left:0;right:0;top:29%;height:32%;display:flex;flex-direction:column;align-items:center;
@@ -48,7 +60,8 @@ html.has-game .nudge{display:none}
 .pk-deck i:nth-child(3){transform:translate(3px,-3px)}
 
 .pk-board{display:flex;gap:6px;min-height:64px;align-items:center}
-.pk-pot{display:inline-flex;align-items:center;gap:6px;padding:4px 12px 4px 8px;border-radius:14px;background:rgba(255,255,255,.08);
+.pk-pot{display:inline-flex;align-items:center;gap:6px;padding:5px 14px 5px 9px;border-radius:16px;background:rgba(255,255,255,.05);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.18);
   font-size:15px;font-weight:600;font-variant-numeric:tabular-nums;transition:opacity 400ms}
 .pk-pot.is-out{opacity:.35}
 .pk-hint{margin:0;max-width:260px;text-align:center;font-size:15px;line-height:1.4;color:rgba(255,255,255,.55)}
@@ -116,7 +129,8 @@ html.has-game .nudge{display:none}
 @keyframes pk-float{0%{opacity:0;transform:translateY(4px) scale(.7)}12%{opacity:1;transform:none}70%{opacity:1}100%{opacity:0;transform:translateY(-26px)}}
 /* «Para» — живой орб в тёмном круге. */
 .pk-orb{position:relative;display:grid;place-items:center;flex:none;overflow:hidden;border-radius:50%;
-  background:radial-gradient(circle at 50% 42%,#1d1d21 0%,#0b0b0d 72%);box-shadow:inset 0 0 0 1px rgba(255,255,255,.14),0 4px 14px rgba(0,0,0,.5)}
+  background:radial-gradient(circle at 50% 42%,#1d1d21 0%,#0b0b0d 72%);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.14),0 0 0 2px rgba(255,255,255,.18),0 4px 14px rgba(0,0,0,.5)}
 .pk-orb canvas{display:block}
 .pk-seat__tag{flex:none;margin-left:2px;padding:0 5px;border-radius:6px;background:rgba(255,255,255,.14);
   font-size:10px;font-weight:600;line-height:15px;letter-spacing:.02em;color:rgba(255,255,255,.75)}
@@ -147,12 +161,16 @@ html.has-game .nudge{display:none}
 /* ─── Действия ─── */
 .pk-acts{display:flex;flex-direction:column;gap:8px;padding-top:6px;animation:pk-up 260ms cubic-bezier(.2,.9,.22,1) both}
 .pk-acts__row{display:flex;gap:8px}
-.pk-btn{flex:1;min-width:0;height:52px;padding:0 10px;border-radius:16px;background:rgba(255,255,255,.12);color:#fff;
+.pk-btn{flex:1;min-width:0;height:54px;padding:0 10px;border-radius:18px;background:rgba(255,255,255,.05);color:#fff;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.24),inset 0 1px 0 rgba(255,255,255,.08);
+  -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
   font-size:16px;font-weight:600;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
   transition:transform 120ms,opacity 120ms,background-color 120ms}
-.pk-btn:active:not(:disabled){transform:scale(.97)}
+.pk-btn:active:not(:disabled){transform:scale(.97);background:rgba(255,255,255,.1)}
 .pk-btn:disabled{opacity:.35}
-.pk-btn--main{background:#fff;color:#000}
+.pk-btn--main{background:linear-gradient(180deg,#fff 0%,#e8e8ec 100%);color:#000;
+  box-shadow:0 8px 22px rgba(255,255,255,.12),inset 0 -1px 0 rgba(0,0,0,.12)}
+.pk-btn--main:active:not(:disabled){background:linear-gradient(180deg,#f2f2f5 0%,#dcdce2 100%)}
 .pk-btn--fold{flex:.8}
 .pk-btn--go{flex:1.4}
 .pk-btn--x{flex:0 0 52px;font-size:18px}
@@ -198,18 +216,13 @@ html.has-game .nudge{display:none}
 .pc__in{position:relative;width:100%;height:100%;border-radius:inherit;transform-style:preserve-3d;
   transition:transform 480ms cubic-bezier(.3,.8,.3,1)}
 .pc.is-up .pc__in{transform:rotateY(180deg)}
-.pc__f{position:absolute;inset:0;border-radius:inherit;backface-visibility:hidden;-webkit-backface-visibility:hidden;background:#141417;
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.07),0 0 0 1px rgba(255,255,255,.13),0 10px 24px rgba(0,0,0,.55)}
-.pc__back{background:#0f0f12 repeating-linear-gradient(135deg,rgba(255,255,255,.055) 0 1px,transparent 1px 5px)}
+.pc__f{position:absolute;inset:0;border-radius:inherit;backface-visibility:hidden;-webkit-backface-visibility:hidden;
+  background:linear-gradient(160deg,#1b1b1f 0%,#111114 46%,#0b0b0d 100%);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.3),inset 0 1px 0 rgba(255,255,255,.12),0 10px 24px rgba(0,0,0,.6)}
+.pc__back{background:#0e0e11 repeating-linear-gradient(135deg,rgba(255,255,255,.06) 0 1px,transparent 1px 6px);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.2),0 10px 24px rgba(0,0,0,.6)}
 .pc__face{transform:rotateY(180deg);color:#f4f4f6}
-.pc__face.is-red{color:#ff7b7b}
-/* Белые уголки-скобки. */
-.pc__f > i{position:absolute;width:22%;height:16%;border:1.5px solid rgba(255,255,255,.62);pointer-events:none}
-.pc__f > i:nth-child(1){left:7%;top:6%;border-right:0;border-bottom:0;border-top-left-radius:2px}
-.pc__f > i:nth-child(2){right:7%;top:6%;border-left:0;border-bottom:0;border-top-right-radius:2px}
-.pc__f > i:nth-child(3){left:7%;bottom:6%;border-right:0;border-top:0;border-bottom-left-radius:2px}
-.pc__f > i:nth-child(4){right:7%;bottom:6%;border-left:0;border-top:0;border-bottom-right-radius:2px}
-.pc__back > i{border-color:rgba(255,255,255,.35)}
+.pc__face.is-red{color:#ff7474;box-shadow:inset 0 0 0 1px rgba(255,140,140,.4),inset 0 1px 0 rgba(255,255,255,.1),0 10px 24px rgba(0,0,0,.6)}
 .pc__r{position:absolute;left:10%;top:9%;display:flex;flex-direction:column;align-items:center;gap:1px;
   font-size:var(--fs);font-weight:600;line-height:1;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
 .pc__s{width:calc(var(--fs) * .72);height:calc(var(--fs) * .72)}
@@ -218,7 +231,6 @@ html.has-game .nudge{display:none}
 .pc--sm .pc__r--b, .pc--sm .pc__big{display:none}
 .pc--sm .pc__r{left:0;right:0;top:50%;flex-direction:row;gap:2px;transform:translateY(-50%);font-size:13px}
 .pc--sm .pc__s{width:10px;height:10px}
-.pc--sm .pc__f > i{width:24%;height:18%}
 /* Из колоды: полёт с поворотом, потом (если нужно) переворот лицом. */
 .pc.is-deal{animation:pk-deal 560ms cubic-bezier(.22,.8,.2,1) both;animation-delay:var(--d,0ms)}
 @keyframes pk-deal{0%{transform:translate(var(--dx,0px),var(--dy,0px)) rotate(-18deg) scale(.55);opacity:0}
@@ -263,6 +275,108 @@ html.has-game .nudge{display:none}
 .gx-banner span{flex:1;min-width:0}
 .gx-banner button{flex:none;height:32px;padding:0 12px;border-radius:16px;background:#fff;color:#000;font-size:14px;font-weight:600}
 
+.pk-pill{height:34px;padding:0 16px;border-radius:17px;background:rgba(255,255,255,.12);color:#fff;font-size:14px;font-weight:600;
+  transition:transform 120ms,background-color 120ms}
+.pk-pill:active{transform:scale(.96);background:rgba(255,255,255,.2)}
+
+/* ─── Счёт, «фишки кончились» ─── */
+.pk-bal{display:inline-flex;align-items:center;gap:6px;font-size:14px;color:rgba(255,255,255,.7)}
+.pk-bal b{color:#fff;font-weight:600;font-variant-numeric:tabular-nums}
+.pk-bal__bonus{height:26px;margin-left:6px;padding:0 10px;border-radius:13px;background:rgba(255,214,160,.14);color:#ffd9a8;
+  font-size:12px;font-weight:600;box-shadow:inset 0 0 0 1px rgba(255,214,160,.35);animation:pk-glowpill 2.4s ease-in-out infinite}
+@keyframes pk-glowpill{0%,100%{box-shadow:inset 0 0 0 1px rgba(255,214,160,.35),0 0 0 rgba(255,200,140,0)}
+  50%{box-shadow:inset 0 0 0 1px rgba(255,214,160,.6),0 0 16px rgba(255,200,140,.35)}}
+.pk-broke{gap:8px}
+.pk-broke__t{font-size:18px;font-weight:700;color:#fff}
+.pk-chip--big{width:30px;height:30px;box-shadow:0 2px 10px rgba(0,0,0,.6),0 0 18px rgba(255,214,160,.25)}
+
+/* ─── Ежедневный бонус: «момент награды» ─── */
+.pk-bonus{position:absolute;inset:0;z-index:20;display:grid;place-items:center;padding:16px;background:rgba(0,0,0,.55);
+  -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);animation:pk-fade 240ms ease-out both}
+.pk-bonus.is-leaving{animation:pk-fadeout 240ms ease-in both}
+@keyframes pk-fade{from{opacity:0}}
+@keyframes pk-fadeout{to{opacity:0}}
+.pk-bonus__card{position:relative;display:flex;flex-direction:column;align-items:center;gap:12px;width:min(340px,100%);
+  padding:26px 20px 16px;border-radius:28px;overflow:hidden;text-align:center;
+  background:linear-gradient(180deg,#1b1b1f 0%,#0e0e11 100%);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.14),0 30px 80px rgba(0,0,0,.7),0 0 70px rgba(255,210,150,.08);
+  animation:pk-cardin 520ms cubic-bezier(.2,.9,.22,1.25) both}
+.pk-bonus.is-leaving .pk-bonus__card{animation:pk-cardout 240ms ease-in both}
+@keyframes pk-cardin{from{opacity:0;transform:translateY(24px) scale(.86)}}
+@keyframes pk-cardout{to{opacity:0;transform:scale(.94)}}
+/* Лучи за суммой — медленно вращаются и гаснут к краям. */
+.pk-bonus__rays{position:absolute;left:50%;top:-110px;width:360px;height:360px;margin-left:-180px;pointer-events:none;opacity:.55;
+  background:repeating-conic-gradient(from 0deg,rgba(255,220,170,.16) 0deg 6deg,transparent 6deg 18deg);
+  -webkit-mask:radial-gradient(circle,#000 0 20%,transparent 62%);mask:radial-gradient(circle,#000 0 20%,transparent 62%);
+  animation:pk-rays 24s linear infinite}
+@keyframes pk-rays{to{transform:rotate(360deg)}}
+.pk-bonus__t{position:relative;margin:0;font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.55)}
+.pk-bonus__amt{position:relative;display:flex;align-items:center;gap:10px;font-size:48px;font-weight:700;letter-spacing:-.03em;
+  font-variant-numeric:tabular-nums;color:#fff;text-shadow:0 0 30px rgba(255,214,160,.25)}
+.pk-bonus__card.is-got .pk-bonus__amt{animation:pk-gotpop 700ms cubic-bezier(.2,.9,.22,1.4) both;color:#ffe4bf;
+  text-shadow:0 0 34px rgba(255,200,140,.7)}
+@keyframes pk-gotpop{0%{transform:scale(1)}35%{transform:scale(1.16)}100%{transform:scale(1)}}
+.pk-bonus__card.is-got::after{content:'';position:absolute;left:50%;top:92px;width:120px;height:120px;margin:-60px 0 0 -60px;
+  border-radius:50%;box-shadow:0 0 0 2px rgba(255,220,170,.8);pointer-events:none;animation:pk-burst 800ms ease-out both}
+@keyframes pk-burst{from{transform:scale(.3);opacity:1}to{transform:scale(2.6);opacity:0}}
+.pk-bonus__days{position:relative;display:flex;justify-content:center;gap:6px;margin:4px 0 2px;padding:0;list-style:none}
+.pk-bonus__d{display:flex;flex-direction:column;align-items:center;gap:4px;animation:pk-up 320ms ease-out both;
+  animation-delay:calc(160ms + var(--i,0) * 50ms)}
+.pk-bonus__dot{display:grid;place-items:center;width:32px;height:32px;border-radius:50%;font-size:13px;font-weight:700;
+  color:rgba(255,255,255,.45);box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.18)}
+.pk-bonus__d.is-past .pk-bonus__dot{background:#fff;color:#000;box-shadow:none}
+.pk-bonus__d.is-now .pk-bonus__dot{color:#ffe4bf;box-shadow:inset 0 0 0 1.5px rgba(255,214,160,.9);animation:pk-now 1.8s ease-in-out infinite}
+.pk-bonus__card.is-got .pk-bonus__d.is-now .pk-bonus__dot{background:#ffd9a8;color:#000;animation:none}
+@keyframes pk-now{0%,100%{box-shadow:inset 0 0 0 1.5px rgba(255,214,160,.9),0 0 0 rgba(255,200,140,0)}
+  50%{box-shadow:inset 0 0 0 1.5px rgba(255,214,160,1),0 0 18px rgba(255,200,140,.55)}}
+.pk-bonus__v{font-size:10px;font-weight:600;color:rgba(255,255,255,.45);font-variant-numeric:tabular-nums}
+.pk-bonus__d.is-now .pk-bonus__v{color:#ffd9a8}
+.pk-bonus__s{position:relative;margin:0;max-width:280px;font-size:14px;line-height:1.4;color:rgba(255,255,255,.65)}
+.pk-bonus__s.is-done{color:#ffd9a8;animation:pk-up 300ms ease-out 250ms both}
+.pk-bonus__go{position:relative;flex:none;width:100%;margin-top:4px}
+.pk-bonus__later{position:relative;height:40px;padding:0 16px;font-size:15px;color:rgba(255,255,255,.55)}
+
+/* ─── «Рейтинг» (лист в обычной теме приложения) ─── */
+.pk-top{padding:4px 16px 24px;color:var(--ink-100)}
+.pk-top__h{margin:0 4px 12px;font-size:20px;font-weight:700}
+.pk-top__empty{margin:16px 4px;font-size:15px;line-height:1.45;color:var(--ink-60)}
+.pk-top__list{margin:12px 0 0;padding:0;list-style:none}
+.pk-top__row{display:flex;align-items:center;gap:12px;min-height:52px;padding:6px 8px;border-radius:14px}
+.pk-top__row.is-me{background:var(--fill)}
+.pk-top__row.is-pinned{margin-top:8px}
+.pk-top__place{flex:none;width:26px;text-align:center;font-size:15px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--ink-60)}
+.pk-top__row.is-top1 .pk-top__place{color:#e9a800}
+.pk-top__row.is-top2 .pk-top__place{color:#9aa0a8}
+.pk-top__row.is-top3 .pk-top__place{color:#c77b3a}
+.pk-top__name{flex:1;min-width:0;display:flex;align-items:center;gap:4px;font-size:15px;font-weight:600}
+.pk-top__name > span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pk-top__chips{flex:none;display:flex;align-items:center;gap:6px;font-size:15px;font-weight:600;font-variant-numeric:tabular-nums}
+.pk-top__foot{margin:18px 4px 0;font-size:12px;line-height:1.45;color:var(--ink-60)}
+
+/* ─── «Позвать в покер» (лист в обычной теме приложения) ─── */
+.pk-inv{padding:4px 16px 24px;color:var(--ink-100)}
+.pk-inv__h{margin:0 4px 14px;font-size:20px;font-weight:700}
+.pk-inv__link{display:flex;align-items:center;gap:12px;width:100%;padding:12px 14px;border-radius:14px;background:var(--fill);
+  text-align:left;color:var(--ink-100);transition:transform 120ms}
+.pk-inv__link:active{transform:scale(.98)}
+.pk-inv__ico{flex:none;display:grid;place-items:center;width:40px;height:40px;border-radius:50%;background:var(--c1);color:#fff}
+.pk-inv__lt{display:flex;flex-direction:column;gap:2px;min-width:0}
+.pk-inv__lt b{font-size:16px;font-weight:600}
+.pk-inv__lt span{font-size:13px;color:var(--ink-60)}
+.pk-inv__sec{margin:20px 4px 6px;font-size:13px;font-weight:600;color:var(--ink-60)}
+.pk-inv__empty{margin:12px 4px;font-size:15px;line-height:1.45;color:var(--ink-60)}
+.pk-inv__list{margin:0;padding:0;list-style:none}
+.pk-inv__row{display:flex;align-items:center;gap:12px;padding:8px 4px}
+.pk-inv__main{flex:1;min-width:0;display:flex;flex-direction:column}
+.pk-inv__name{display:flex;align-items:center;gap:4px;min-width:0;font-size:15px;font-weight:600}
+.pk-inv__name > span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pk-inv__user{font-size:13px;color:var(--ink-60)}
+.pk-inv__go{flex:none;min-width:92px;height:32px;padding:0 14px;border-radius:16px;background:var(--c1);color:#fff;font-size:14px;font-weight:600;
+  transition:transform 120ms,background-color 200ms,color 200ms}
+.pk-inv__go:active:not(:disabled){transform:scale(.95)}
+.pk-inv__go.is-sent{background:var(--fill);color:var(--ink-60)}
+.pk-inv__here{flex:none;font-size:13px;color:var(--ink-60)}
+
 /* ─── «Как играть» (лист в обычной теме приложения) ─── */
 .pk-how{padding:4px 20px 24px;font-size:15px;line-height:1.5;color:var(--ink-100)}
 .pk-how__h{margin:0 0 12px;font-size:20px;font-weight:700}
@@ -285,6 +399,8 @@ html.has-game .nudge{display:none}
 }
 
 @media (prefers-reduced-motion: reduce){
+  .pk-felt::before, .pk-bonus__rays, .pk-bal__bonus, .pk-bonus__d.is-now .pk-bonus__dot{animation:none}
+  .pk-bonus, .pk-bonus__card, .pk-bonus__d, .pk-bonus__card.is-got .pk-bonus__amt, .pk-bonus__card.is-got::after{animation:none}
   .pc.is-deal, .pc.is-muck, .pc__ring i, .pc__ember, .pc__spark, .pk-seat__last, .pk-me__last, .pk-seat__win, .pk-seat__bet,
   .pk-result, .pk-acts, .pk-raise, .pk-reacts, .pk-mine__hand, .pk-seat__float, .pk-load__dots i, .pk-seat.is-win .pk-seat__av{animation:none}
   .pc__in{transition-duration:0ms}

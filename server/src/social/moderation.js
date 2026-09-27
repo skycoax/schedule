@@ -9,12 +9,25 @@ import { limit, keyOf, dailyCap, dayAgo } from './limits.js';
 import { cleanText, tooLong, fold } from './text.js';
 import { mediaRefsByIds, mediaUrl, thumbUrl, unlinkMedia } from './media.js';
 import { usersByIds, userCardOf, uniShortOf, friendCount, BADGES, badgeOf } from './users.js';
-import { postOut, deletePost, viewerOf } from './posts.js';
-import { canSeeInstant, instantById, deleteInstantRows } from './instant-access.js';
+import { postOut, deletePost, viewerOf, liveGone } from './posts.js';
+import { canSeeInstant, instantById, deleteInstantRows, liveInstant } from './instant-access.js';
 import { closeStreams } from './game-stream.js';
 import { kick as pokerKick } from './poker-table.js';
+import { liveTo, liveUsers } from './live.js';
 
 const INSTANT_GONE = 'Момент недоступен';
+
+/** Модераторы, у которых открыт поток живых обновлений (им me: очередь жалоб изменилась). Не бросает. */
+export function liveAdmins(ctx) {
+  try {
+    const ids = liveUsers();
+    if (!ids.length) return [];
+    return [...usersByIds(ctx.db, ids).values()].filter((u) => isAdmin(u)).map((u) => u.id);
+  } catch (err) {
+    ctx.log.warn({ msg: err && err.message }, 'живые обновления: модераторы');
+    return [];
+  }
+}
 
 /**
  * Запись в журнал (таблица audit). Без текста публикаций, почты, IP и токенов — только id и коды.
@@ -144,6 +157,8 @@ export function adminRoutes(inst, ctx) {
     limit('report', 'u:' + me.id);
     dailyCap('report', me, reportStat.get(me.id, dayAgo()));
 
+    let hidPost = false;       // пост скрылся именно этой жалобой (живые обновления: gone остальным)
+    let hidInstant = false;    // момент скрылся именно этой жалобой (instants тем, кто его видел)
     const hidden = tx(db, () => {
       const now = nowIso();
       const oldEnough = Date.parse(me.created_at) <= Date.now() - social.reporterMinAgeH * HOUR;
@@ -186,6 +201,7 @@ export function adminRoutes(inst, ctx) {
           FROM reports WHERE target_key = ? AND status = 'open' AND counts = 1`).get(key);
         const hide = admin || Number(st.child) >= 1 || Number(st.severe) >= 2 || st.n >= social.reportThreshold;
         if (hide) db.prepare('UPDATE instants SET hidden = 1 WHERE id = ?').run(instant.id);
+        hidInstant = hide && !Number(instant.hidden);
         return hide || !!Number(instant.hidden);
       }
       if (!post) return false;
@@ -201,8 +217,14 @@ export function adminRoutes(inst, ctx) {
       if (!hide) return false;
       db.prepare("UPDATE posts SET hidden = 1, hidden_reason = 'reports' WHERE id = ?").run(post.id);
       audit(db, null, 'post.hide.auto', key, post.uni, { reporters: stat.n });
+      hidPost = true;
       return true;
     });
+    // Живые обновления (после COMMIT): модераторам — me (очередь); пост, скрытый этой жалобой, — gone всем, кроме
+    // модераторов и автора; момент — instants тем, кто его видел (строка до скрытия).
+    liveTo(liveAdmins(ctx), 'me', {});
+    if (hidPost) liveGone(ctx, post, { hidden: true });
+    if (hidInstant) liveInstant(db, instant, ctx.log);
     return ok({ reported: true, hidden });
   });
 
@@ -429,9 +451,19 @@ export function adminRoutes(inst, ctx) {
     unlinkMedia(files);
     if (action === 'ban') {
       // Покер: встаёт из-за стола (в раздаче — сброс), потоки игры закрываются с bye { reason: 'ban' }.
+      // Поток живых обновлений остаётся: ограниченный читает (ему me — ниже).
       closeStreams(user.id, 'ban');
       pokerKick(user.id);
     }
+    // Живые обновления (после COMMIT): скрытие — gone всем, кроме модераторов и автора (снятие скрытия — ничего:
+    // приложение подтянет при следующем обновлении); удаление — gone всем, кроме сессии модератора (приложение
+    // убрало пост само), момент — instants тем, кто его видел; человеку — me (бан, снятие, сброс профиля, значок);
+    // модераторам — me (очередь жалоб).
+    if (action === 'hide' && post && !post.hidden) liveGone(ctx, post, { hidden: true });
+    else if (action === 'delete' && instant) liveInstant(db, instant, ctx.log);
+    else if (action === 'delete' && post) liveGone(ctx, post, { exceptSid: req.sid });
+    if (user) liveTo([user.id], 'me', {});
+    liveTo(liveAdmins(ctx), 'me', {});
     return ok(null);
   });
 

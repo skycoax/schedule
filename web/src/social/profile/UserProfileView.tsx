@@ -156,6 +156,15 @@ export function UserProfileView(p: UserProfileViewProps): JSX.Element {
       case 'post-created':
         if (self && e.post.rootId === null) setPosts((l) => [e.post, ...l.filter((x) => x.id !== e.post.id)]);
         break;
+      case 'remote-post':
+        if (e.post.rootId === null && e.post.author?.id === user.id) setPosts((l) => [e.post, ...l.filter((x) => x.id !== e.post.id)]);
+        break;
+      case 'likes':
+        setPosts((l) => l.map((x) => (x.id === e.id && x.likes !== e.likes ? { ...x, likes: e.likes } : x)));
+        break;
+      case 'resync':
+        fetchPage(true);
+        break;
       default:
     }
   });

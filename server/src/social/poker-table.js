@@ -5,6 +5,8 @@
 // обрывает раздачу (фишки, поставленные в неё, теряются — допустимо), стол после старта пуст.
 // Таймеры ходов, бота, улиц и пауз — один слот ('hand'); тела таймеров — в try/catch: стол не должен
 // ни упасть, ни зависнуть (сторож раз в несколько секунд отменяет раздачу без таймера).
+// Живые обновления приложения (live.js, §J): число людей за столом — всем живым (players); приглашения друзей
+// в покер (маршруты — game.js) — здесь же, в памяти: сел за стол — приглашение снято.
 import { randomInt } from 'node:crypto';
 import { social } from '../config.js';
 import { tx, nowIso } from './db.js';
@@ -13,6 +15,7 @@ import { rateError } from './limits.js';
 import { newDeck, evaluate7, handName, sidePots } from './poker-logic.js';
 import { decide } from './poker-bot.js';
 import { broadcast, sendReact, isLive, streamCount, setStreamHooks } from './game-stream.js';
+import { liveAll, liveThrottle } from './live.js';
 
 export const SEATS = 4;
 export const BLINDS = Object.freeze({ small: 10, big: 20 });
@@ -95,12 +98,56 @@ function setTimer(name, ms, fn) {
   timers[name] = id;
 }
 
-/** Каждое изменение стола: seq растёт, всем потокам — их view. */
+/** Каждое изменение стола: seq растёт, всем потокам — их view; изменилось число людей — живым players. */
 function bump() {
   table.seq++;
   if (!ctx) return;
   const pre = prepare();
   broadcast((uid) => viewFor(uid, pre));
+  notePlayers();
+}
+
+// ─── Живые обновления (live.js): число людей за столом ───
+
+let playersSent = 0;   // последнее разосланное число (стол после старта пуст)
+
+/**
+ * players { n } — всем живым, когда число людей за столом (Me.game.players: сидят, ждут раздачи и встают по её
+ * окончании) изменилось: сел, встал, выгнан, отошёл надолго. Не чаще раза в секунду, с последним числом.
+ */
+function notePlayers() {
+  if (humans() === playersSent) return;
+  liveThrottle('players', 1000, () => {
+    const n = humans();
+    if (n === playersSent) return;
+    playersSent = n;
+    liveAll('players', { n });
+  });
+}
+
+// ─── Приглашения в покер (game.js, CONTRACT.md §J.5) ───
+// Кого позвал друг: только в памяти (перезапуск их теряет), новое заменяет старое, живёт 10 минут; сел за стол — снято.
+export const INVITE_TTL = 10 * 60_000;
+const invites = new Map();   // toId → { fromId, at: мс }
+
+/** Запомнить приглашение для toId (заменяет прежнее). */
+export function putInvite(toId, fromId, at = Date.now()) {
+  if (invites.size >= 10_000) for (const [k, v] of invites) if (at - v.at >= INVITE_TTL) invites.delete(k);
+  invites.delete(toId);
+  invites.set(toId, { fromId, at });
+}
+
+/** Приглашение для toId, если не истекло: { fromId, at } | null. Проверки дружбы и блокировок — у вызывающего. */
+export function inviteOf(toId) {
+  const v = invites.get(toId);
+  if (!v) return null;
+  if (Date.now() - v.at >= INVITE_TTL) { invites.delete(toId); return null; }
+  return { ...v };
+}
+
+/** Убрать приглашение для toId («не сейчас» или сел за стол). */
+export function dropInvite(toId) {
+  invites.delete(toId);
 }
 
 // ─── Места ───
@@ -520,11 +567,15 @@ export function act(userId, handId, action, amount) {
 
 // ─── Сесть, встать, выгнать, реакции ───
 
-/** Сесть: во время раздачи — «ждёт раздачи» (reserved). Повтор — 200 (вставшему во время раздачи — место остаётся). */
+/**
+ * Сесть: во время раздачи — «ждёт раздачи» (reserved). Повтор — 200 (вставшему во время раздачи — место остаётся).
+ * Сел (или уже сидит) — его входящее приглашение в покер снимается.
+ */
 export function sit(u) {
   touch(u.id);
   let s = seatOf(u.id);
   if (s) {
+    dropInvite(u.id);
     if (s.leaving) { s.leaving = false; bump(); }
     return viewFor(u.id);
   }
@@ -542,6 +593,7 @@ export function sit(u) {
   s.online = isLive(u.id);
   s.reserved = !!table.hand;
   table.seats[i] = s;
+  dropInvite(u.id);
   if (!table.hand) plan();
   schedulePresence();
   bump();

@@ -17,6 +17,7 @@ import { audit } from './moderation.js';
 import { meOf } from './users.js';
 import { importGoogleAvatar } from './media.js';
 import { closeStreams, closeStreamsBySid } from './game-stream.js';
+import { liveClose, liveCloseSid } from './live.js';
 
 const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
 const SESSION_DAYS = 180;
@@ -317,9 +318,9 @@ export function authRoutes(inst, ctx) {
     if (req.user) {
       if (b.all === true) db.prepare('DELETE FROM sessions WHERE user_id = ?').run(req.user.id);
       else if (req.sid) db.prepare('DELETE FROM sessions WHERE id = ?').run(req.sid);
-      // Потоки игры этой сессии (или всех) закрываются: bye { reason: 'session' }.
-      if (b.all === true) closeStreams(req.user.id, 'session');
-      else closeStreamsBySid(req.sid);
+      // Потоки игры и живых обновлений этой сессии (или всех) закрываются: bye { reason: 'session' }.
+      if (b.all === true) { closeStreams(req.user.id, 'session'); liveClose(req.user.id, 'session'); }
+      else { closeStreamsBySid(req.sid); liveCloseSid(req.sid); }
     }
     clearCookie(reply, web.sid);
     req.user = null;

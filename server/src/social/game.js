@@ -3,16 +3,26 @@
 // poker-logic.js (карты), poker-bot.js (бот); поток событий — game-stream.js. Здесь только HTTP: проверки,
 // поля, пределы частоты — и карточки/блокировки людей для стола (users.js), чтобы стол не тянул маршруты.
 // Стол один на все вузы, поэтому проверки U нет нигде; смотреть могут и гости.
-import { ok, invalid, guard, bodyOf, TEXT, marks } from './http.js';
-import { limit, keyOf } from './limits.js';
-import { usersByIds, userCardOf } from './users.js';
+// Приглашения друзей (§J.5): позвать — событие invite другу в поток живых обновлений (live.js) и me.game.invite
+// на 10 минут; хранятся только в памяти (poker-table.js).
+import { ok, invalid, blocked, guard, bodyOf, intField, TEXT, marks } from './http.js';
+import { limit, keyOf, rateError } from './limits.js';
+import { usersByIds, userCardOf, blockedEither } from './users.js';
+import { areFriends } from './instant-access.js';
 import { streamHandler } from './game-stream.js';
+import { liveTo } from './live.js';
 import * as pokerTable from './poker-table.js';
 
 const { REACTIONS, ACTIONS } = pokerTable;
 
+const INVITE_TEXT = {
+  no: 'Нельзя позвать этого человека',
+  again: 'Уже позвали — подожди минуту',
+};
+const INVITE_AGAIN = 60_000;   // одному и тому же другу — не чаще раза в минуту
+
 /**
- * /api/social/games (#1–#5) и поток (#6). Регистрируется, только если SOCIAL_MODE ≠ off и SOCIAL_GAME ≠ off
+ * /api/social/games (#1–#5), поток (#6) и приглашения (#7, #8). Регистрируется, только если SOCIAL_MODE ≠ off и SOCIAL_GAME ≠ off
  * (иначе — общий 404). Порядок в обработчике: проверки доступа → поля → пределы частоты → стол (§B.2).
  * @param {import('fastify').FastifyInstance} inst
  */
@@ -65,6 +75,40 @@ export function gameRoutes(inst, ctx) {
 
   // #6 — поток событий (SSE), game-stream.js: гостю тоже.
   inst.get('/api/social/games/stream', streamHandler(ctx));
+
+  // #7 — позвать друга: { to } → {}. Только друга (принятая дружба) с активным аккаунтом и без блокировки в любую
+  // сторону, иначе (и себя) — 403 blocked, причина не раскрывается. Одному и тому же — раз в минуту (429 до конца
+  // минуты, жетон ведёрка не тратится). Приглашение для него заменяет прежнее и живёт 10 минут (poker-table.js);
+  // ему в поток — invite { from, at } (at — мс сервера), если потока нет — увидит в me.game.invite.
+  const sent = new Map();   // 'от:кому' → мс последнего приглашения
+  inst.post('/api/social/games/invite', async (req) => {
+    const me = guard(req, 'SPNM');
+    const b = bodyOf(req);
+    const to = intField(b.to, 'to');
+    const t = to === me.id ? null : usersByIds(db, [to]).get(to);
+    if (!t || !t.username || t.status !== 'active' || blockedEither(db, me.id, to) || !areFriends(db, me.id, to)) {
+      throw blocked(INVITE_TEXT.no);
+    }
+    const now = Date.now();
+    const pair = me.id + ':' + to;
+    const last = sent.get(pair);
+    if (last && now - last < INVITE_AGAIN) throw rateError(Math.max(1, Math.ceil((last + INVITE_AGAIN - now) / 1000)), INVITE_TEXT.again);
+    limit('gameInvite', 'u:' + me.id);
+    if (sent.size >= 10_000) for (const [k, at] of sent) if (now - at >= INVITE_AGAIN) sent.delete(k);
+    sent.set(pair, now);
+    pokerTable.putInvite(to, me.id, now);
+    const from = usersByIds(db, [me.id]).get(me.id);
+    if (from) liveTo([to], 'invite', { from: userCardOf(ctx, from, false), at: now });
+    return ok({});
+  });
+
+  // #8 — «не сейчас»: убрать своё входящее приглашение. Без P, N и M (работает и в readonly).
+  inst.post('/api/social/games/invite/dismiss', async (req) => {
+    const me = guard(req, 'S');
+    bodyOf(req);
+    pokerTable.dropInvite(me.id);
+    return ok({});
+  });
 
   // Стол: карточки сидящих и блокировки — из базы, по разу на рассылку.
   const blocksAmong = (ids) => {

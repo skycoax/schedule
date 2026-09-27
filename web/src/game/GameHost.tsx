@@ -25,6 +25,10 @@ import { useGameStream } from './stream';
 import { Actions } from './Actions';
 import { BOT_NAME } from './BotOrb';
 import { HowToSheet } from './HowToSheet';
+import { InviteSheet } from './InviteSheet';
+import { BonusCard, untilReset } from './BonusCard';
+import { TopSheet } from './TopSheet';
+import { chips as fmtChips } from './logic';
 import { ReactRow, Table } from './Table';
 import type { Float } from './Table';
 import { buzz } from './fx';
@@ -37,7 +41,7 @@ const LEAVE_MS = 230;
 
 export default function GameHost(p: GameHostProps): JSX.Element | null {
   if (!p.req) return null;
-  return <GameRoot key={p.req.n} onClose={p.onClose} />;
+  return <GameRoot key={p.req.n} onClose={p.onClose} sit={!!p.req.sit} />;
 }
 
 /** Эти ошибки показывает сама сессия (вход, профиль, правила, ограничение). */
@@ -48,7 +52,7 @@ const errText = (e: unknown): string => (e instanceof Error && e.message ? e.mes
 
 type Access = 'ok' | 'guest' | 'offline' | 'readonly' | 'banned' | 'off' | 'loading';
 
-function GameRoot({ onClose }: { onClose: () => void }): JSX.Element {
+function GameRoot({ onClose, sit: sitOnOpen }: { onClose: () => void; sit: boolean }): JSX.Element {
   const s = useSession();
   const sRef = useRef(s);
   sRef.current = s;
@@ -134,6 +138,7 @@ function GameRoot({ onClose }: { onClose: () => void }): JSX.Element {
   const kickedShown = useRef(false);
   useEffect(() => {
     if (me?.kicked === 'idle' && !kickedShown.current) { kickedShown.current = true; toast('Тебя вывели из игры — не было ходов'); }
+    if (me?.kicked === 'broke' && !kickedShown.current) { kickedShown.current = true; toast('Фишки кончились — завтра будет бонус'); }
     if (me?.state === 'seated') kickedShown.current = false;
   }, [me?.kicked, me?.state]);
 
@@ -190,13 +195,72 @@ function GameRoot({ onClose }: { onClose: () => void }): JSX.Element {
     else if (pick === 'block') { if (await actions.block(u)) void load(true); }
   };
 
+  // Приняли приглашение друга («Играть» на плашке) — садимся, как только стол загрузился.
+  const autoSat = useRef(false);
+  useEffect(() => {
+    if (!sitOnOpen || autoSat.current || !view || access !== 'ok') return;
+    autoSat.current = true;
+    if (!me || me.state === 'none') void sit();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sitOnOpen, view, access]);
+
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const canInvite = access === 'ok';
+  const invite = () => { if (canInvite) setInviteOpen(true); };
+
+  // ─── Ежедневный бонус и рейтинг ───
+  const bonus = me?.bonus || null;
+  const [bonusOpen, setBonusOpen] = useState(false);
+  const bonusShown = useRef(false);
+  // Бонус ждёт — показываем «момент награды», как только стол загрузился (один раз за открытие).
+  useEffect(() => {
+    if (bonusShown.current || !bonus?.available || access !== 'ok') return;
+    bonusShown.current = true;
+    const t = window.setTimeout(() => setBonusOpen(true), 650);
+    return () => clearTimeout(t);
+  }, [bonus?.available, access]);
+  const [bonusBusy, setBonusBusy] = useState(false);
+  const claimBonus = async (): Promise<number | null> => {
+    if (bonusBusy) return null;
+    setBonusBusy(true);
+    try {
+      const r = await gameApi.bonus();
+      apply(r.table);
+      void sRef.current.refresh();
+      return r.got;
+    } catch (e) {
+      if (isApiError(e, 'conflict')) void load(true);
+      if (!handledBySession(e)) toast(errText(e), { kind: 'error' });
+      return null;
+    } finally {
+      setBonusBusy(false);
+    }
+  };
+  const [topOpen, setTopOpen] = useState(false);
+  // Счёт на экране: крутится вместе со временем (обратный отсчёт до бонуса).
+  const [, setTick] = useState(0);
+  const broke = !!me && me.state === 'none' && !!me.broke;
+  useEffect(() => {
+    if (!broke) return;
+    const t = window.setInterval(() => setTick((x) => x + 1), 30_000);
+    return () => clearInterval(t);
+  }, [broke]);
+
   const [howOpen, setHowOpen] = useState(false);
   const menu = async () => {
     const seated = !!me && me.state !== 'none';
-    const list = [{ id: 'how', label: 'Как играть' }];
-    if (seated) list.push({ id: 'stand', label: me!.state === 'leaving' ? 'Выйдешь после раздачи' : 'Выйти из игры', role: 'destructive' } as { id: string; label: string });
+    const list: { id: string; label: string; role?: 'destructive' }[] = [];
+    if (bonus?.available && access === 'ok') list.push({ id: 'bonus', label: 'Ежедневный бонус +' + fmtChips(bonus.amount) });
+    if (canInvite) list.push({ id: 'invite', label: 'Позвать друзей' });
+    // Рейтинг — только когда сервер уже знает про экономику фишек (в me есть bonus).
+    if (me?.bonus && (access === 'ok' || access === 'banned' || access === 'readonly')) list.push({ id: 'top', label: 'Рейтинг' });
+    list.push({ id: 'how', label: 'Как играть' });
+    if (seated) list.push({ id: 'stand', label: me!.state === 'leaving' ? 'Выйдешь после раздачи' : 'Выйти из игры', role: 'destructive' });
     const pick = await chooseAction({ actions: list });
-    if (pick === 'how') setHowOpen(true);
+    if (pick === 'invite') invite();
+    else if (pick === 'bonus') setBonusOpen(true);
+    else if (pick === 'top') setTopOpen(true);
+    else if (pick === 'how') setHowOpen(true);
     else if (pick === 'stand') void stand();
   };
 
@@ -216,10 +280,29 @@ function GameRoot({ onClose }: { onClose: () => void }): JSX.Element {
         : me.state === 'leaving' ? 'Выйдешь после раздачи'
           : view.hand ? (!view.hand.result && who ? 'Ход: ' + who : '')
             : view.countdown ? '' : humans < 2 && !botSeated ? 'Сейчас подключится Para' : humans >= 2 ? 'Ждём игроков…' : '';
+      // Сидишь один (с Para) или ждёшь — «Позвать друзей» прямо под рукой.
+      const alone = humans < 2 && canInvite && (!view.hand || !!view.hand.result || me.state === 'reserved' || !view.seats[me.seat ?? -1]?.inHand
+        || !!view.seats[me.seat ?? -1]?.folded || !(view.hand.turn && view.hand.turn.seat === me.seat));
       bottom = (
         <div className="pk-status">
           {reactOpen && <ReactRow onPick={(r) => void react(r)} />}
           {text && <span>{text}</span>}
+          {alone && <button type="button" className="pk-pill" onClick={invite}>Позвать друзей</button>}
+        </div>
+      );
+    } else if (broke && access === 'ok') {
+      // Фишки кончились: до полуночи — только смотреть; бонус ещё не забирал сегодня — забрать и играть.
+      bottom = (
+        <div className="pk-status pk-broke">
+          <b className="pk-broke__t">Фишки кончились</b>
+          {bonus?.available ? (
+            <button type="button" className="pk-btn pk-btn--main pk-btn--sit" onClick={() => setBonusOpen(true)}>
+              Забрать бонус +{fmtChips(bonus.amount)}
+            </button>
+          ) : (
+            <span>Новый бонус {bonus ? untilReset(bonus.resetAt, now()) : 'завтра'}{bonus ? ' — +' + fmtChips(bonus.tomorrow) : ''}</span>
+          )}
+          {canInvite && <button type="button" className="pk-pill" onClick={invite}>Позвать друзей посмотреть</button>}
         </div>
       );
     } else {
@@ -230,6 +313,11 @@ function GameRoot({ onClose }: { onClose: () => void }): JSX.Element {
               : view.hand && !view.hand.result ? 'Идёт раздача — присоединишься со следующей' : '';
       bottom = (
         <div className="pk-status">
+          {me && access === 'ok' && (
+            <span className="pk-bal"><i className="pk-chip" />Твои фишки: <b>{fmtChips(me.chips)}</b>
+              {bonus?.available && <button type="button" className="pk-bal__bonus" onClick={() => setBonusOpen(true)}>Бонус +{fmtChips(bonus.amount)}</button>}
+            </span>
+          )}
           {note && <span>{note}</span>}
           {canSit && !full && (
             <button type="button" className="pk-btn pk-btn--main pk-btn--sit" disabled={busy} onClick={() => void sit()}>
@@ -275,11 +363,18 @@ function GameRoot({ onClose }: { onClose: () => void }): JSX.Element {
                 <button type="button" onClick={stream.resume}>Играть здесь</button>
               </div>
             )}
+            {bonusOpen && bonus && (
+              <BonusCard bonus={bonus} busy={bonusBusy} onClaim={claimBonus} onClose={() => setBonusOpen(false)}
+                target={() => document.querySelector('.pk-me__av') || document.querySelector('.pk-bal')} />
+            )}
           </div>
         </>,
         document.body,
       )}
       <HowToSheet open={howOpen} onClose={() => setHowOpen(false)} />
+      <TopSheet open={topOpen} onClose={() => setTopOpen(false)} />
+      <InviteSheet open={inviteOpen} onClose={() => setInviteOpen(false)}
+        seated={new Set((view?.seats || []).filter((x) => x && !x.bot && x.user).map((x) => x!.user!.id))} />
     </>
   );
 }

@@ -10,7 +10,7 @@ import { Button } from '../../ui/Button';
 import { Segmented } from '../../ui/Segmented';
 import { toast } from '../../ui/Toast';
 import { socialApi } from '../api';
-import { emit } from '../events';
+import { emit, useSocialEvents } from '../events';
 import { banText, relTime } from '../format';
 import { useSession } from '../session';
 import { REPORT_REASONS } from '../types';
@@ -263,6 +263,23 @@ export function ModerationView(p: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p.active]);
   useEffect(() => () => { ctrl.current.open?.abort(); ctrl.current.closed?.abort(); }, []);
+
+  // Новая жалоба (счётчик очереди вырос) или переподключились — перечитать открытый список и сводку.
+  const queue = s.me?.modQueue ?? 0;
+  const lastQueue = useRef(queue);
+  useEffect(() => {
+    const was = lastQueue.current;
+    lastQueue.current = queue;
+    if (!p.active || queue === was) return;
+    loadStats();
+    load(tab);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queue]);
+  useSocialEvents((e) => {
+    if (e.type !== 'resync' || !p.active) return;
+    loadStats();
+    load(tab);
+  });
 
   // Вернулась сеть, а список не загрузился — загружаем снова.
   const online = s.online;

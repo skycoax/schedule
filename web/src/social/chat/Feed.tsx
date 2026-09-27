@@ -363,6 +363,28 @@ export function Feed(p: {
         else if (ev.action === 'hide') patchAll(ev.target.id, (x) => ({ ...x, hidden: true }));
         else if (ev.action === 'unhide') patchAll(ev.target.id, (x) => ({ ...x, hidden: false }));
         break;
+      case 'remote-post': {
+        // Чужой пост с сервера (social/live.ts): наверх сразу, если лента на виду и прокручена к началу;
+        // иначе — за плашку «Новые посты», чтобы не сдвигать то, что читают.
+        const post = ev.post;
+        if (post.rootId !== null || post.uni !== brand.id) return;
+        const atTop = activeRef.current && window.scrollY < 80;
+        each((e, cat) => {
+          if (cat !== '' && cat !== post.category) return;
+          if (e.state !== 'ready' || e.items.some((x) => x.id === post.id) || e.fresh.some((x) => x.id === post.id)) return;
+          if (atTop && cat === catRef.current) e.items = [post, ...e.items];
+          else e.fresh = [post, ...e.fresh];
+        });
+        break;
+      }
+      case 'likes':
+        patchAll(ev.id, (x) => (x.likes === ev.likes ? x : { ...x, likes: ev.likes }));
+        break;
+      case 'resync':
+        // Переподключились (вернулись в приложение): на виду — тихо перечитать, остальное — при показе.
+        each((e) => { if (e.items.length) e.stale = true; });
+        if (activeRef.current) void run(catRef.current, 'silent');
+        return;
       default:
         return;
     }

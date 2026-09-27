@@ -340,6 +340,12 @@ export function ThreadView(p: {
         } else if (ev.action === 'hide') patch(ev.target.id, (x) => ({ ...x, hidden: true }));
         else if (ev.action === 'unhide') patch(ev.target.id, (x) => ({ ...x, hidden: false }));
         break;
+      case 'likes':
+        patch(ev.id, (x) => (x.likes === ev.likes ? x : { ...x, likes: ev.likes }));
+        break;
+      case 'resync':
+        void load(true);
+        break;
       default:
         break;
     }

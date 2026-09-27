@@ -194,6 +194,11 @@ export default function ProfileTab(p: ProfileTabProps): JSX.Element {
 
   useSocialEvents((e) => {
     if (!username) return;
+    if (e.type === 'likes') {
+      setPosts((x) => x && { ...x, items: x.items.map((y) => (y.id === e.id && y.likes !== e.likes ? { ...y, likes: e.likes } : y)) });
+      return;
+    }
+    if (e.type === 'resync') { if (seenPosts.current) loadPosts(); return; }
     if (e.type === 'post-created' && e.post.rootId === null && e.post.author?.id === me?.id) {
       setPosts((x) => ({ items: [e.post, ...(x?.items || []).filter((y) => y.id !== e.post.id)], next: x?.next ?? null, error: '', loading: false }));
     } else if (e.type === 'post-deleted' && posts?.items.some((y) => y.id === e.id)) {

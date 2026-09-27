@@ -31,6 +31,8 @@ import { LargeTitle, NavBar } from './NavBar';
 import { readDeepLink, type DeepLink } from './deeplink';
 import { closeGame, openGame, registerGameHost, useGameRequest } from '../game/entry';
 import type { GameHostProps } from '../game/GameHost';
+import { InviteBanner } from '../game/InviteBanner';
+import { useLive } from '../social/live';
 import './shell.css';
 
 export interface AppShellProps {
@@ -219,6 +221,8 @@ function HubShell({ theme, role, setRole, renderSchedule, dl }: AppShellProps & 
   barHiddenRef.current = barHidden;
   useKeyboardWatcher();
   const game = useGameRequest();
+  // Живые обновления: чужие посты, ответы, заявки в друзья, моменты и приглашения в покер приходят сами (social/live.ts).
+  useLive();
   // До эффектов расписания: первый onContext (ссылка ?game=1) уже может открыть игру.
   useLayoutEffect(() => registerGameHost(), []);
 
@@ -481,6 +485,7 @@ function HubShell({ theme, role, setRole, renderSchedule, dl }: AppShellProps & 
           <Suspense fallback={null}><Auth /></Suspense>
         </ErrorBoundary>
       )}
+      <InviteBanner />
       <ToastHost />
       <DialogHost />
     </>

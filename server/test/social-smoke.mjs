@@ -15,6 +15,9 @@
 //   «Покер» проверяется в прогоне A (раздел «Покер»), в readonly и off. Серверу нужны POKER_FAST=1 (быстрые
 //     таймеры стола: ход 2 с, away 1,5 с), GAME_PING_MS=1000 GAME_STREAM_MAX_MS=5000 (ping раз в секунду, поток живёт 5 с).
 //     Стол один на сервер: раздел ждёт, пока он опустеет (игроки прошлого прогона встают сами: away → kick).
+//   «Живые обновления» (GET /api/social/live, приглашения в покер) — в прогоне A после «Покера» (те же GAME_PING_MS
+//     и GAME_STREAM_MAX_MS: потоки открываются на каждый шаг заново), в readonly и off. SMOKE_LIVE_SHOW=1 — напечатать
+//     по одному настоящему событию каждого вида.
 import http from 'node:http';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
@@ -1310,6 +1313,7 @@ async function runMain() {
   ok('robots.txt; страницы Para: ' + pages.join(', '));
 
   await runGame(st, boss, guest, limitsOn);
+  await runLive(boss, guest);
   if (!limitsOn) console.log('     внимание: прогон A должен идти с включёнными пределами (без SOCIAL_RATE_LIMITS=off)');
 }
 
@@ -1388,8 +1392,9 @@ function keep(u) {
 /**
  * Поток событий игры (SSE) на http.request: { status, headers, raw, events, json }, wait(event, pred, ms),
  * until(fn, ms, what), close(). json — тело отказа (не 200). u — игрок или null (гость).
+ * path — другой поток того же вида (живые обновления: /api/social/live).
  */
-function stream(u, { uni = UNI, c = '', headers = {} } = {}) {
+function stream(u, { uni = UNI, c = '', headers = {}, path = `${G}/stream` } = {}) {
   return new Promise((resolve, reject) => {
     const h = { Host: HUB, Accept: 'text/event-stream', ...headers };
     if (u && u.jar.size) h.Cookie = [...u.jar].map(([k, v]) => `${k}=${v}`).join('; ');
@@ -1415,7 +1420,7 @@ function stream(u, { uni = UNI, c = '', headers = {} } = {}) {
     }, ms, 'событие ' + name);
     s.close = () => { try { rq.destroy(); } catch { /* уже */ } };
     const q = [uni ? 'uni=' + uni : '', c ? 'c=' + c : ''].filter(Boolean).join('&');
-    const rq = http.request({ hostname: BASE.hostname, port: BASE.port, method: 'GET', path: `${G}/stream${q ? '?' + q : ''}`, headers: h }, (res) => {
+    const rq = http.request({ hostname: BASE.hostname, port: BASE.port, method: 'GET', path: `${path}${q ? '?' + q : ''}`, headers: h }, (res) => {
       s.status = res.statusCode;
       s.headers = res.headers;
       res.setEncoding('utf8');
@@ -1461,7 +1466,7 @@ async function runGame(st, boss, guest, limitsOn) {
     assert.deepEqual([gv.me, gv.seats.length, gv.hand, gv.countdown, gv.blinds, gv.startStack], [null, 4, null, null, { small: 10, big: 20 }, 1000]);
     assert.ok(Number.isInteger(gv.seq) && Number.isInteger(gv.now) && Number.isInteger(gv.watchers), 'seq, now, watchers');
     const ga = await gamer('ga', `Гоша ${RUN}`);
-    assert.deepEqual((await meOf(ga.jar)).game, { players: 0 }, 'me.game — сколько людей за столом');
+    assert.deepEqual((await meOf(ga.jar)).game, { players: 0, invite: null }, 'me.game — сколько людей за столом, приглашения нет');
     const gaView = await tableOf(ga);
     assert.deepEqual(gaView.me, { seat: null, state: 'none', chips: 1000, cards: null, actions: null, stats: { hands: 0, wins: 0, bestPot: 0 }, kicked: null });
     r = await call(ga.jar, 'POST', G + '/sit', { json: {} });
@@ -1478,7 +1483,7 @@ async function runGame(st, boss, guest, limitsOn) {
     let bot = botOf(tv);
     assert.ok(bot && bot.seat === (mySeat + 2) % 4 && bot.user === null && bot.masked === false, 'бот сел напротив');
     assert.ok(Number.isInteger(tv.countdown) && tv.countdown > tv.now, 'отсчёт до раздачи');
-    assert.deepEqual((await meOf(ga.jar)).game, { players: 1 });
+    assert.deepEqual((await meOf(ga.jar)).game, { players: 1, invite: null });
     assert.equal(expect(await gcall(ga, 'POST', '/sit'), 200, 'сесть ещё раз').table.me.seat, mySeat, 'повтор — то же место');
     tv = await until(ga, (v) => v.hand && v.hand.phase === 'preflop', { what: 'раздача' });
     assert.ok(tv.me.cards.length === 2 && tv.me.cards.every((c) => CARD_RE.test(c)), 'свои карты: ' + JSON.stringify(tv.me.cards));
@@ -1521,7 +1526,9 @@ async function runGame(st, boss, guest, limitsOn) {
 
     // 4. Второй человек садится во время раздачи → «ждёт раздачи», со следующей — в игре, бот встаёт.
     const gb = await gamer('gb', `Боря ${RUN}`);
-    ga.auto = (v) => (botOf(v) ? passive(v) : null);   // с ботом доигрывает сам, с человеком — ходим вручную
+    // С ботом доигрывает сам — сбросом (один ход на раздачу: ведёрко хода [8, 2 с] нужно шагу 5, иначе 429 и paced
+    // проспит двухсекундный ход), с человеком — ходим вручную.
+    ga.auto = (v) => (botOf(v) ? { action: 'fold' } : null);
     gb.auto = null;
     stops.push(keep(gb));
     tv = await until(ga, (v) => v.hand && !v.hand.result, { what: 'идущая раздача' });
@@ -1529,7 +1536,7 @@ async function runGame(st, boss, guest, limitsOn) {
     const seatB = sitB.me.seat;
     assert.deepEqual([sitB.me.state, sitB.seats[seatB].reserved, sitB.seats[seatB].inHand, sitB.seats[seatB].cards, sitB.me.cards, sitB.me.actions],
       ['reserved', true, false, null, null, null]);
-    assert.deepEqual((await meOf(gb.jar)).game, { players: 2 });
+    assert.deepEqual((await meOf(gb.jar)).game, { players: 2, invite: null });
     tv = await until(gb, (v) => v.hand && v.hand.phase === 'preflop' && !v.hand.result && seatOfUser(v, gb.me.id) && seatOfUser(v, gb.me.id).inHand,
       { what: 'раздача с gb' });
     assert.equal(botOf(tv), null, 'бот встал, когда людей двое');
@@ -1572,7 +1579,7 @@ async function runGame(st, boss, guest, limitsOn) {
     assert.ok(['leaving', 'none'].includes(stood.me.state), 'встал: ' + stood.me.state);
     tv = await until(ga, (v) => botOf(v) && !seatOfUser(v, gb.me.id), { what: 'бот вернулся' });
     assert.equal(expect(await gcall(gb, 'POST', '/stand'), 200, 'встать, не сидя').table.me.state, 'none');
-    assert.deepEqual((await meOf(ga.jar)).game, { players: 1 });
+    assert.deepEqual((await meOf(ga.jar)).game, { players: 1, invite: null });
     ok('«Покер»: gb встал — место освободилось, бот вернулся; «встать» не сидя — 200');
 
     // 7. Блокировки: заблокировавший ga не сядет; блокировка за столом — другой показан «Игроком» (masked).
@@ -1711,16 +1718,254 @@ async function runGame(st, boss, guest, limitsOn) {
     assert.equal((await meOf(ga.jar)).game.players, 1);
     ok('«Покер»: удаление аккаунта сидящего — место освободилось, me.game.players уменьшился');
 
-    // 13. Стек и счёт — в базе: встал и сел снова — тот же стек.
-    const before = (await tableOf(ga)).me;
+    // 13. Стек и счёт — в базе: встал и сел снова — тот же стек. Встаём между раздачами (идёт отсчёт, до раздачи
+    //     ещё > 150 мс): раздача, в которую ga уже сдан, при уходе доигрывается сбросом и честно засчитывается (hands + 1).
+    const before = (await until(ga, (v) => !v.hand && (v.countdown === null || v.countdown - v.now > 150),
+      { what: 'стол между раздачами' })).me;
     expect(await gcall(ga, 'POST', '/stand'), 200, 'ga встал');
     tv = await until(ga, (v) => !seatOfUser(v, ga.me.id), { what: 'ga вне стола' });
     assert.deepEqual([tv.me.state, tv.me.chips, tv.me.stats], ['none', before.chips, before.stats], 'банкролл и счёт сохранились');
-    assert.deepEqual((await meOf(ga.jar)).game, { players: 0 });
+    assert.deepEqual((await meOf(ga.jar)).game, { players: 0, invite: null });
     await until(null, (v) => v.seats.every((s) => !s), { what: 'стол пуст' });
     ok('«Покер»: встал — стек и счёт остались в базе (me.chips, me.stats), стол пуст');
   } finally {
     for (const stop of stops) stop();
+  }
+}
+
+// ═══════════════ Живые обновления (CONTRACT.md §J) ═══════════════
+
+const LIVE = '/api/social/live';
+/** Поток живых обновлений (SSE) человека: как stream(), но /api/social/live. */
+const live = (u, o = {}) => stream(u, { ...o, path: LIVE });
+/** Открыть потоки людей и дождаться hello в каждом. Сервер теста держит поток 5 с — открываем на каждый шаг заново. */
+async function lives(...us) {
+  const out = [];
+  for (const u of us) {
+    const s = await live(u);
+    assert.equal(s.status, 200, 'поток живых обновлений: ' + s.raw.slice(0, 200));
+    await s.wait('hello');
+    out.push(s);
+  }
+  return out;
+}
+/** За ms в поток s не пришло событие name (с pred). */
+async function none(s, name, pred, ms = 350, what = name) {
+  if (ms) await sleep(ms);
+  const extra = s.events.filter((e) => e.event === name && (!pred || pred(e.data)));
+  assert.equal(extra.length, 0, `${what}: пришло лишнее ${JSON.stringify(extra.map((e) => e.data)).slice(0, 300)}`);
+}
+const closeAll = (...ss) => { for (const s of ss.flat()) if (s) s.close(); };
+
+async function runLive(boss, guest) {
+  const seen = {};   // первое настоящее событие каждого вида — для SMOKE_LIVE_SHOW=1
+  const keepOne = (name, d) => { if (!(name in seen)) seen[name] = d; return d; };
+  const W8 = 3000;
+  let r;
+
+  // 1. Гостю — 401 JSON; вошедшему — SSE: заголовки, retry: 3000, hello, ping (GAME_PING_MS=1000).
+  expect(await call(guest, 'GET', LIVE), 401, 'живые обновления гостю', 'auth', 'Войди через Google, чтобы продолжить');
+  const A = await user('la', `Лейла ${RUN}`);
+  const B = await user('lb', `Бахром ${RUN}`);
+  const C = await user('lc', `Сардор ${RUN}`);
+  const D = await user('ld', `Дильноза ${RUN}`);
+  const E = await user('le', `Эльёр ${RUN}`);
+  const [sE0] = await lives(E);               // проживёт до конца раздела: в конце — bye max_age
+  assert.match(sE0.headers['content-type'] || '', /^text\/event-stream; charset=utf-8/);
+  assert.match(sE0.headers['cache-control'] || '', /no-store/);
+  assert.equal(sE0.headers['x-accel-buffering'], 'no');
+  assert.equal(sE0.headers['x-robots-tag'], 'noindex');
+  assert.ok(sE0.raw.startsWith('retry: 3000\n\nevent: hello\ndata: {"now":'), 'retry: 3000, затем hello: ' + JSON.stringify(sE0.raw.slice(0, 80)));
+  assert.ok(Number.isInteger(sE0.events[0].data.now), 'hello.now');
+  const t0 = Date.now();
+  const ping = await sE0.wait('ping', null, 2500);
+  assert.ok(Number.isInteger(ping.now) && Date.now() - t0 <= 2500, 'ping за ~1,5 с');
+  ok('живые обновления: гостю 401 auth; вошедшему — text/event-stream, no-store, noindex, retry: 3000, hello, ping');
+
+  // 2. Пост: B получает post с mine:false (тот же объект, что в его ленте), другое устройство автора (своя сессия) —
+  //    mine:true, а сессия, которая его создала, — ничего (знает из ответа: эхо пришло бы раньше ответа).
+  //    C, которого A заблокировала, — ничего. Ответ B — A получает reply, C — нет. Лайк A — B получает likes, C — нет.
+  expect(await call(A.jar, 'PUT', `/api/social/blocks/${C.me.id}`, { json: {}, headers: W }), 200, 'A блокирует C');
+  const A2 = await login(`sm_${RUN}_la`);          // второе устройство A (своя сессия)
+  let [sA, sA2, sB, sC] = await lives(A, A2, B, C);
+  const p = await post(A, `Живой пост · ${RUN}`, 'other');
+  const gotPost = keepOne('post', await sB.wait('post', (d) => d.post && d.post.id === p.id, W8));
+  assert.deepEqual([gotPost.post.mine, gotPost.post.canDelete, gotPost.post.liked, gotPost.post.author.id, gotPost.post.author.uni],
+    [false, false, false, A.me.id, UNI]);
+  const inFeed = expect(await call(B.jar, 'GET', '/api/social/feed?limit=50'), 200, 'лента B').items.find((x) => x.id === p.id);
+  assert.deepEqual(gotPost.post, inFeed, 'post в потоке — тот же Post, что в ленте B');
+  assert.equal((await sA2.wait('post', (d) => d.post.id === p.id, W8)).post.mine, true, 'другому устройству автора — mine:true');
+  const rp = await reply(B, p.id, `Живой ответ · ${RUN}`);
+  const gotReply = keepOne('reply', await sA.wait('reply', (d) => d.reply && d.reply.id === rp.id, W8));
+  const inThread = expect(await thread(A.jar, p.id), 200, 'ветка A').replies.find((x) => x.id === rp.id);
+  assert.deepEqual(gotReply.reply, inThread, 'reply в потоке — тот же Post, что в ветке A');
+  assert.deepEqual([gotReply.reply.rootId, gotReply.reply.mine, gotReply.reply.author.id], [p.id, false, B.me.id]);
+  const like = (u, id, on) => call(u.jar, on ? 'PUT' : 'DELETE', `/api/social/posts/${id}/like`, { json: {}, headers: W });
+  expect(await like(A, rp.id, true), 200, 'A лайкает ответ B');
+  assert.deepEqual(keepOne('likes', await sB.wait('likes', (d) => d.id === rp.id, W8)), { id: rp.id, likes: 1 });
+  await none(sA, 'post', (d) => d.post.id === p.id, 300, 'сессии, создавшей пост, — без эха');
+  await none(sB, 'reply', (d) => d.reply.id === rp.id, 0, 'сессии, создавшей ответ, — без эха');
+  await none(sC, 'post', (d) => d.post.id === p.id, 0, 'C (заблокирован A): post');
+  await none(sC, 'reply', (d) => d.reply.id === rp.id, 0, 'C: reply в ветке A');
+  await none(sC, 'likes', (d) => d.id === rp.id, 0, 'C: likes в ветке A');
+  closeAll(sA, sA2, sB, sC);
+  ok('живые обновления: пост → post другим (mine:false, как в ленте), другому устройству автора mine:true, своей сессии — без эха; ответ → reply; лайк → likes; заблокированному — ничего');
+
+  // 3. Склейка likes (не чаще раза в 700 мс на пост, последнее число) и gone: удалил ответ — A, удалил пост — B;
+  //    удалившей сессии — без эха.
+  [sA, sB] = await lives(A, B);
+  for (const on of [false, true, false]) expect(await like(A, rp.id, on), 200, 'лайк ' + on);
+  await sleep(900);
+  // Окно прошлого лайка могло ещё не закрыться — тогда всё уйдёт одним событием в его конце.
+  const burst = sB.events.filter((e) => e.event === 'likes' && e.data.id === rp.id).map((e) => e.data.likes);
+  assert.ok(burst.length >= 1 && burst.length <= 2 && burst[burst.length - 1] === 0,
+    '3 изменения подряд → не больше 2 событий, последнее — итоговое число: ' + JSON.stringify(burst));
+  expect(await call(B.jar, 'DELETE', `/api/social/posts/${rp.id}`, { json: {}, headers: W }), 200, 'B удаляет ответ');
+  assert.deepEqual(await sA.wait('gone', (d) => d.id === rp.id, W8), { id: rp.id, rootId: p.id });
+  expect(await call(A.jar, 'DELETE', `/api/social/posts/${p.id}`, { json: {}, headers: W }), 200, 'A удаляет пост');
+  assert.deepEqual(keepOne('gone', await sB.wait('gone', (d) => d.id === p.id, W8)), { id: p.id, rootId: null });
+  await none(sB, 'gone', (d) => d.id === rp.id, 200, 'удалившей ответ сессии — без эха');
+  await none(sA, 'gone', (d) => d.id === p.id, 0, 'удалившей пост сессии — без эха');
+  closeAll(sA, sB);
+  ok(`живые обновления: likes склеиваются (3 изменения → ${burst.length} соб., последнее — итоговое число); удаление ответа и поста → gone {id, rootId}`);
+
+  // 4. Друзья: заявка → incoming + me; принять → friends + me; встречная → friends; отказ → none без me;
+  //    отмена своей заявки → none + me; удалить из друзей → none + me; блокировка → второму ничего.
+  const fr = (u, id, path = '', method = 'POST') => call(u.jar, method, `/api/social/friends/${id}${path}`, { json: {}, headers: W });
+  let sD;
+  [sA, sB, sD] = await lives(A, B, D);
+  expect(await fr(A, B.me.id), 200, 'A → B');
+  const relIn = keepOne('relation', await sB.wait('relation', (d) => d.user && d.user.id === A.me.id, W8));
+  assert.deepEqual([relIn.relation, relIn.user.username, relIn.user.name], ['incoming', A.me.username, A.me.name]);
+  keepOne('me', await sB.wait('me', null, W8));
+  expect(await fr(B, A.me.id, '/accept'), 200, 'B принимает');
+  assert.equal((await sA.wait('relation', (d) => d.user.id === B.me.id, W8)).relation, 'friends');
+  await sA.wait('me', null, W8);
+  expect(await fr(D, A.me.id), 200, 'D → A');
+  assert.equal((await sA.wait('relation', (d) => d.user.id === D.me.id, W8)).relation, 'incoming');
+  expect(await fr(A, D.me.id, '/decline'), 200, 'A отклоняет D');
+  assert.equal((await sD.wait('relation', (d) => d.user.id === A.me.id, W8)).relation, 'none');
+  await none(sD, 'me', null, 300, 'отказ: me не нужен');
+  const aRel = () => sA.events.filter((e) => e.event === 'relation' && e.data.user.id === D.me.id).map((e) => e.data.relation);
+  expect(await fr(D, A.me.id), 200, 'D → A снова');
+  await sA.until(() => aRel().length === 2, W8, 'вторая заявка D');
+  expect(await fr(D, A.me.id, '', 'DELETE'), 200, 'D отменяет заявку');
+  await sA.until(() => aRel().length === 3, W8, 'отмена заявки D');
+  assert.deepEqual(aRel(), ['incoming', 'incoming', 'none'], 'A видит заявки D и отмену: ' + JSON.stringify(aRel()));
+  await sA.until(() => {
+    const i = sA.events.findIndex((e) => e.event === 'relation' && e.data.user.id === D.me.id && e.data.relation === 'none');
+    return i >= 0 && sA.events.slice(i + 1).some((e) => e.event === 'me');
+  }, W8, 'me после отмены заявки');
+  expect(await fr(D, A.me.id), 200, 'D → A в третий раз');
+  expect(await fr(A, D.me.id), 200, 'A → D при встречной — сразу дружба');
+  assert.equal((await sD.wait('relation', (d) => d.user.id === A.me.id && d.relation === 'friends', W8)).relation, 'friends');
+  expect(await fr(D, B.me.id), 200, 'D → B');
+  expect(await fr(B, D.me.id, '/accept'), 200, 'B принимает D');
+  closeAll(sA, sB, sD);
+  ok('живые обновления: заявка → incoming + me; принять и встречная → friends; отказ → none без me; отмена → none + me');
+
+  // 5. Моменты: A (друг B) — момент друзьям → B получает instants, C (заблокирован) и сама A — нет; удалила — снова B.
+  [sA, sB, sC] = await lives(A, B, C);
+  const im = await uploadPhoto(A, { full: makeJpeg(1080, 1080, SCENES.sea), thumb: makeJpeg(640, 640, SCENES.sea) });
+  const mo = expect(await call(A.jar, 'POST', '/api/social/instants', { json: { media: im.id, audience: 'friends' }, headers: W }), 201, 'момент друзьям');
+  assert.deepEqual(keepOne('instants', await sB.wait('instants', null, W8)), {});
+  await none(sC, 'instants', null, 300, 'C: момент A');
+  await none(sA, 'instants', null, 0, 'автору про свой момент');
+  expect(await call(A.jar, 'DELETE', `/api/social/instants/${mo.id}`, { json: {}, headers: W }), 200, 'A удаляет момент');
+  await sB.until(() => sB.events.filter((e) => e.event === 'instants').length === 2, W8, 'instants после удаления');
+  await none(sC, 'instants', null, 200, 'C: удаление момента A');
+  closeAll(sA, sB, sC);
+  ok('живые обновления: момент другу → instants (и при удалении); заблокированному и автору — нет');
+
+  // 6. Приглашения в покер: не другу, себе, несуществующему → 403; to не число → 400; другу → invite и me.game.invite;
+  //    повтор за минуту → 429; «не сейчас» → null, снова позвать до конца минуты → 429; сел за стол → приглашение снято.
+  const inv = (u, to) => call(u.jar, 'POST', `${G}/invite`, { json: { to }, headers: W });
+  bad(await inv(A, 'x'), 'to не число', 'Неверный запрос', 'to');
+  bad(await inv(A, 1.5), 'to дробное', 'Неверный запрос', 'to');
+  for (const [to, what] of [[C.me.id, 'не другу (и блокировка)'], [E.me.id, 'не другу'], [A.me.id, 'себе'], [999999999, 'несуществующему']]) {
+    expect(await inv(A, to), 403, 'позвать ' + what, 'blocked', 'Нельзя позвать этого человека');
+  }
+  expect(await call(guest, 'POST', `${G}/invite`, { json: { to: B.me.id }, headers: W }), 401, 'позвать гостем', 'auth');
+  expect(await call(A.jar, 'POST', `${G}/invite`, { json: { to: B.me.id } }), 403, 'позвать без X-Para', 'csrf');
+  [sA, sB] = await lives(A, B);
+  assert.deepEqual(expect(await inv(A, B.me.id), 200, 'A зовёт B'), {});
+  const gotInv = keepOne('invite', await sB.wait('invite', null, W8));
+  assert.equal(gotInv.from.id, A.me.id);
+  assert.deepEqual(Object.keys(gotInv).sort(), ['at', 'from']);
+  assert.ok(Number.isInteger(gotInv.at) && Math.abs(gotInv.at - Date.now()) < 10_000, 'at — мс сервера');
+  let bg = (await meOf(B.jar)).game;
+  assert.deepEqual([bg.invite.from.id, bg.invite.from.username, bg.invite.at], [A.me.id, A.me.username, gotInv.at]);
+  assert.deepEqual(bg.invite.from, gotInv.from, 'from в me — та же карточка');
+  r = await inv(A, B.me.id);
+  expect(r, 429, 'позвать снова за минуту', 'rate', 'Уже позвали — подожди минуту');
+  assert.ok(r.json.retryAfter >= 1 && r.json.retryAfter <= 60 && Number(r.headers['retry-after']) === r.json.retryAfter, 'retryAfter до конца минуты: ' + r.json.retryAfter);
+  expect(await call(B.jar, 'POST', `${G}/invite/dismiss`, { json: {}, headers: W }), 200, '«не сейчас»');
+  assert.equal((await meOf(B.jar)).game.invite, null, 'после «не сейчас» — null');
+  expect(await inv(A, B.me.id), 429, 'снова до конца минуты', 'rate', 'Уже позвали — подожди минуту');
+  assert.equal((await meOf(A.jar)).game.invite, null, 'у зовущего приглашения нет');
+  // Сел за стол — входящее приглашение снимается; players — живым, когда кто-то сел и встал.
+  const n0 = (await meOf(A.jar)).game.players;
+  expect(await inv(D, B.me.id), 200, 'D зовёт B');
+  assert.equal((await meOf(B.jar)).game.invite.from.id, D.me.id, 'новое приглашение заменило прежнее');
+  expect(await gcall(B, 'POST', '/sit'), 200, 'B сел за стол');
+  bg = (await meOf(B.jar)).game;
+  assert.deepEqual([bg.invite, bg.players], [null, n0 + 1], 'сел — приглашение снято');
+  assert.deepEqual(keepOne('players', await sA.wait('players', (d) => d.n === n0 + 1, W8)), { n: n0 + 1 });
+  expect(await gcall(B, 'POST', '/stand'), 200, 'B встал');
+  await sA.wait('players', (d) => d.n === n0, 4500);
+  closeAll(sA, sB);
+  ok(`живые обновления: позвать в покер — не другу/себе/несуществующему 403 «Нельзя позвать…», to 400; другу → invite + me.game.invite; повтор → 429 (retryAfter ${r.json.retryAfter} с); «не сейчас» → null; сел → снято; players ${n0 + 1} → ${n0}`);
+
+  // 7. Модерация: жалоба → модератору me; скрытие модератором → gone всем, кроме модератора и автора (им пост виден);
+  //    бан и снятие → человеку me, поток ограниченного не закрывается (он читает).
+  let sBoss;
+  [sA, sB, sBoss] = await lives(A, B, boss);
+  const p2 = await post(A, `Пост для модератора · ${RUN}`, 'other');
+  assert.equal((await sBoss.wait('post', (d) => d.post.id === p2.id, W8)).post.canDelete, true, 'модератору canDelete');
+  expect(await report(B, 'post', p2.id, 'spam'), 200, 'B жалуется');
+  await sBoss.wait('me', null, W8);
+  expect(await admin(boss, { action: 'hide', target: { type: 'post', id: p2.id } }), 200, 'модератор скрыл');
+  assert.deepEqual(await sB.wait('gone', (d) => d.id === p2.id, W8), { id: p2.id, rootId: null });
+  await none(sBoss, 'gone', (d) => d.id === p2.id, 300, 'модератору gone при скрытии');
+  await none(sA, 'gone', (d) => d.id === p2.id, 0, 'автору gone при скрытии');
+  closeAll(sA, sB, sBoss);
+  [sC] = await lives(C);
+  expect(await admin(boss, { action: 'ban', target: { type: 'user', id: C.me.id }, days: 1, reason: 'Проверка живых обновлений' }), 200, 'бан C');
+  await sC.wait('me', null, W8);
+  const sC2 = (await lives(C))[0];
+  expect(await admin(boss, { action: 'unban', target: { type: 'user', id: C.me.id } }), 200, 'снять бан C');
+  await sC2.until(() => sC2.events.filter((e) => e.event === 'me').length >= 1, W8, 'me после снятия бана');
+  assert.ok(!sC.events.some((e) => e.event === 'bye'), 'поток ограниченного не закрыт');
+  closeAll(sC, sC2);
+  ok('живые обновления: жалоба → модератору me; скрытие → gone всем, кроме модератора и автора; бан и снятие → me, поток не закрыт');
+
+  // 8. Потоки: живёт GAME_STREAM_MAX_MS (5 с) → bye max_age; 4-й у человека → bye replaced, c= — тихо;
+  //    выход → bye session только потокам своей сессии.
+  assert.equal((await sE0.wait('bye', null, 7000)).reason, 'max_age', 'первый поток раздела дожил до max_age');
+  await sE0.until(() => sE0.ended, 2000, 'поток закрыт после max_age');
+  const s4 = [];
+  for (let i = 0; i < 4; i++) s4.push((await lives(E))[0]);
+  assert.equal((await s4[0].wait('bye', null, 2000)).reason, 'replaced', '4-й поток вытесняет самый старый');
+  await s4[0].until(() => s4[0].ended, 2000, 'вытесненный закрыт');
+  assert.ok(!s4.slice(1).some((s) => s.events.some((e) => e.event === 'bye')), 'остальные живы');
+  closeAll(s4);
+  const tab = 'live' + RUN + 'tab';
+  const sT1 = await live(E, { c: tab });
+  await sT1.wait('hello');
+  const sT2 = await live(E, { c: tab });
+  await sT2.wait('hello');
+  await sT1.until(() => sT1.ended, 2000, 'та же вкладка (c=) — старое соединение закрыто');
+  assert.ok(!sT1.events.some((e) => e.event === 'bye'), 'c= — без bye');
+  closeAll(sT1, sT2);
+  const [sA1, sA2b] = await lives(A, A2);
+  expect(await call(A2.jar, 'POST', '/api/auth/logout', { json: {}, headers: W }), 200, 'выход A2');
+  assert.equal(keepOne('bye', await sA2b.wait('bye', null, 2000)).reason, 'session', 'выход → bye session');
+  await none(sA1, 'bye', null, 250, 'поток другой сессии');
+  closeAll(sA1, sA2b);
+  ok('живые обновления: через 5 с — bye max_age; 4-й поток → bye replaced, c= заменяет тихо; выход → bye session (другая сессия жива)');
+
+  if (process.env.SMOKE_LIVE_SHOW === '1') {
+    for (const [k, v] of Object.entries(seen)) console.log(`     событие ${k}: ${JSON.stringify(v)}`);
   }
 }
 
@@ -1932,6 +2177,18 @@ async function runReadonly() {
   await s.wait('table', (d) => d.view && d.view.me && d.view.me.state === 'none', 2000);
   s.close();
   ok('readonly: «Покер» — стол читается (и гостю), поток открывается (hello, table); сесть, ход, реакция → 403 readonly; встать — 200');
+
+  // ── Живые обновления в readonly: поток открывается (гостю — 401); позвать в покер → 403 readonly; «не сейчас» — 200 ──
+  expect(await call(guest, 'GET', LIVE), 401, 'живые обновления гостю в readonly', 'auth');
+  const ls = await live(alice);
+  assert.equal(ls.status, 200, 'живые обновления в readonly: ' + ls.raw.slice(0, 200));
+  assert.ok(ls.raw.startsWith('retry: 3000\n\nevent: hello\ndata: {"now":'), 'retry, hello');
+  await ls.wait('ping', null, 2500);
+  ls.close();
+  await ro(await call(alice.jar, 'POST', `${G}/invite`, { json: { to: bob.me.id }, headers: W }), 'позвать в покер');
+  expect(await call(alice.jar, 'POST', `${G}/invite/dismiss`, { json: {}, headers: W }), 200, '«не сейчас» в readonly');
+  assert.equal((await meOf(alice.jar)).game.invite, null, 'me.game.invite в readonly');
+  ok('readonly: живые обновления — поток открывается (retry, hello, ping); позвать в покер → 403 readonly; «не сейчас» — 200');
 }
 
 async function runOff() {
@@ -1949,7 +2206,12 @@ async function runOff() {
   expect(await call(guest, 'GET', G), 404, 'стол гостю в off', 'not_found');
   expect(await call(X.jar, 'GET', G + '/stream'), 404, 'поток игры в off', 'not_found');
   expect(await call(X.jar, 'POST', G + '/sit', { json: {}, headers: W }), 404, 'сесть в off', 'not_found');
-  ok('off: «Покер» — config.game off, me.game null, /api/social/games и поток → 404 not_found');
+  expect(await call(X.jar, 'POST', G + '/invite', { json: { to: 1 }, headers: W }), 404, 'позвать в off', 'not_found');
+  expect(await call(X.jar, 'POST', G + '/invite/dismiss', { json: {}, headers: W }), 404, '«не сейчас» в off', 'not_found');
+  ok('off: «Покер» — config.game off, me.game null, /api/social/games, поток и приглашения → 404 not_found');
+  expect(await call(X.jar, 'GET', LIVE), 404, 'живые обновления в off', 'not_found', 'Нет такого адреса API');
+  expect(await call(guest, 'GET', LIVE), 404, 'живые обновления гостю в off', 'not_found');
+  ok('off: живые обновления — /api/social/live → 404 not_found');
   // Фото, друзей и жалоб в off нет: Me не ведёт на недоступный аватар и не зажигает значки (у alice из seed есть и то, и другое).
   const alice = await login('alice');
   const boss = await login('boss');

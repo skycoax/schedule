@@ -1,5 +1,6 @@
-// Лента, ветки, публикации, ответы и лайки (CONTRACT.md §B.5 #6–#12), удаление постов и аккаунта (§C.4).
-// Видимость (V1–V7) — в SQL, а не на клиенте. Зритель-гость = id 0.
+// Лента, ветки, публикации, ответы и лайки (CONTRACT.md §B.5 #6–#12), удаление постов и аккаунта (§C.4),
+// живые обновления постов (§J: post, reply, likes, gone — через live.js). Видимость (V1–V7) — в SQL, а не на клиенте.
+// Зритель-гость = id 0.
 import { social } from '../config.js';
 import { tx, nowIso, DAY } from './db.js';
 import {
@@ -10,9 +11,10 @@ import { limit, keyOf, dailyCap, dayAgo, isNewAccount } from './limits.js';
 import { cleanText, tooLong, lineCount, countLinks, maskProfanity } from './text.js';
 import { usersByIds, userCardOf, uniShortOf } from './users.js';
 import { mediaByPost, unlinkMedia, MEDIA_ID_RE } from './media.js';
-import { audit, resolveReports } from './moderation.js';
+import { audit, resolveReports, liveAdmins } from './moderation.js';
 import { closeStreams } from './game-stream.js';
 import { kick as pokerKick } from './poker-table.js';
+import { liveTo, liveAll, liveUsers, liveClose, liveThrottle } from './live.js';
 
 export const CATEGORY_IDS = ['study', 'schedule', 'events', 'company', 'lost', 'other'];
 
@@ -131,6 +133,108 @@ export function postsOut(ctx, v, rows, { raw = false } = {}) {
 
 export const postOut = (ctx, v, row, opts) => postsOut(ctx, v, [row], opts)[0];
 
+// ─── Живые обновления (live.js, CONTRACT.md §J): только после COMMIT; ошибки — в журнал, не наружу ───
+
+/** С кем у человека блокировка (в любую сторону): Set id. */
+function blockSet(db, id) {
+  return new Set(db.prepare(`SELECT blocked_id AS id FROM blocks WHERE blocker_id = ?
+    UNION SELECT blocker_id FROM blocks WHERE blocked_id = ?`).all(id, id).map((r) => r.id));
+}
+
+/**
+ * Кому виден пост или ответ p (v — viewerOf): то же, что rowVisible и threadOpen, но статус автора и его блокировки
+ * читаются по разу на всех живых зрителей. Автору и модераторам — всегда; остальным — если не удалён и не скрыт,
+ * автор не ограничен и между ними нет блокировки. У ответа то же — и для публикации (её «надгробие» ветку не закрывает).
+ */
+function audienceOf(db, p, root) {
+  const one = (row) => {
+    if (!row || row.deleted_at) return () => false;
+    const a = row.author_id ? db.prepare('SELECT status FROM users WHERE id = ?').get(row.author_id) : null;
+    const open = !row.hidden && !!a && a.status === 'active';
+    const blocked = open ? blockSet(db, row.author_id) : new Set();
+    return (v) => !!v.admin || (!!v.id && row.author_id === v.id) || (open && !blocked.has(v.id));
+  };
+  const self = one(p);
+  const thread = !p.root_id ? () => true : root && root.deleted_at ? () => true : one(root);
+  return (v) => self(v) && thread(v);
+}
+
+const livePostRow = (db, id) => db.prepare('SELECT * FROM posts WHERE id = ?').get(id) || null;
+
+/**
+ * post { post } / reply { reply }: новый пост или ответ id — всем живым, кому он виден (§J.3), в том числе другим
+ * устройствам автора (приложение уберёт дубль по id), но не потокам сессии exceptSid — той, что его создала: она
+ * знает о нём из ответа, а эхо могло бы прийти раньше и посчитаться дважды. Post — тот же postOut, что строит ленту
+ * и ветку этому зрителю. Собирается сразу после COMMIT, в том же тике, — liked и reported у нового поста ни у кого нет,
+ * поэтому зрителям с одинаковыми mine/canDelete (автор, модератор) и именем адресата ответа (он сам, блокировка с ним)
+ * — один объект.
+ */
+export function livePost(ctx, id, exceptSid = null) {
+  try {
+    const db = ctx.db;
+    const ids = liveUsers();
+    if (!ids.length) return;
+    const row = livePostRow(db, id);
+    if (!row) return;
+    const root = row.root_id ? livePostRow(db, row.root_id) : null;
+    const visible = audienceOf(db, row, root);
+    const viewers = usersByIds(db, ids);
+    const parent = row.parent_id ? livePostRow(db, row.parent_id) : null;
+    const pa = parent ? parent.author_id : null;
+    const pb = pa ? blockSet(db, pa) : new Set();
+    const event = row.root_id ? 'reply' : 'post';
+    const cache = new Map();
+    liveTo(ids, event, (uid) => {
+      const u = viewers.get(uid);
+      if (!u) return null;
+      const v = viewerOf(u);
+      if (!visible(v)) return null;
+      const key = v.admin ? 'a' + uid : uid === row.author_id ? 'mine' : uid === pa ? 'pa' : pb.has(uid) ? 'pb' : '';
+      if (!cache.has(key)) cache.set(key, postOut(ctx, v, row));
+      return { [event]: cache.get(key) };
+    }, { exceptSid });
+  } catch (err) {
+    ctx.log.warn({ msg: err && err.message }, 'живые обновления: пост');
+  }
+}
+
+/**
+ * likes { id, likes }: число «нравится» поста или ответа изменилось — всем живым, кому он виден. Не чаще раза
+ * в 700 мс на пост: первое — сразу, остальные за окно — одним событием с последним числом (из базы).
+ */
+export function liveLikes(ctx, id) {
+  liveThrottle('likes:' + id, 700, () => {
+    const db = ctx.db;
+    const ids = liveUsers();
+    if (!ids.length) return;
+    const p = livePostRow(db, id);
+    if (!p || p.deleted_at) return;
+    const visible = audienceOf(db, p, p.root_id ? livePostRow(db, p.root_id) : null);
+    const viewers = usersByIds(db, ids);
+    const data = { id: p.id, likes: p.like_count };
+    liveTo(ids, 'likes', (uid) => (viewers.has(uid) && visible(viewerOf(viewers.get(uid))) ? data : null));
+  });
+}
+
+/**
+ * gone { id, rootId }: пост или ответ p (строка до удаления или скрытия) удалён автором или модератором — всем живым,
+ * кроме потоков сессии exceptSid (удалившее устройство уже убрало его у себя; эхо уменьшило бы счётчик ответов
+ * второй раз); скрыт модератором или жалобами (hidden) — всем, кроме модераторов и автора: они его по-прежнему видят
+ * (модераторам moderation.js шлёт me — очередь).
+ */
+export function liveGone(ctx, p, { hidden = false, exceptSid = null } = {}) {
+  try {
+    const data = { id: p.id, rootId: p.root_id ?? null };
+    if (!hidden) { liveAll('gone', data, { exceptSid }); return; }
+    const ids = liveUsers();
+    if (!ids.length) return;
+    const viewers = usersByIds(ctx.db, ids);
+    liveTo(ids, 'gone', (uid) => (uid === p.author_id || isAdmin(viewers.get(uid)) ? null : data));
+  } catch (err) {
+    ctx.log.warn({ msg: err && err.message }, 'живые обновления: удаление');
+  }
+}
+
 // ─── Удаление (§C.4) ───
 
 const mediaOf = (db, postId) => db.prepare('SELECT id, thumb_bytes FROM media WHERE post_id = ?').all(postId);
@@ -189,7 +293,8 @@ export function deletePost(db, p, by) {
  * Удалить аккаунт целиком (§C.4 deleteAccount): лайки, ответы, публикации, отпечаток бана, удержание @имени,
  * строка users (каскад: сессии, фото, друзья, блокировки; жалобщик обезличивается), свои записи журнала.
  * Каскад убирает и стек с счётом покера (poker_players); после COMMIT человек встаёт из-за стола (pokerKick:
- * в раздаче — сброс, место освобождается по её окончании). Файлы — после COMMIT.
+ * в раздаче — сброс, место освобождается по её окончании), потоки игры и живых обновлений закрываются
+ * (bye session). Файлы — после COMMIT.
  */
 export function deleteAccount(ctx, u) {
   const db = ctx.db;
@@ -229,6 +334,7 @@ export function deleteAccount(ctx, u) {
   });
   unlinkMedia(files);
   closeStreams(u.id, 'session');
+  liveClose(u.id, 'session');
   pokerKick(u.id);
 }
 
@@ -364,6 +470,7 @@ export function postRoutes(inst, ctx) {
       attachMedia(db, pid, me.id, input.media, now);
       return pid;
     });
+    livePost(ctx, id, req.sid);
     reply.code(201);
     return ok(postOut(ctx, viewerOf(me), getPost.get(id)));
   });
@@ -411,6 +518,7 @@ export function postRoutes(inst, ctx) {
       db.prepare('UPDATE posts SET reply_count = reply_count + 1, last_reply_at = ? WHERE id = ?').run(now, root.id);
       return pid;
     });
+    livePost(ctx, id, req.sid);
     reply.code(201);
     return ok(postOut(ctx, v, getPost.get(id)));
   });
@@ -434,6 +542,9 @@ export function postRoutes(inst, ctx) {
       return f;
     });
     unlinkMedia(files);
+    // Живые обновления: gone — всем (кроме этой сессии); удалил модератор — модераторам me (жалобы закрыты — очередь).
+    liveGone(ctx, p, { exceptSid: req.sid });
+    if (!own) liveTo(liveAdmins(ctx), 'me', {});
     return ok(null);
   });
 
@@ -448,15 +559,17 @@ export function postRoutes(inst, ctx) {
     if (!rowVisible(db, v, p)) throw notFound(TEXT.postGone);
     if (p.root_id && !threadOpen(db, v, getPost.get(p.root_id))) throw notFound(TEXT.postGone);
     limit('like', 'u:' + me.id);
-    tx(db, () => {
+    const changed = tx(db, () => {
       if (on) {
         const c = db.prepare('INSERT OR IGNORE INTO likes (post_id, user_id, created_at) VALUES (?,?,?)').run(id, me.id, nowIso()).changes;
         if (c === 1) db.prepare('UPDATE posts SET like_count = like_count + 1 WHERE id = ?').run(id);
-      } else {
-        const c = db.prepare('DELETE FROM likes WHERE post_id = ? AND user_id = ?').run(id, me.id).changes;
-        if (c === 1) db.prepare('UPDATE posts SET like_count = MAX(like_count - 1, 0) WHERE id = ?').run(id);
+        return c === 1;
       }
+      const c = db.prepare('DELETE FROM likes WHERE post_id = ? AND user_id = ?').run(id, me.id).changes;
+      if (c === 1) db.prepare('UPDATE posts SET like_count = MAX(like_count - 1, 0) WHERE id = ?').run(id);
+      return c === 1;
     });
+    if (changed) liveLikes(ctx, id);
     return ok({ liked: on, likes: likeState(id) });
   };
   inst.put('/api/social/posts/:id/like', likeRoute(true));

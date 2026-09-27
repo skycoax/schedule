@@ -33,6 +33,9 @@ export const BUCKETS = {
   gameAct: [8, 2 * SEC],      // ход
   gameReact: [5, 3 * SEC],
   gameStream: [10, 30 * SEC], // поток событий игры: по пользователю, у гостя — по IP
+  gameInvite: [10, MIN],      // позвать друга в покер (одному и тому же — раз в минуту, это game.js)
+  // Живые обновления (live.js).
+  live: [10, 30 * SEC],       // поток живых обновлений: по пользователю
 };
 
 const buckets = new Map();   // key → { t: жетоны, at: мс }

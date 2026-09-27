@@ -8,8 +8,9 @@ import { ok, invalid, notFound, guard, isAdmin, bodyOf, cursorParam, marks } fro
 import { limit, keyOf, dailyCap, dayAgo } from './limits.js';
 import { MEDIA_ID_RE, mediaRefsByIds, unlinkMedia } from './media.js';
 import { usersByIds, userCardOf } from './users.js';
-import { canSeeInstant, instantById, deleteInstantRows } from './instant-access.js';
-import { audit } from './moderation.js';
+import { canSeeInstant, instantById, deleteInstantRows, liveInstant } from './instant-access.js';
+import { audit, liveAdmins } from './moderation.js';
+import { liveTo } from './live.js';
 
 /** Сколько момент виден другим и сколько хранится архив автора. */
 export const INSTANT_TTL = DAY;
@@ -93,6 +94,7 @@ export function instantRoutes(inst, ctx) {
     });
     reply.code(201);
     const i = instantById(db, id);
+    liveInstant(db, i, ctx.log);   // живые обновления: instants тем, кто его увидит (кроме автора)
     return ok(mineOut(i, statsOf([id]).get(id)));
   });
 
@@ -217,6 +219,9 @@ export function instantRoutes(inst, ctx) {
       return f;
     });
     unlinkMedia(files);
+    // Живые обновления: instants тем, кто его видел (строка до удаления); удалил модератор — модераторам me (очередь).
+    liveInstant(db, i, ctx.log);
+    if (i.author_id !== me.id) liveTo(liveAdmins(ctx), 'me', {});
     return ok(null);
   });
 }

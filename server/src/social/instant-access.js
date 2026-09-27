@@ -1,7 +1,9 @@
-// Кто видит момент (instants.js) и его фото (/api/media/*, media.js), на что можно пожаловаться (moderation.js).
+// Кто видит момент (instants.js) и его фото (/api/media/*, media.js), на что можно пожаловаться (moderation.js),
+// кому сказать, что момент появился или пропал (живые обновления, live.js).
 // Отдельный маленький файл без зависимостей от маршрутов — чтобы media.js и moderation.js не тянули instants.js.
 import { nowIso } from './db.js';
-import { isAdmin } from './http.js';
+import { isAdmin, marks } from './http.js';
+import { liveTo, liveUsers } from './live.js';
 
 /** Друзья ли a и b (заявка принята). */
 export function areFriends(db, a, b) {
@@ -33,6 +35,22 @@ export function canSeeInstant(db, viewer, i, authorStatus) {
 export function instantById(db, id) {
   return db.prepare(`SELECT i.*, u.status AS author_status FROM instants i JOIN users u ON u.id = i.author_id
     WHERE i.id = ?`).get(id) || null;
+}
+
+/**
+ * Живые обновления: instants {} — момент i (строка instantById; при удалении и скрытии — строка до них) появился
+ * или пропал. Получают все живые, кто его видит (или видел) — canSeeInstant, модераторы тоже, — кроме автора.
+ * Вызывать после COMMIT; не бросает.
+ */
+export function liveInstant(db, i, log) {
+  try {
+    const ids = liveUsers().filter((id) => id !== i.author_id);
+    if (!ids.length) return;
+    const viewers = db.prepare(`SELECT id, email, email_verified FROM users WHERE id IN (${marks(ids)})`).all(...ids);
+    liveTo(viewers.filter((u) => canSeeInstant(db, u, i, i.author_status)).map((u) => u.id), 'instants', {});
+  } catch (err) {
+    if (log) log.warn({ msg: err && err.message }, 'живые обновления: моменты');
+  }
 }
 
 /** Удалить момент целиком (внутри tx): строка media (каскадом — момент и просмотры). Возвращает файлы. */

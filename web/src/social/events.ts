@@ -15,7 +15,13 @@ export type SocialEvent =
   | { type: 'relation'; userId: number; relation: Relation }
   | { type: 'reported'; target: ReportTarget; hidden: boolean }
   | { type: 'moderated'; target: ReportTarget; action: AdminAction }
-  | { type: 'me-changed'; me: Me | null };
+  | { type: 'me-changed'; me: Me | null }
+  // Живые обновления с сервера (social/live.ts): чужой пост — в ленту плашкой «Новые посты»; новое число «нравится»;
+  // «перечитай экран» после переподключения; моменты друзей поменялись.
+  | { type: 'remote-post'; post: Post }
+  | { type: 'likes'; id: number; likes: number }
+  | { type: 'resync' }
+  | { type: 'instants' };
 
 export function emit(e: SocialEvent): void {
   try { window.dispatchEvent(new CustomEvent<SocialEvent>(SOCIAL_EVENT, { detail: e })); } catch { /* нет window */ }

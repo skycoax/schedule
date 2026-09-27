@@ -114,8 +114,8 @@ export interface Me {
   counts: { friends: number; posts: number };
   usernameNextChange: string | null; // когда снова можно сменить @имя; null — можно сейчас
   createdAt: string;
-  /** Покер: сколько людей сейчас за столом. null — игра выключена. */
-  game: { players: number } | null;
+  /** Покер: сколько людей сейчас за столом, приглашение друга (живёт 10 минут) и ждёт ли ежедневный бонус. null — игра выключена. */
+  game: { players: number; invite?: GameInvite | null; bonus?: boolean } | null;
 }
 
 /** Публикация и ответ — одна форма (одна таблица на сервере). */
@@ -255,6 +255,8 @@ export interface AuditItem {
 // ─── Покер (/api/social/games, CONTRACT.md §I): один общий стол на всю Para, техасский холдем на игровые фишки ───
 
 export type GameReaction = 'wave' | 'like' | 'wow' | 'lol' | 'fire' | 'deal';
+/** Друг зовёт в покер (at — когда позвал: время сервера, ms или ISO). */
+export interface GameInvite { from: UserCard; at: number | string }
 /** Карта: ранг A K Q J T 9 8 7 6 5 4 3 2 и масть s h d c — 'As', 'Td'; чужая закрытая — '?'. */
 export type Card = string;
 export type PokerAction = 'fold' | 'check' | 'call' | 'raise' | 'allin';
@@ -283,12 +285,23 @@ export interface PokerHand {
   result: PokerResult | null;
 }
 export interface PokerActions { fold: boolean; check: boolean; call: number; raise: { min: number; max: number } | null; allin: number }
+/** Ежедневный бонус: available — сегодня ещё не забирал; amount — сколько дадут сейчас; streak — серия дней (0 — сгорела);
+ *  tomorrow — сколько завтра, если продолжить; resetAt — ближайшая полночь по Ташкенту (ms). */
+export interface PokerBonus { available: boolean; amount: number; streak: number; tomorrow: number; resetAt: number }
 export interface PokerMe {
   seat: number | null; state: 'none' | 'reserved' | 'seated' | 'leaving';
   chips: number;
   cards: Card[] | null; actions: PokerActions | null;
   stats: { hands: number; wins: number; bestPot: number };
-  kicked: 'idle' | null;
+  kicked: 'idle' | 'broke' | null;
+  bonus?: PokerBonus;
+  broke?: boolean;                       // фишек меньше большого блайнда (и не в раздаче) — до завтрашнего бонуса не сесть
+}
+export type PokerTopScope = 'friends' | 'all';
+export interface PokerTop {
+  scope: PokerTopScope;
+  items: { place: number; user: UserCard; chips: number; me: boolean }[];
+  me: { place: number; chips: number } | null; total: number;
 }
 export interface PokerView {
   seq: number; now: number;
