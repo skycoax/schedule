@@ -1,206 +1,257 @@
 /* ─────────────────────────────────────────────────────────────────────────
-   Игра «Код» (web/src/game). Экраны — поверх всего, всегда тёмные, как экраны моментов (.ix из instants.css):
-   слой 58, подложка 57 — ниже листов (60), меню (70) и тостов (100). Внутри .gx свои тёмные цвета, поэтому
-   общие части (аватар, значки, сегменты, заглушки) выглядят как в тёмной теме. Значки ответа — только белым:
-   ● — заливка, ○ — кольцо 1,5 px, · — точка 25 %. Без градиентов, свечений и смысла только цветом.
+   Покер (web/src/game). Экран — поверх всего, всегда тёмный, как экраны моментов (.ix из instants.css): слой 58,
+   подложка 57 — ниже листов (60), меню (70) и тостов (100). Внутри .gx свои тёмные цвета, поэтому общие части
+   (аватар, значки) выглядят как в тёмной теме. Стиль — простой и тихий (чёрный, белый, одна тёплая подсветка
+   на сильной руке), всё внимание — движению: карты летят из колоды и переворачиваются, фишки летят к ставке,
+   в банк и к победителю, кольцо таймера убывает вокруг фото.
    ───────────────────────────────────────────────────────────────────────── */
 
 .gx{--ink-100:#fff;--ink-60:rgba(235,235,245,.6);--ink-30:rgba(235,235,245,.3);--sep:rgba(84,84,88,.55);
   --fill:rgba(118,118,128,.24);--glass-edge:rgba(255,255,255,.1);--surface:#1c1c1e;--surface-2:#2c2c2e;
-  --seg-track:rgba(118,118,128,.24);--seg-active:#636366;--media-bg:#2c2c2e;--gx-key:#1c1c1e;
+  --seg-track:rgba(118,118,128,.24);--seg-active:#636366;--media-bg:#2c2c2e;
   color-scheme:dark;outline:none;overscroll-behavior:contain}
-.gx.is-under{display:none}
-/* Пока игра открыта (html.has-game, GameHost Root): тосты — сверху, под строкой экрана, а не на клавиатуре игры;
-   плашка «Оцените» (ReviewPrompt) поверх игры не появляется. */
+/* Пока игра открыта (html.has-game, GameHost Root): тосты — сверху, а не на кнопках; плашка «Оцените» не появляется. */
 html.has-game .ui-toasts{top:calc(env(safe-area-inset-top) + 64px);bottom:auto}
 html.has-game .nudge{display:none}
-.gx.ix--still{animation:none}
 .gx button{-webkit-tap-highlight-color:transparent}
 .gx button:focus-visible{outline:2px solid #fff;outline-offset:2px}
 
-/* Створки флип-часов внутри игры: тёмные, без шва; маленькие — для кода вызова и кодов в итоге. */
+/* Створки флип-часов внутри игры (отсчёт до раздачи): тёмные, без шва. */
 .gx .fl{--surface-2:#1c1c1e;--ink-100:#fff;--sep:#000}
-.gx .fl.is-sm{font-size:28px}
-.gx .fl.is-empty b i{color:rgba(255,255,255,.3)}
-.gx .fl.is-sm b.u{border-radius:9px 9px 0 0}
-.gx .fl.is-sm b.l{border-radius:0 0 9px 9px}
 
 /* ─── Верхняя строка ─── */
-.gx-bar{grid-template-columns:44px minmax(0,1fr) auto}
-.gx-bar__mid{min-width:0;display:flex;justify-content:center}
-.gx-bar__r{display:flex;justify-content:flex-end;min-width:44px}
-.gx-who{display:flex;align-items:center;gap:8px;min-width:0}
-.gx-who__av{position:relative;flex:none;display:grid}
-.gx-who__av .av{width:28px;height:28px;font-size:12px}
-.gx-who__bot{flex:none;display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:#1c1c1e}
-.gx-who__name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:16px;font-weight:600}
-.gx-who__live{flex:none;font-size:13px;color:rgba(255,255,255,.6)}
-/* Реакция соперника: всплывает у аватара на 24 px и гаснет за 1,6 с. */
-.gx-float{position:absolute;left:100%;top:2px;font-size:20px;line-height:1;pointer-events:none;
-  animation:gx-float 1.6s ease-out forwards}
-@keyframes gx-float{0%{opacity:0;transform:translateY(4px) scale(.7)}12%{opacity:1;transform:none}
-  70%{opacity:1}100%{opacity:0;transform:translateY(-24px)}}
-.gx-reacts{flex:none;display:flex;justify-content:center;gap:6px;padding:2px 12px 10px;animation:gx-drop 200ms ease-out both}
-@keyframes gx-drop{from{opacity:0;transform:translateY(-6px)}}
-.gx-react{width:46px;height:46px;border-radius:23px;background:rgba(255,255,255,.1);font-size:23px;line-height:46px;
-  transition:transform 140ms}
-.gx-react:active{transform:scale(.88)}
+.pk-bar{grid-template-columns:44px minmax(0,1fr) 44px}
+.pk-bar__mid{display:flex;flex-direction:column;align-items:center;min-width:0;line-height:1.15}
+.pk-bar__t{margin:0;font-size:17px;font-weight:600}
+.pk-bar__s{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:rgba(255,255,255,.55)}
 
-/* ─── Тело экрана ─── */
-.gx-body{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding:4px 16px 24px}
-.gx-center{display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center;padding-top:28px}
-.gx-join{display:flex;flex-direction:column;align-items:center;gap:16px;padding-top:6vh;text-align:center}
-.gx-h{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:6px;margin:0;font-size:20px;font-weight:600;line-height:1.3}
-.gx-h--sm{font-size:17px}
-.gx-text{max-width:340px;margin:0;font-size:15px;line-height:1.45;color:rgba(255,255,255,.65)}
-.gx-cap{margin:0;font-size:13px;line-height:1.4;color:rgba(255,255,255,.55);text-align:center}
-.gx-note{margin:12px 16px 0;font-size:13px;line-height:1.4;color:rgba(255,255,255,.55);text-align:center}
-.gx-err{margin:0;font-size:14px;line-height:1.4;color:rgba(255,255,255,.85);text-align:center}
-.gx-foot{margin:22px 16px 0;font-size:12px;line-height:1.45;color:rgba(255,255,255,.4);text-align:center}
-.gx-empty{padding:40px 16px;font-size:15px;line-height:1.45;color:rgba(255,255,255,.6);text-align:center}
-.gx-skel{height:60px;margin:12px 0 0;border-radius:16px}
+/* ─── Стол ─── */
+.pk-root{display:flex;flex-direction:column}
+.pk{position:relative;flex:1;min-height:0;overflow:hidden}
+.pk-felt{position:absolute;left:3%;right:3%;top:2px;bottom:37%;border-radius:50%/46%;
+  background:radial-gradient(ellipse at 50% 38%,#202024 0%,#131316 52%,#09090b 100%);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.07),inset 0 0 70px rgba(0,0,0,.55),0 24px 60px rgba(0,0,0,.65)}
+.pk-ring-area{position:absolute;inset:0;pointer-events:none}
+.pk-ring-area > *{pointer-events:auto}
+.pk-center{position:absolute;left:0;right:0;top:29%;height:32%;display:flex;flex-direction:column;align-items:center;
+  justify-content:flex-start;gap:8px;pointer-events:none}
+.pk-center > *{pointer-events:auto}
+.pk-bottom{position:absolute;left:0;right:0;bottom:0;display:flex;flex-direction:column;
+  padding:0 12px calc(env(safe-area-inset-bottom) + 8px)}
 
-/* ─── Кнопки ─── */
-.gx-acts{display:flex;flex-direction:column;gap:10px;width:100%;max-width:360px;margin:10px auto 0}
-.gx-primary, .gx-second{display:block;width:100%;min-height:50px;padding:6px 16px;border-radius:14px;
-  font-size:17px;font-weight:600;line-height:1.2;transition:opacity 120ms}
-.gx-primary{background:#fff;color:#000}
-.gx-second{background:rgba(255,255,255,.12);color:#fff}
-.gx-primary:disabled, .gx-second:disabled{opacity:.35;cursor:default}
-.gx-primary:active:not(:disabled), .gx-second:active:not(:disabled){opacity:.75}
-.gx-link{padding:12px;font-size:16px;font-weight:500;color:#fff}
-.gx-link--danger{color:#ff453a}
-.gx-link:disabled{opacity:.4}
-.gx-pill{flex:none;height:32px;padding:0 14px;border-radius:16px;background:#fff;color:#000;font-size:14px;font-weight:600}
-.gx-pill:disabled{opacity:.35}
-.gx-x{flex:none;width:36px;height:36px;color:rgba(255,255,255,.6)}
+/* Колода: три рубашки стопкой, из неё вылетают карты. */
+.pk-deck{position:relative;width:26px;height:36px;margin-bottom:4px}
+.pk-deck i{position:absolute;inset:0;border-radius:5px;
+  background:#101013 repeating-linear-gradient(135deg,rgba(255,255,255,.05) 0 1px,transparent 1px 5px);
+  box-shadow:0 0 0 1px rgba(255,255,255,.12),0 4px 10px rgba(0,0,0,.5)}
+.pk-deck i:nth-child(2){transform:translate(1.5px,-1.5px)}
+.pk-deck i:nth-child(3){transform:translate(3px,-3px)}
 
-/* ─── Лобби ─── */
-.gx-deco{display:flex;gap:6px;width:min(216px,58vw);margin:10px auto 12px}
-.gx-deco .fl{font-size:40px}
-.gx-lead{margin:0 0 20px;font-size:15px;line-height:1.4;color:rgba(255,255,255,.6);text-align:center}
-.gx-sec{margin:24px 16px 8px;font-size:13px;font-weight:600;color:rgba(255,255,255,.55)}
-.gx-list{overflow:hidden;border-radius:16px;background:#1c1c1e}
-.gx-row, .gx-inv{position:relative;display:flex;align-items:center;gap:12px;width:100%;min-height:60px;
-  padding:10px 12px 10px 16px;text-align:left;color:#fff}
-.gx-row + .gx-row::before, .gx-inv + .gx-inv::before{content:'';position:absolute;top:0;left:16px;right:0;
-  border-top:.5px solid rgba(84,84,88,.55)}
-.gx-row:active{background:rgba(255,255,255,.08)}
-.gx-row.is-dim{opacity:.38}
-.gx-row.is-dim:active{background:none}
-.gx-row__ico{flex:none;display:grid;place-items:center;width:30px;height:30px;border-radius:8px;background:#2c2c2e}
-.gx-row__main{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
-.gx-row__t{display:flex;align-items:center;gap:4px;min-width:0;font-size:16px;font-weight:500}
-.gx-row__s{font-size:13px;line-height:1.35;color:rgba(255,255,255,.55)}
-.gx-row__v{flex:none;max-width:40%;font-size:15px;color:rgba(255,255,255,.55);text-align:right}
-.gx-row__chev{flex:none;color:rgba(255,255,255,.3)}
-.gx-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.gx-game.is-unseen .gx-row__t{font-weight:700}
-.gx-game.is-unseen .gx-row__s{color:rgba(255,255,255,.8)}
-.gx-unseen{flex:none;width:6px;height:6px;border-radius:50%;background:#fff}
-.gx-inv{padding-right:8px}
-.gx-inv .gx-name{white-space:normal;overflow-wrap:anywhere}
+.pk-board{display:flex;gap:6px;min-height:64px;align-items:center}
+.pk-pot{display:inline-flex;align-items:center;gap:6px;padding:4px 12px 4px 8px;border-radius:14px;background:rgba(255,255,255,.08);
+  font-size:15px;font-weight:600;font-variant-numeric:tabular-nums;transition:opacity 400ms}
+.pk-pot.is-out{opacity:.35}
+.pk-hint{margin:0;max-width:260px;text-align:center;font-size:15px;line-height:1.4;color:rgba(255,255,255,.55)}
+.pk-count{display:flex;align-items:center;gap:10px;font-size:15px;font-weight:500;color:rgba(255,255,255,.7)}
+.pk-count__d{display:flex;width:30px}
+.pk-count__d .fl{font-size:34px}
+.pk-result{display:flex;flex-direction:column;align-items:center;gap:2px;max-width:86%;padding:8px 16px;border-radius:16px;
+  background:rgba(255,255,255,.1);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);text-align:center;
+  animation:pk-pop 320ms cubic-bezier(.2,.9,.22,1) both}
+.pk-result b{font-size:18px;font-weight:700;letter-spacing:-.01em}
+.pk-result span{font-size:13px;color:rgba(255,255,255,.7)}
+@keyframes pk-pop{from{opacity:0;transform:scale(.86)}}
+@keyframes pk-up{from{opacity:0;transform:translateY(12px)}}
 
-/* ─── «Твой код»: ячейки и клавиатура ─── */
-.gx-pad{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:space-between;gap:16px;padding:8px 20px 16px}
-.gx-pad__top{display:flex;flex-direction:column;align-items:center;gap:14px;padding-top:4vh}
-.gx-pad__bottom{display:flex;flex-direction:column;gap:12px;width:100%;max-width:420px;margin:0 auto}
-.gx-slots{display:flex;gap:10px;width:min(270px,74vw)}
-.gx-slot{flex:1;min-width:0;display:flex}
-.gx-slots .fl{font-size:44px}
-.gx-slots.is-sm{width:min(210px,58vw);gap:8px}
-.gx-slots.is-sm .fl{font-size:32px}
-.gx-keys{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
-.gx-key{height:52px;border-radius:12px;background:var(--gx-key);color:#fff;font-size:26px;font-weight:400;
-  font-variant-numeric:tabular-nums;transition:background-color 100ms}
-.gx-key:active:not(:disabled){background:#3a3a3c}
-.gx-key.is-used{color:rgba(255,255,255,.3)}
-.gx-key.is-used:active{background:var(--gx-key)}
-.gx-key--word{font-size:15px;font-weight:500}
-.gx-key:disabled{opacity:.45}
+/* ─── Места ─── */
+.pk-seat{position:absolute;display:flex;flex-direction:column;align-items:center;width:98px;color:#fff;text-align:center;
+  transition:opacity 300ms}
+.pk-seat--top{top:0;left:50%;transform:translateX(-50%)}
+.pk-seat--left{top:9%;left:2%}
+.pk-seat--right{top:9%;right:2%}
+.pk-seat--bottom{top:50%;left:50%;transform:translateX(-50%)}
+.pk-seat.is-folded .pk-seat__av, .pk-seat.is-folded .pk-seat__name, .pk-seat.is-folded .pk-seat__chips{opacity:.5}
+.pk-seat.is-away{opacity:.55}
+.pk-seat.is-lost .pk-seat__av{opacity:.7}
+.pk-seat__free{display:flex;flex-direction:column;align-items:center;gap:6px;width:64px;height:64px;justify-content:center;
+  border-radius:50%;background:rgba(255,255,255,.05);box-shadow:inset 0 0 0 1px dashed rgba(255,255,255,.2);
+  font-size:12px;color:rgba(255,255,255,.55);margin-top:34px}
+.pk-seat__free{box-shadow:none;border:1px dashed rgba(255,255,255,.22)}
+.pk-seat__free.is-quiet{border-color:rgba(255,255,255,.1);color:rgba(255,255,255,.28)}
+.pk-seat__plus{font-size:22px;line-height:1;color:#fff}
+.pk-seat--empty:active .pk-seat__free{background:rgba(255,255,255,.12)}
+.pk-seat__cards{display:flex;height:42px;margin-bottom:-6px}
+.pk-seat__cards .pc + .pc{margin-left:-9px}
+.pk-seat__cards .pc:first-child .pc__in{transform:rotate(-5deg)}
+.pk-seat__cards .pc:first-child.is-up .pc__in{transform:rotate(-5deg) rotateY(180deg)}
+.pk-seat__cards .pc:last-child .pc__in{transform:rotate(5deg)}
+.pk-seat__cards .pc:last-child.is-up .pc__in{transform:rotate(5deg) rotateY(180deg)}
+.pk-seat__av{position:relative;display:grid;place-items:center;width:52px;height:52px;transition:transform 220ms cubic-bezier(.2,.9,.22,1)}
+.pk-seat.is-turn .pk-seat__av{transform:scale(1.08)}
+.pk-seat.is-win .pk-seat__av{animation:pk-winpulse 900ms ease-out 2}
+@keyframes pk-winpulse{0%{filter:drop-shadow(0 0 0 rgba(255,255,255,0))}40%{filter:drop-shadow(0 0 14px rgba(255,255,255,.8))}100%{filter:drop-shadow(0 0 0 rgba(255,255,255,0))}}
+.pk-ring{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);pointer-events:none}
+.pk-seat__d{position:absolute;right:-2px;bottom:0;width:18px;height:18px;border-radius:50%;background:#fff;color:#000;
+  font-size:10px;font-weight:700;line-height:18px;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,.6)}
+.pk-seat__name{display:flex;align-items:center;justify-content:center;gap:3px;max-width:100%;margin-top:3px;font-size:13px;font-weight:600}
+.pk-seat__name > span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pk-seat.is-turn .pk-seat__name{color:#fff}
+.pk-seat__chips{font-size:12px;font-variant-numeric:tabular-nums;color:rgba(255,255,255,.65)}
+.pk-seat__st{margin-top:2px;padding:1px 7px;border-radius:8px;background:rgba(255,255,255,.1);font-size:10px;font-weight:600;
+  letter-spacing:.02em;text-transform:uppercase;color:rgba(255,255,255,.7)}
+.pk-seat__bet{position:absolute;z-index:2;display:inline-flex;align-items:center;gap:5px;padding:3px 8px 3px 5px;border-radius:12px;
+  background:rgba(255,255,255,.12);box-shadow:0 0 0 1px rgba(255,255,255,.1),0 2px 8px rgba(0,0,0,.5);font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;
+  white-space:nowrap;animation:pk-pop 220ms cubic-bezier(.2,.9,.22,1) both}
+.pk-seat__betspot{position:absolute;width:2px;height:2px}
+.pk-seat--top .pk-seat__bet, .pk-seat--top .pk-seat__betspot{left:50%;top:100%;transform:translate(-50%,8px)}
+.pk-seat--left .pk-seat__bet, .pk-seat--left .pk-seat__betspot{left:100%;top:56%;transform:translate(2px,-50%)}
+.pk-seat--right .pk-seat__bet, .pk-seat--right .pk-seat__betspot{right:100%;top:56%;transform:translate(-2px,-50%)}
+.pk-seat--bottom .pk-seat__bet, .pk-seat--bottom .pk-seat__betspot{left:50%;top:-4px;transform:translate(-50%,-100%)}
+.pk-seat__last{position:absolute;left:calc(50% + 28px);top:46px;z-index:3;padding:3px 9px;border-radius:10px;background:#fff;color:#000;
+  font-size:12px;font-weight:600;white-space:nowrap;animation:pk-bubble 2.4s ease both;pointer-events:none}
+.pk-seat--right .pk-seat__last{left:auto;right:calc(50% + 28px)}
+@keyframes pk-bubble{0%{opacity:0;transform:translateY(6px) scale(.8)}12%{opacity:1;transform:none}78%{opacity:1}100%{opacity:0;transform:translateY(-6px)}}
+.pk-seat__win{position:absolute;left:50%;top:100%;z-index:3;display:flex;flex-direction:column;align-items:center;transform:translate(-50%,6px);
+  padding:4px 10px;border-radius:12px;background:#fff;color:#000;white-space:nowrap;animation:pk-pop 300ms cubic-bezier(.2,.9,.22,1) 500ms both}
+.pk-seat__win b{font-size:14px;font-weight:700;font-variant-numeric:tabular-nums}
+.pk-seat__win span{font-size:11px;color:rgba(0,0,0,.65)}
+.pk-seat__float{position:absolute;left:70%;top:-4px;font-size:22px;line-height:1;pointer-events:none;animation:pk-float 1.6s ease-out forwards}
+@keyframes pk-float{0%{opacity:0;transform:translateY(4px) scale(.7)}12%{opacity:1;transform:none}70%{opacity:1}100%{opacity:0;transform:translateY(-26px)}}
+.pk-bot{display:grid;place-items:center;border-radius:50%;background:#1c1c1e;color:#fff;box-shadow:inset 0 0 0 1px rgba(255,255,255,.14)}
 
-/* ─── Код вызова: шесть маленьких створок (и поле ввода поверх них) ─── */
-.gx-token{position:relative;display:flex;gap:6px;width:min(300px,84vw)}
-.gx-token--in{cursor:text}
-.gx-token__cells{flex:1;min-width:0;display:flex;gap:6px}
-.gx-token .fl.is-cur{border-radius:9px;box-shadow:0 0 0 2px rgba(255,255,255,.7)}
-.gx-token__input{position:absolute;inset:0;width:100%;height:100%;padding:0;border:0;opacity:0;background:transparent;
-  color:transparent;caret-color:transparent;font-size:16px}
+/* ─── Своя строка и свои карты ─── */
+.pk-mine{display:flex;flex-direction:column;align-items:center;gap:8px;margin-bottom:8px}
+.pk-mine__cards{display:flex;gap:8px;min-height:98px}
+.pk-mine__cards .pc:nth-child(1) .pc__in{transform:rotate(-4deg)}
+.pk-mine__cards .pc:nth-child(1).is-up .pc__in{transform:rotate(-4deg) rotateY(180deg)}
+.pk-mine__cards .pc:nth-child(2) .pc__in{transform:rotate(4deg)}
+.pk-mine__cards .pc:nth-child(2).is-up .pc__in{transform:rotate(4deg) rotateY(180deg)}
+.pk-mine__cards.is-folded .pc{opacity:.35;filter:saturate(0)}
+.pk-mine__hand{min-height:18px;font-size:14px;font-weight:500;color:rgba(255,255,255,.7);animation:pk-up 240ms ease-out 1150ms both}
+.pk-mine__hand.is-hot{color:#ffd9a8}
+.pk-me{position:relative;display:flex;align-items:center;gap:10px;min-height:52px;padding:0 2px}
+.pk-me__av{position:relative;display:grid;place-items:center;width:48px;height:48px;border-radius:50%;
+  transition:transform 220ms cubic-bezier(.2,.9,.22,1)}
+.pk-me.is-turn .pk-me__av{transform:scale(1.08)}
+.pk-me__main{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.pk-me__name{display:flex;align-items:center;gap:4px;min-width:0;font-size:15px;font-weight:600}
+.pk-me__name > span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pk-me__sub{font-size:13px;font-variant-numeric:tabular-nums;color:rgba(255,255,255,.6)}
+.pk-me__last{padding:3px 9px;border-radius:10px;background:rgba(255,255,255,.14);font-size:12px;font-weight:600;
+  animation:pk-bubble 2.4s ease both}
+.pk-me__bet{position:static;transform:none}
+.pk-me__betspot{position:static;width:2px;height:2px;margin-right:8px}
 
-/* ─── Поиск соперника ─── */
-.gx-radar{display:flex;align-items:center;gap:8px;height:24px;margin:20px 0 4px}
-.gx-radar i{width:8px;height:8px;border-radius:50%;background:#fff;opacity:.25;animation:gx-dot 1.2s ease-in-out infinite}
-.gx-radar i:nth-child(2){animation-delay:.2s}
-.gx-radar i:nth-child(3){animation-delay:.4s}
-@keyframes gx-dot{0%,100%{opacity:.25}40%{opacity:.9}}
-.gx-found{animation:gx-pop 260ms cubic-bezier(.2,.9,.22,1) both}
-@keyframes gx-pop{from{opacity:0;transform:scale(.96)}}
+/* ─── Действия ─── */
+.pk-acts{display:flex;flex-direction:column;gap:8px;padding-top:6px;animation:pk-up 260ms cubic-bezier(.2,.9,.22,1) both}
+.pk-acts__row{display:flex;gap:8px}
+.pk-btn{flex:1;min-width:0;height:52px;padding:0 10px;border-radius:16px;background:rgba(255,255,255,.12);color:#fff;
+  font-size:16px;font-weight:600;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  transition:transform 120ms,opacity 120ms,background-color 120ms}
+.pk-btn:active:not(:disabled){transform:scale(.97)}
+.pk-btn:disabled{opacity:.35}
+.pk-btn--main{background:#fff;color:#000}
+.pk-btn--fold{flex:.8}
+.pk-btn--go{flex:1.4}
+.pk-btn--x{flex:0 0 52px;font-size:18px}
+.pk-btn--sit{width:100%;max-width:360px;margin:0 auto}
+.pk-raise{display:flex;flex-direction:column;gap:10px;padding:10px 12px;border-radius:16px;background:rgba(255,255,255,.06);
+  animation:pk-up 240ms ease-out both}
+.pk-raise__pre{display:flex;gap:6px}
+.pk-raise__p{flex:1;height:34px;border-radius:10px;background:rgba(255,255,255,.1);color:#fff;font-size:13px;font-weight:500;
+  transition:background-color 120ms,color 120ms}
+.pk-raise__p.is-on{background:#fff;color:#000}
+.pk-raise__row{display:flex;align-items:center;gap:12px}
+.pk-raise__slider{flex:1;min-width:0;height:28px;margin:0;-webkit-appearance:none;appearance:none;background:transparent}
+.pk-raise__slider::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:rgba(255,255,255,.22)}
+.pk-raise__slider::-webkit-slider-thumb{-webkit-appearance:none;width:26px;height:26px;margin-top:-11px;border-radius:50%;background:#fff;
+  box-shadow:0 2px 8px rgba(0,0,0,.5)}
+.pk-raise__slider::-moz-range-track{height:4px;border-radius:2px;background:rgba(255,255,255,.22)}
+.pk-raise__slider::-moz-range-thumb{width:26px;height:26px;border:0;border-radius:50%;background:#fff}
+.pk-raise__amt{flex:none;min-width:84px;text-align:right;font-size:16px;font-weight:600;font-variant-numeric:tabular-nums}
+.pk-status{display:flex;flex-direction:column;align-items:center;gap:10px;min-height:52px;padding-top:6px;text-align:center;
+  font-size:15px;line-height:1.35;color:rgba(255,255,255,.65)}
+.pk-reacts{display:flex;justify-content:center;gap:6px;animation:pk-up 200ms ease-out both}
+.pk-react{width:46px;height:46px;border-radius:23px;background:rgba(255,255,255,.1);font-size:23px;line-height:46px;transition:transform 140ms}
+.pk-react:active{transform:scale(.88)}
+.pk-load{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;
+  text-align:center;font-size:15px;color:rgba(255,255,255,.6)}
+.pk-load p{margin:0}
+.pk-load__dots{display:flex;gap:8px}
+.pk-load__dots i{width:8px;height:8px;border-radius:50%;background:#fff;opacity:.25;animation:pk-dot 1.2s ease-in-out infinite}
+.pk-load__dots i:nth-child(2){animation-delay:.2s}
+.pk-load__dots i:nth-child(3){animation-delay:.4s}
+@keyframes pk-dot{0%,100%{opacity:.25}40%{opacity:.9}}
 
-/* ─── Игра: соперник, подсказка, история, ввод ─── */
-.gx-duel{flex:1;min-height:0;display:flex;flex-direction:column;padding:0 16px 12px}
-.gx-duel.is-over{overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding-bottom:24px}
-.gx-duel.is-over .gx-moves{flex:none;overflow:visible}
-.gx-opp{flex:none;display:flex;flex-direction:column;align-items:center;gap:6px;padding:2px 0 8px}
-.gx-pips{display:flex;gap:5px}
-.gx-pips i{width:7px;height:7px;border-radius:50%;box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.35)}
-.gx-pips i.on{background:#fff;box-shadow:none}
-.gx-opp__row{display:flex;align-items:center;gap:10px;font-size:14px;color:rgba(255,255,255,.85)}
-.gx-opp__code{font-size:13px;letter-spacing:.04em;color:rgba(255,255,255,.4)}
-.gx-hint{flex:none;margin:2px 0 8px;font-size:14px;line-height:1.35;color:rgba(255,255,255,.7);text-align:center}
-.gx-moves{flex:1;min-height:0;margin:0;padding:0 0 4px;list-style:none;overflow-y:auto;overscroll-behavior:contain}
-.gx-move{display:grid;grid-template-columns:28px minmax(0,1fr) auto;align-items:center;column-gap:8px;min-height:40px;
-  padding:0 4px;border-bottom:.5px solid rgba(255,255,255,.08)}
-.gx-move.is-new{animation:gx-row 200ms ease-out both}
-@keyframes gx-row{from{opacity:0;transform:translateY(8px)}}
-.gx-move__n{font-size:14px;font-variant-numeric:tabular-nums;color:rgba(255,255,255,.4)}
-.gx-move__g{font-size:20px;font-weight:500;letter-spacing:.12em;font-variant-numeric:tabular-nums}
-.gx-move__w{grid-column:2 / -1;margin:-6px 0 8px;font-size:12px;color:rgba(255,255,255,.5)}
-.gx-input{flex:none;display:flex;flex-direction:column;align-items:center;gap:10px;padding-top:10px}
-.gx-input .gx-keys, .gx-input .gx-primary{width:100%;max-width:420px}
-.gx-wait{flex:none;margin:0;padding:16px 8px;font-size:15px;line-height:1.45;color:rgba(255,255,255,.75);text-align:center}
-@media (max-height:720px){
-  .gx-input .gx-key{height:46px}
-  .gx-slots.is-sm .fl{font-size:28px}
-  .gx-input{gap:8px}
-}
+/* ─── Фишки ─── */
+.pk-chip{display:inline-block;flex:none;width:14px;height:14px;border-radius:50%;
+  background:radial-gradient(circle at 50% 50%,#0e0e10 0 34%,#f2f2f2 36% 100%);box-shadow:0 1px 3px rgba(0,0,0,.6)}
+.pk-chip--fly{position:absolute;z-index:6;width:16px;height:16px;pointer-events:none;will-change:transform,opacity}
 
-/* ●○· — порядок значков о цифрах ничего не говорит. */
-.gx-mk{display:inline-flex;align-items:center;gap:5px}
-.gx-mk i{position:relative;width:12px;height:12px;border-radius:50%}
-.gx-mk i.on{background:#fff}
-.gx-mk i.near{box-shadow:inset 0 0 0 1.5px #fff}
-.gx-mk i.none::after{content:'';position:absolute;left:4px;top:4px;width:4px;height:4px;border-radius:50%;background:rgba(255,255,255,.25)}
-.gx-mk.is-sm{gap:4px}
-.gx-mk.is-sm i{width:9px;height:9px}
-.gx-mk.is-sm i.none::after{left:2.5px;top:2.5px}
-.gx-mk.is-new i{animation:gx-mark 180ms ease-out both;animation-delay:calc(120ms + var(--i, 0) * 60ms)}
-@keyframes gx-mark{from{opacity:0;transform:scale(.4)}}
+/* ─── Карта ─── */
+.pc{--w:30px;--h:42px;--r:6px;--fs:11px;--big:14px;position:relative;flex:none;width:var(--w);height:var(--h);
+  border-radius:var(--r);perspective:700px;transition:margin 300ms cubic-bezier(.2,.9,.22,1),opacity 400ms,filter 400ms}
+.pc--md{--w:44px;--h:62px;--r:8px;--fs:14px;--big:21px}
+.pc--lg{--w:70px;--h:98px;--r:11px;--fs:22px;--big:36px}
+.pc__in{position:relative;width:100%;height:100%;border-radius:inherit;transform-style:preserve-3d;
+  transition:transform 480ms cubic-bezier(.3,.8,.3,1)}
+.pc.is-up .pc__in{transform:rotateY(180deg)}
+.pc__f{position:absolute;inset:0;border-radius:inherit;backface-visibility:hidden;-webkit-backface-visibility:hidden;background:#141417;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.07),0 0 0 1px rgba(255,255,255,.13),0 10px 24px rgba(0,0,0,.55)}
+.pc__back{background:#0f0f12 repeating-linear-gradient(135deg,rgba(255,255,255,.055) 0 1px,transparent 1px 5px)}
+.pc__face{transform:rotateY(180deg);color:#f4f4f6}
+.pc__face.is-red{color:#ff7b7b}
+/* Белые уголки-скобки. */
+.pc__f > i{position:absolute;width:22%;height:16%;border:1.5px solid rgba(255,255,255,.62);pointer-events:none}
+.pc__f > i:nth-child(1){left:7%;top:6%;border-right:0;border-bottom:0;border-top-left-radius:2px}
+.pc__f > i:nth-child(2){right:7%;top:6%;border-left:0;border-bottom:0;border-top-right-radius:2px}
+.pc__f > i:nth-child(3){left:7%;bottom:6%;border-right:0;border-top:0;border-bottom-left-radius:2px}
+.pc__f > i:nth-child(4){right:7%;bottom:6%;border-left:0;border-top:0;border-bottom-right-radius:2px}
+.pc__back > i{border-color:rgba(255,255,255,.35)}
+.pc__r{position:absolute;left:10%;top:9%;display:flex;flex-direction:column;align-items:center;gap:1px;
+  font-size:var(--fs);font-weight:600;line-height:1;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.pc__s{width:calc(var(--fs) * .72);height:calc(var(--fs) * .72)}
+.pc__r--b{left:auto;right:10%;top:auto;bottom:9%;transform:rotate(180deg)}
+.pc__big{position:absolute;left:50%;top:50%;width:var(--big);height:var(--big);transform:translate(-50%,-50%);opacity:.92}
+.pc--sm .pc__r--b, .pc--sm .pc__big{display:none}
+.pc--sm .pc__r{left:0;right:0;top:50%;flex-direction:row;gap:2px;transform:translateY(-50%);font-size:13px}
+.pc--sm .pc__s{width:10px;height:10px}
+.pc--sm .pc__f > i{width:24%;height:18%}
+/* Из колоды: полёт с поворотом, потом (если нужно) переворот лицом. */
+.pc.is-deal{animation:pk-deal 560ms cubic-bezier(.22,.8,.2,1) both;animation-delay:var(--d,0ms)}
+@keyframes pk-deal{0%{transform:translate(var(--dx,0px),var(--dy,0px)) rotate(-18deg) scale(.55);opacity:0}
+  22%{opacity:1}100%{transform:none;opacity:1}}
+/* В сброс: вверх и в дым. */
+.pc.is-muck{animation:pk-muck 440ms cubic-bezier(.5,0,.8,.4) both}
+@keyframes pk-muck{to{transform:translateY(-26px) rotate(10deg) scale(.5);opacity:0}}
+/* Сильная рука: бегущий по краю свет, тёплая тень, угольки; очень сильная — быстрее, ярче и с искрами. */
+.pc__ring{position:absolute;inset:-3px;z-index:0;border-radius:calc(var(--r) + 3px);overflow:hidden;pointer-events:none}
+.pc__ring i{position:absolute;left:-50%;top:-50%;width:200%;height:200%;
+  background:conic-gradient(from 0deg,transparent 0 60%,rgba(255,214,160,.95) 78%,transparent 92%);animation:pk-spin 2.6s linear infinite}
+@keyframes pk-spin{to{transform:rotate(360deg)}}
+.pc.is-hot{box-shadow:0 0 30px rgba(255,190,120,.28)}
+.pc.is-hot .pc__in{z-index:1}
+.pc.is-fire{box-shadow:0 0 36px rgba(255,204,140,.42)}
+.pc.is-fire .pc__ring i{background:conic-gradient(from 0deg,transparent 0 50%,rgba(255,236,200,1) 74%,transparent 90%);animation-duration:1.5s}
+.pc__fx{position:absolute;inset:0;z-index:2;pointer-events:none}
+.pc__ember{position:absolute;bottom:6px;left:calc(18% + var(--i,0) * 21%);width:3px;height:3px;border-radius:50%;background:#ffdcb0;
+  box-shadow:0 0 6px 1px rgba(255,200,140,.85);animation:pk-ember 1.9s ease-out infinite;animation-delay:calc(var(--i,0) * .47s)}
+@keyframes pk-ember{0%{opacity:0;transform:translate(0,0) scale(.6)}15%{opacity:1}
+  100%{opacity:0;transform:translate(calc((var(--i,0) - 1.5) * 7px),-52px) scale(.2)}}
+.pc__spark{position:absolute;width:12px;height:12px;animation:pk-twinkle 1.5s ease-in-out infinite;animation-delay:calc(var(--i,0) * .5s)}
+.pc__spark::before, .pc__spark::after{content:'';position:absolute;left:50%;top:50%;width:4px;height:14px;background:#fff;
+  clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%);filter:drop-shadow(0 0 3px #fff);transform:translate(-50%,-50%)}
+.pc__spark::after{transform:translate(-50%,-50%) rotate(90deg)}
+.pc__spark:nth-of-type(1){right:-7px;top:-7px}
+.pc__spark:nth-of-type(2){left:-6px;top:42%}
+.pc__spark:nth-of-type(3){right:10%;bottom:-7px}
+@keyframes pk-twinkle{0%,100%{opacity:0;transform:scale(.2) rotate(-20deg)}50%{opacity:1;transform:scale(1) rotate(0deg)}}
+/* Итог: победившая пятёрка — светится и приподнята; остальные гаснут. */
+.pc.is-win{margin-top:-5px;box-shadow:0 0 0 1.5px #fff,0 0 26px rgba(255,255,255,.45)}
+.pc.is-win .pc__f{box-shadow:inset 0 1px 0 rgba(255,255,255,.1),0 12px 26px rgba(0,0,0,.6)}
+.pc.is-dim{opacity:.32;filter:saturate(0)}
 
-/* ─── Итог ─── */
-.gx-result{display:flex;flex-direction:column;align-items:center;gap:10px;padding:18px 0 8px;text-align:center}
-.gx-big{margin:0;font-size:34px;font-weight:700;letter-spacing:-.02em;line-height:1.15}
-.gx-sub{margin:0;font-size:15px;line-height:1.4;color:rgba(255,255,255,.7)}
-.gx-codes{display:flex;flex-wrap:wrap;justify-content:center;gap:12px 24px;margin:8px 0 4px}
-.gx-codes__i{display:flex;flex-direction:column;align-items:center;gap:6px}
-.gx-code{display:flex;gap:4px;width:124px}
-.gx-code .fl.is-sm{font-size:22px}
-.gx-oppmoves{display:flex;flex-direction:column;align-items:center;gap:8px;margin-top:4px}
-.gx-oppmoves__list{display:flex;flex-wrap:wrap;justify-content:center;gap:8px 14px;max-width:320px}
-
-/* ─── Таблица кода дня ─── */
-.gx-seg{margin:4px 0 14px}
-.gx-lbs{margin:0;padding:0;list-style:none;overflow:hidden;border-radius:16px;background:#1c1c1e}
-.gx-lb{position:relative;display:flex;align-items:center;gap:10px;min-height:52px;padding:6px 14px}
-.gx-lb + .gx-lb::before{content:'';position:absolute;top:0;left:48px;right:0;border-top:.5px solid rgba(84,84,88,.55)}
-.gx-lb.is-me{background:rgba(255,255,255,.1)}
-.gx-lb__p{flex:none;width:24px;font-size:14px;font-variant-numeric:tabular-nums;color:rgba(255,255,255,.6);text-align:right}
-.gx-lb__main{flex:1;min-width:0;display:flex;flex-direction:column}
-.gx-lb__name{display:flex;align-items:center;gap:4px;min-width:0;font-size:15px;font-weight:500}
-.gx-lb__name > span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.gx-lb__uni{font-size:12px;color:rgba(255,255,255,.5)}
-.gx-lb__v{flex:none;font-size:14px;font-variant-numeric:tabular-nums;color:rgba(255,255,255,.85)}
-
-/* ─── Поток: «Переподключаемся…» и «Игра открыта в другом окне» ─── */
+/* ─── Поток: «Переподключаемся…» и «Стол открыт в другом окне» ─── */
 .gx-status{position:fixed;left:50%;top:calc(env(safe-area-inset-top) + 60px);z-index:58;transform:translateX(-50%);
   padding:6px 12px;border-radius:14px;background:#1c1c1e;color:rgba(255,255,255,.7);font:500 13px/1.2 var(--font);
   pointer-events:none;white-space:nowrap}
@@ -210,26 +261,30 @@ html.has-game .nudge{display:none}
 .gx-banner span{flex:1;min-width:0}
 .gx-banner button{flex:none;height:32px;padding:0 12px;border-radius:16px;background:#fff;color:#000;font-size:14px;font-weight:600}
 
-/* ─── Листы поверх игры (обычная тема приложения) ─── */
-.gx-how{padding:4px 20px 24px;font-size:15px;line-height:1.5;color:var(--ink-100)}
-.gx-how p{margin:0 0 12px}
-.gx-how__row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:8px;padding:10px 16px;
-  border-radius:12px;background:var(--fill);font-weight:500;cursor:pointer}
-.gx-fr{padding:0 12px 24px}
-.gx-fr__load{display:grid;place-items:center;padding:32px}
-.gx-fr__list{margin:0;padding:0;list-style:none}
-.gx-fr__row{display:flex;align-items:center;gap:12px;width:100%;padding:8px 6px;border-radius:12px;text-align:left;color:var(--ink-100)}
-.gx-fr__row:active{background:var(--fill)}
-.gx-fr__main{flex:1;min-width:0;display:flex;flex-direction:column}
-.gx-fr__name{display:flex;align-items:center;gap:4px;min-width:0;font-size:15px;font-weight:600}
-.gx-fr__name > span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.gx-fr__user{font-size:13px;color:var(--ink-60)}
-.gx-fr__go{flex:none;height:30px;padding:0 12px;border-radius:15px;background:var(--fill);font-size:14px;font-weight:600;
-  line-height:30px;color:var(--ink-100)}
-.gx-fr__empty{padding:24px 12px;font-size:15px;line-height:1.45;color:var(--ink-60);text-align:center}
-.gx-fr__btn{margin-top:14px;height:44px;padding:0 18px;border-radius:13px;background:var(--accent);color:#fff;font-weight:600}
+/* ─── «Как играть» (лист в обычной теме приложения) ─── */
+.pk-how{padding:4px 20px 24px;font-size:15px;line-height:1.5;color:var(--ink-100)}
+.pk-how__h{margin:0 0 12px;font-size:20px;font-weight:700}
+.pk-how p{margin:0 0 12px}
+.pk-how__h3{margin:18px 0 8px;font-size:16px;font-weight:600}
+.pk-how__list{margin:0;padding:0;list-style:none}
+.pk-how__row{display:flex;align-items:center;gap:12px;padding:7px 0}
+.pk-how__cards{display:flex;gap:3px}
+.pk-how__t{display:flex;flex-direction:column;min-width:0}
+.pk-how__t b{font-size:15px;font-weight:600}
+.pk-how__t span{font-size:12px;color:var(--ink-60)}
+
+@media (max-height:720px){
+  .pc--lg{--w:58px;--h:82px;--r:9px;--fs:19px;--big:30px}
+  .pc--md{--w:40px;--h:56px;--r:7px;--fs:13px;--big:18px}
+  .pk-mine__cards{min-height:82px}
+  .pk-board{min-height:56px}
+  .pk-btn{height:48px}
+  .pk-seat--left, .pk-seat--right{top:7%}
+}
 
 @media (prefers-reduced-motion: reduce){
-  .gx-move.is-new, .gx-mk.is-new i, .gx-float, .gx-radar i, .gx-reacts, .gx-found{animation:none}
-  .gx-radar i{opacity:.5}
+  .pc.is-deal, .pc.is-muck, .pc__ring i, .pc__ember, .pc__spark, .pk-seat__last, .pk-me__last, .pk-seat__win, .pk-seat__bet,
+  .pk-result, .pk-acts, .pk-raise, .pk-reacts, .pk-mine__hand, .pk-seat__float, .pk-load__dots i, .pk-seat.is-win .pk-seat__av{animation:none}
+  .pc__in{transition-duration:0ms}
+  .pk-load__dots i{opacity:.5}
 }

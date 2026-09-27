@@ -259,9 +259,8 @@ export const SCHEMA_V6 = `
 ALTER TABLE users ADD COLUMN badge TEXT;
 `;
 
-// Мини-игра «Код» (game.js, CONTRACT.md §I): быки и коровы на четырёх разных цифрах. Счёт игрока, дуэли
-// (вызов ссылкой, другу, случайный соперник, реванш) и «Код дня». Всё решает сервер, без таймеров на игру:
-// сроки проверяются при чтении и раз в 10 минут. game_meta.beat — отметка «сервер жив» (продление сроков после простоя).
+// Мини-игра «Код» (быки и коровы; заменена «Покером» в V8, таблицы там удаляются). Оставлено, чтобы базы
+// на V6 проходили те же шаги, что прошёл прод.
 export const SCHEMA_V7 = `
 CREATE TABLE IF NOT EXISTS game_players (
   user_id     INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
@@ -325,7 +324,26 @@ CREATE INDEX IF NOT EXISTS idx_gdaily_board ON game_daily (day, n, ms) WHERE sol
 CREATE TABLE IF NOT EXISTS game_meta (k TEXT PRIMARY KEY, v TEXT NOT NULL) WITHOUT ROWID;   -- 'beat'
 `;
 
-const MIGRATIONS = [SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6, SCHEMA_V7];
+// «Покер» вместо «Кода» (game.js, poker-table.js, CONTRACT.md §I): таблицы «Кода» (дуэли, «Код дня», счёт, пульс)
+// удаляются — их данные больше не нужны. У игрока покера хранятся только стек и счёт раздач; история раздач
+// не хранится, состояние стола — в памяти сервера.
+export const SCHEMA_V8 = `
+DROP TABLE IF EXISTS game_daily;
+DROP TABLE IF EXISTS game_duels;
+DROP TABLE IF EXISTS game_players;
+DROP TABLE IF EXISTS game_meta;
+CREATE TABLE IF NOT EXISTS poker_players (
+  user_id    INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  chips      INTEGER NOT NULL DEFAULT 1000,
+  hands      INTEGER NOT NULL DEFAULT 0,
+  wins       INTEGER NOT NULL DEFAULT 0,
+  best_pot   INTEGER NOT NULL DEFAULT 0,        -- самый большой выигранный банк
+  found_at   TEXT    NOT NULL,                  -- первый GET /api/social/games вошедшим
+  updated_at TEXT    NOT NULL
+);
+`;
+
+const MIGRATIONS = [SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6, SCHEMA_V7, SCHEMA_V8];
 
 /** Открыть (и при необходимости создать) social.db и довести схему до последней версии. */
 export function openSocialDb(dir = config.dataDir) {

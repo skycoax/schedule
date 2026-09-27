@@ -1,6 +1,6 @@
 // Герой экрана «Сегодня»: что идёт/следующее и обратный отсчёт флип-часами.
-// Секрет: пять быстрых нажатий на часы (или на весь герой, когда часов нет) открывают игру «Код»
-// (game/entry.ts); пока она открыта, часы показывают «??:??». Точка в углу — в игре кто-то ждёт.
+// Секрет: пять быстрых нажатий на часы (или на весь герой, когда часов нет) открывают покер
+// (game/entry.ts); пока он открыт, часы показывают «??:??». Точка в углу — за столом кто-то играет.
 import type { JSX } from 'react';
 import type { Group } from '../types';
 import { parseCell, pairsOf, pairCount, type CellInfo } from '../lib/parse';
@@ -49,10 +49,10 @@ function heroState(g: Group, nowMin: number, nowDay: string): Hero {
   return { kind: 'idle', label: 'На сегодня всё', title: 'Пар больше нет', sub: '' };
 }
 
-/** Точка «Тебя ждёт игра»: нажатие сразу открывает игру (без пяти нажатий). */
+/** Точка «За столом играют»: нажатие сразу открывает стол (без пяти нажатий). */
 function GameDot(): JSX.Element {
   return (
-    <button type="button" className="hero__dot" aria-label="Тебя ждёт игра"
+    <button type="button" className="hero__dot" aria-label="За столом играют"
       onClick={(e) => openGame({ originEl: e.currentTarget })}>
       <i />
     </button>

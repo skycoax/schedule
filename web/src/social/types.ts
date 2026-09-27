@@ -50,8 +50,8 @@ export interface Limits {
   mediaBytes: number; thumbBytes: number; mediaSide: number; thumbSide: number; avatarSide: number;
   name: number; bio: number; usernameMin: number; usernameMax: number; note: number;
 }
-/** Мини-игра «Код» (SOCIAL_GAME): on — всё; friends — без случайного соперника и общих таблиц; off — только бот. */
-export type GameMode = 'on' | 'friends' | 'off';
+/** Покер (SOCIAL_GAME): on | off. */
+export type GameMode = 'on' | 'off';
 export interface SocialConfig { rulesVersion: number; minAge: number; limits: Limits; game: GameMode }
 /** GET /api/auth/me. В режиме 'off' маршрут остаётся (ради удаления аккаунта); 404 клиент понимает так же, как 'off' без аккаунта. */
 export interface AuthState { user: Me | null; google: boolean; dev: boolean; mode: SocialMode; config: SocialConfig }
@@ -114,8 +114,8 @@ export interface Me {
   counts: { friends: number; posts: number };
   usernameNextChange: string | null; // когда снова можно сменить @имя; null — можно сейчас
   createdAt: string;
-  /** Мини-игра «Код»: сколько игр ждут (ход, итог, вызов друга). null — игру не находил или она выключена. */
-  game: { waiting: number } | null;
+  /** Покер: сколько людей сейчас за столом. null — игра выключена. */
+  game: { players: number } | null;
 }
 
 /** Публикация и ответ — одна форма (одна таблица на сервере). */
@@ -252,59 +252,49 @@ export interface AuditItem {
   action: string; target: string | null; uni: string | null; info: Record<string, unknown>;
 }
 
-// ─── Мини-игра «Код» (/api/social/games, CONTRACT.md §I): быки и коровы на цифрах флип-часов ───
+// ─── Покер (/api/social/games, CONTRACT.md §I): один общий стол на всю Para, техасский холдем на игровые фишки ───
 
-export type DuelKind = 'link' | 'friend' | 'quick' | 'rematch';
-export type DuelStatus = 'open' | 'active' | 'done' | 'expired' | 'cancelled';
-export type DuelRes = 'cracked' | 'failed' | 'timeout' | 'left' | null;
-export type DuelReason = 'score' | 'early' | 'left' | 'timeout' | 'blocked' | 'banned' | 'deleted' | 'declined' | 'expired' | 'cancelled';
 export type GameReaction = 'wave' | 'like' | 'wow' | 'lol' | 'fire' | 'deal';
-/** Своя попытка: цифры и ответ (● на месте, ○ не на месте). */
-export interface GameMove { g: string; on: number; near: number }
-/** Попытка соперника: только ответ, цифр не видно никогда. */
-export interface GameMark { on: number; near: number }
+/** Карта: ранг A K Q J T 9 8 7 6 5 4 3 2 и масть s h d c — 'As', 'Td'; чужая закрытая — '?'. */
+export type Card = string;
+export type PokerAction = 'fold' | 'check' | 'call' | 'raise' | 'allin';
+export type PokerLast = 'fold' | 'check' | 'call' | 'bet' | 'raise' | 'allin' | 'sb' | 'bb' | 'win';
+export type PokerPhase = 'preflop' | 'flop' | 'turn' | 'river' | 'showdown' | 'done';
 
-export interface DuelView {
-  id: number; v: number; kind: DuelKind; status: DuelStatus;
-  role: 'creator' | 'joiner' | 'invited';          // invited: открытый вызов мне
-  token: string | null;                            // только создателю, kind 'link', status 'open'
-  createdAt: string; deadlineAt: string;
-  friends: boolean;
-  me: { code: string | null; moves: GameMove[]; left: number; res: DuelRes; score: number | null };
-  opp: {
-    user: UserCard | null; gone: boolean;          // gone: аккаунт удалён
-    n: number; marks: GameMark[]; res: DuelRes; score: number | null; live: boolean;
-  };
-  outcome: null | { winner: 'me' | 'opp' | 'draw' | 'none'; reason: DuelReason; oppCode: string | null };
-  rematch: null | { id: number; mine: boolean; status: DuelStatus };   // последний реванш этой игры
-  canRematch: boolean;
+export interface PokerSeat {
+  seat: number; user: UserCard | null; bot: boolean; masked: boolean;
+  chips: number; bet: number;            // bet — поставлено на этой улице, в банк ещё не ушло
+  folded: boolean; allIn: boolean; away: boolean; reserved: boolean; inHand: boolean; leaving: boolean;
+  cards: Card[] | null;                  // свои — настоящие; чужие в раздаче — ['?','?']; после сброса и вне раздачи — null
+  last: { a: PokerLast; amount: number } | null;
+  dealer: boolean;
 }
-
-export interface DuelRow {
-  id: number; v: number; kind: DuelKind; status: DuelStatus;
-  state: 'turn' | 'wait_join' | 'wait_opp' | 'invited' | 'won' | 'lost' | 'draw' | 'expired' | 'cancelled';
-  opp: UserCard | null; gone: boolean; myN: number; oppN: number;
-  myScore: number | null; oppScore: number | null; unseen: boolean; deadlineAt: string; reason: DuelReason | null;
+export interface PokerResult {
+  showdown: boolean;
+  winners: { seat: number; amount: number; name: string; cards: Card[] }[];   // cards — лучшая пятёрка (пусто без вскрытия)
+  reveal: { seat: number; cards: Card[] }[];
 }
-export type DailyStatus = 'new' | 'playing' | 'cracked' | 'failed';
-export interface GameLobby {
-  me: { wins: number; losses: number; draws: number; streak: number; bestStreak: number };
-  daily: { status: DailyStatus; n: number; left: number };
-  duels: DuelRow[];
-  searching: number;     // другие в пуле случайного соперника (без заблокированных); 0 в режиме friends
-  cfg: { attempts: number; ttlH: number; reactions: GameReaction[]; game: 'on' | 'friends' };
+export interface PokerHand {
+  id: number; phase: PokerPhase;
+  board: Card[]; pot: number;            // pot — уже в банке, без текущих ставок seats[].bet
+  pots: { amount: number; seats: number[] }[];
+  turn: { seat: number; deadline: number } | null;   // deadline — время сервера, ms
+  currentBet: number; minRaise: number;
+  result: PokerResult | null;
 }
-export interface DailyView {
-  day: string; status: DailyStatus;
-  moves: GameMove[]; n: number; left: number; ms: number | null;
-  code: string | null;                   // только когда закончен
-  place: number | null; total: number;   // таблица «Все»; место показываем при total ≥ 3
-  streak: number; bestStreak: number;
+export interface PokerActions { fold: boolean; check: boolean; call: number; raise: { min: number; max: number } | null; allin: number }
+export interface PokerMe {
+  seat: number | null; state: 'none' | 'reserved' | 'seated' | 'leaving';
+  chips: number;
+  cards: Card[] | null; actions: PokerActions | null;
+  stats: { hands: number; wins: number; bestPot: number };
+  kicked: 'idle' | null;
 }
-export type BoardScope = 'all' | 'uni' | 'friends';
-export interface DailyBoard {
-  day: string; scope: BoardScope;
-  items: { place: number; user: UserCard; n: number; ms: number; me: boolean }[];
-  me: { place: number; n: number; ms: number } | null; total: number;
+export interface PokerView {
+  seq: number; now: number;
+  seats: (PokerSeat | null)[];
+  hand: PokerHand | null; countdown: number | null;
+  watchers: number;
+  blinds: { small: number; big: number }; startStack: number;
+  me: PokerMe | null;                    // гостю — null
 }
-export interface GameInvite { id: number; from: UserCard; expiresAt: string; mine: boolean }

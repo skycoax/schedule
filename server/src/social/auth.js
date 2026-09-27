@@ -32,7 +32,7 @@ export function authConfig() {
       mediaBytes: 921_600, thumbBytes: 153_600, mediaSide: 2048, thumbSide: 640, avatarSide: 1024,
       name: 40, bio: 160, usernameMin: 3, usernameMax: 20, note: 300,
     },
-    game: gameMode(),   // мини-игра «Код»: 'on' | 'friends' | 'off' (off — только бот)
+    game: gameMode(),   // «Покер»: 'on' | 'off' (off — маршрутов игры нет, пасхалка молчит)
   };
 }
 

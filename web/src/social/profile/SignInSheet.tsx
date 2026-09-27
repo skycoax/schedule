@@ -28,7 +28,7 @@ const TITLE: Record<AuthReason, string> = {
   account: 'Вход в Para',
   delete: 'Удаление аккаунта',
   expired: 'Сессия истекла — войди снова',
-  game: 'Войди, чтобы играть с другими',
+  game: 'Войди, чтобы сесть за стол',
 };
 
 const ICON: Record<AuthReason, IconName> = {

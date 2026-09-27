@@ -1,6 +1,6 @@
-// Игра «Код» — вход в основном бандле (маленький): пять быстрых нажатий на флип-часы героя
-// (или на весь герой, когда часов нет) открывают игру; точка «Тебя ждёт игра» на герое;
-// открытие и закрытие оверлея. Сама игра — отдельный файл (GameHost.tsx), его грузит AppShell.
+// Покер — вход в основном бандле (маленький): пять быстрых нажатий на флип-часы героя (или на весь герой, когда
+// часов нет) открывают стол; точка на герое — «за столом играют»; открытие и закрытие оверлея. Сам стол — отдельный
+// файл (GameHost.tsx), его грузит AppShell.
 // Без registerGameHost() (адрес без Para, SingleShell) нажатия ничего не делают и часы не переворачиваются.
 // Нажатия считаются в ref: переживают перерисовки героя и смену «идёт пара» ↔ «на сегодня всё».
 // preventDefault и stopPropagation не вызываем никогда: прокрутка и «потянуть, чтобы обновить» — как были.
@@ -11,10 +11,8 @@ import { openLayerCount } from '../ui/layers';
 import { reducedMotion, setIxOrigin } from '../social/instants/motion';
 import { useSession } from '../social/session';
 
-/** Какой экран открыть первым (кроме лобби, которое всегда под ним). */
-export type GameScreenName = 'lobby' | 'daily' | 'practice' | 'join';
-/** Запрос на открытие: n — номер открытия (новый оверлей), duel — код вызова из ссылки. */
-export interface GameReq { n: number; duel?: string; screen?: GameScreenName }
+/** Запрос на открытие: n — номер открытия (новый оверлей). */
+export interface GameReq { n: number }
 export type GameStatus = 'closed' | 'opening' | 'open';
 interface GameState { status: GameStatus; req: GameReq | null; host: boolean }
 
@@ -39,14 +37,11 @@ export function registerGameHost(): () => void {
   return () => set({ host: false, status: 'closed', req: null });
 }
 
-/** Открыть игру. originEl — откуда «вырастает» оверлей (часы, точка); по умолчанию часы героя, если они есть. */
-export function openGame(o: { originEl?: Element | null; duel?: string; screen?: GameScreenName } = {}): void {
+/** Открыть стол. originEl — откуда «вырастает» оверлей (часы, точка); по умолчанию часы героя, если они есть. */
+export function openGame(o: { originEl?: Element | null } = {}): void {
   if (!state.host) return;
   setIxOrigin(o.originEl ?? document.querySelector('.hero .clk') ?? document.querySelector('.hero'));
-  const req: GameReq = { n: ++seq };
-  if (o.duel) req.duel = o.duel;
-  if (o.screen) req.screen = o.screen;
-  set({ status: 'open', req });
+  set({ status: 'open', req: { n: ++seq } });
 }
 
 /** Оверлей начал уходить: часы переворачиваются обратно, пока он сжимается в них. */
@@ -63,12 +58,12 @@ export function useGameRequest(): { req: GameReq | null; status: GameStatus } {
   return useSyncExternalStore(subscribe, snapshot, snapshot);
 }
 
-/** Точка на герое: игру уже находили, и в ней что-то ждёт (ход, итог, вызов друга). */
+/** Точка на герое: стол уже находили, и за ним сейчас кто-то играет. */
 export function useGameDot(): boolean {
   const s = useSession();
   const st = useSyncExternalStore(subscribe, snapshot, snapshot);
-  const waiting = s.status === 'signed' ? s.me?.game?.waiting ?? 0 : 0;
-  return st.host && st.status === 'closed' && waiting > 0 && store('game_found') === '1';
+  const players = s.status === 'signed' ? s.me?.game?.players ?? 0 : 0;
+  return st.host && st.status === 'closed' && players > 0 && store('game_found') === '1';
 }
 
 export interface SecretTaps {

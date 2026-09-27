@@ -1,26 +1,23 @@
-// Поток событий игры «Код» (SSE, GET /api/social/games/stream). Живёт, только пока открыт оверлей, страница
-// видна, человек вошёл, игра не выключена и нет ограничения: у HTTP/1.1 всего 6 соединений на адрес.
-// Всё решает сервер, поток — только подсказка «что-то изменилось»: на hello и при возвращении на страницу
-// текущий экран запрашивается заново; игра применяется, только если её v больше нашей.
+// Поток событий стола (SSE, GET /api/social/games/stream). Живёт, только пока открыт оверлей и страница видна:
+// у HTTP/1.1 всего 6 соединений на адрес. Всё решает сервер: после каждого изменения он присылает стол целиком
+// (событие table), на hello и при возвращении на страницу приложение запрашивает стол заново.
 // bye: сразу es.close() (иначе EventSource переподключится сам). max_age — сразу новый поток; replaced —
-// «Игра открыта в другом окне» и ждём нажатия; session/ban — не переподключаемся, сессия обновляется.
-// Не вышло (3 ошибки за 30 с или не открылся за 10 с) — опрос раз в 5 с, через 2 минуты — снова поток.
+// «Стол открыт в другом окне» и ждём нажатия; session/ban — не переподключаемся, сессия обновляется.
+// Не вышло (3 ошибки за 30 с или не открылся за 10 с) — опрос раз в 2 с, через 2 минуты — снова поток.
 // «Переподключаемся…» — только после 5 с без связи: поток не открылся или опрос не дошёл до сервера.
 import { useEffect, useRef, useState } from 'react';
-import type { DuelView, GameReaction } from '../social/types';
+import type { GameReaction, PokerView } from '../social/types';
 
 export type StreamStatus = 'off' | 'connecting' | 'live' | 'reconnecting' | 'poll' | 'replaced' | 'ended';
 
 export interface StreamHandlers {
-  /** hello и возвращение на страницу: запросить текущий экран заново. */
+  /** hello и возвращение на страницу: запросить стол заново. */
   resync(): void;
-  duel(d: DuelView): void;
-  lobby(waiting: number): void;
-  react(duel: number, r: GameReaction): void;
-  presence(duel: number, live: boolean): void;
+  table(v: PokerView): void;
+  react(seat: number, r: GameReaction): void;
   /** Сессию закрыли (выход, ограничение): поток больше не нужен, сессию — обновить. */
   ended(reason: 'session' | 'ban'): void;
-  /** Опрос вместо потока: раз в 5 с, пока страница видна. false — сервер не ответил («Переподключаемся…»). */
+  /** Опрос вместо потока: раз в 2 с, пока страница видна. false — сервер не ответил («Переподключаемся…»). */
   poll(): Promise<boolean>;
 }
 
@@ -30,7 +27,7 @@ const LOST_MS = 5_000;
 const ERR_WINDOW = 30_000;
 const ERR_MAX = 3;
 const RETRY_MS = 3_000;
-const POLL_MS = 5_000;
+const POLL_MS = 2_000;
 const SSE_AGAIN_MS = 120_000;
 
 const visible = () => document.visibilityState === 'visible';
@@ -47,7 +44,7 @@ type Timer = 'open' | 'lost' | 'dog' | 'retry' | 'poll' | 'again';
 
 class GameStream {
   status: StreamStatus = 'off';
-  /** Сервер «сейчас» − Date.now() (по hello и ping) — только для текста «до 14:30». */
+  /** Сервер «сейчас» − Date.now() (по hello, ping и столу) — для таймера хода и отсчёта раздачи. */
   offset = 0;
   private es: EventSource | null = null;
   private on = false;
@@ -61,7 +58,7 @@ class GameStream {
 
   constructor(url: string, handlers: () => StreamHandlers) {
     // c= — id потока этой вкладки: переподключившись (сторож, смена сети), она сменит своё старое соединение,
-    // даже если то умерло молча и сервер ещё считает его живым («в игре», место в трёх).
+    // даже если то умерло молча и сервер ещё считает его живым.
     this.url = url + (url.includes('?') ? '&' : '?') + 'c=' + tabId();
     this.h = handlers;
   }
@@ -126,6 +123,12 @@ class GameStream {
     this.h().resync();
   }
 
+  /** Часы сервера из любого ответа (стол приходит и без потока). */
+  clock(now: unknown) {
+    const t = typeof now === 'number' ? now : typeof now === 'string' ? Date.parse(now) : NaN;
+    if (Number.isFinite(t)) this.offset = t - Date.now();
+  }
+
   /** Закрыть поток и опрос (страница скрыта, оверлей закрыт). */
   private drop() {
     this.clear('open', 'lost', 'dog', 'retry', 'poll');
@@ -180,10 +183,11 @@ class GameStream {
     };
     on('hello', () => { this.set('live'); this.h().resync(); });
     on('ping', () => {});
-    on('duel', (d) => { if (d.duel && typeof d.duel === 'object') this.h().duel(d.duel as DuelView); });
-    on('lobby', (d) => { if (typeof d.waiting === 'number') this.h().lobby(d.waiting); });
-    on('react', (d) => { if (typeof d.duel === 'number' && typeof d.r === 'string') this.h().react(d.duel, d.r as GameReaction); });
-    on('presence', (d) => { if (typeof d.duel === 'number') this.h().presence(d.duel, !!d.live); });
+    on('table', (d) => {
+      const v = d.view;
+      if (v && typeof v === 'object') { this.clock((v as PokerView).now); this.h().table(v as PokerView); }
+    });
+    on('react', (d) => { if (typeof d.seat === 'number' && typeof d.r === 'string') this.h().react(d.seat, d.r as GameReaction); });
     on('bye', (d) => {
       es.close();
       this.es = null;
@@ -195,11 +199,6 @@ class GameStream {
       this.set('ended');
       this.h().ended(reason === 'ban' ? 'ban' : 'session');
     });
-  }
-
-  private clock(now: unknown) {
-    const t = typeof now === 'number' ? now : typeof now === 'string' ? Date.parse(now) : NaN;
-    if (Number.isFinite(t)) this.offset = t - Date.now();
   }
 
   /** Сторож: 45 с без единого события (ping — раз в 20 с) — соединение умерло молча, открываем заново. */
@@ -236,9 +235,9 @@ class GameStream {
   }
 }
 
-/** Поток на время жизни оверлея. enabled — все условия (вошёл, видно, игра не выключена, нет ограничения). */
+/** Поток на время жизни оверлея. enabled — все условия (видно, игра не выключена, есть сеть). */
 export function useGameStream(url: string, enabled: boolean, handlers: StreamHandlers): {
-  status: StreamStatus; offset: () => number; resume: () => void;
+  status: StreamStatus; offset: () => number; resume: () => void; clock: (now: unknown) => void;
 } {
   const h = useRef(handlers);
   h.current = handlers;
@@ -249,5 +248,5 @@ export function useGameStream(url: string, enabled: boolean, handlers: StreamHan
     s.enable(enabled);
   }, [s, enabled]);
   useEffect(() => () => s.enable(false), [s]);
-  return { status, offset: () => s.offset, resume: () => s.resume() };
+  return { status, offset: () => s.offset, resume: () => s.resume(), clock: (now) => s.clock(now) };
 }

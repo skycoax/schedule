@@ -7,7 +7,8 @@
 //   users.js — Me, имена, профили, друзья · posts.js — лента и ветки · media.js — фото
 //   jpeg.js — очистка JPEG · text.js — очистка текста и мат · moderation.js — жалобы и модератор
 //   limits.js — пределы частоты · jobs.js — фоновые задачи
-//   game.js — мини-игра «Код» (маршруты) · game-logic.js — её правила · game-db.js — исход и хуки · game-stream.js — поток событий
+//   game.js — «Покер» (маршруты) · poker-table.js — стол, таймеры, view · poker-logic.js — карты и банки
+//   poker-bot.js — бот · game-stream.js — поток событий
 import { mkdirSync } from 'node:fs';
 import { social, googleConfigured } from '../config.js';
 import { openSocialDb } from './db.js';
@@ -19,7 +20,7 @@ import { userRoutes, accountRoutes } from './users.js';
 import { mediaRoutes } from './media.js';
 import { adminRoutes } from './moderation.js';
 import { startJobs } from './jobs.js';
-import { gameRoutes, startGame } from './game.js';
+import { gameRoutes } from './game.js';
 
 export const SOCIAL_PATH = /^\/api\/(auth|social|media)(\/|$)/;
 
@@ -88,7 +89,7 @@ export async function registerSocial(app, { hub, tenants }) {
       userRoutes(inst, ctx);
       mediaRoutes(inst, ctx);
       adminRoutes(inst, ctx);
-      // Мини-игра «Код»: SOCIAL_GAME=off (или SOCIAL_MODE=off) — маршрутов нет, общий 404; в приложении остаётся бот.
+      // «Покер»: SOCIAL_GAME=off (или SOCIAL_MODE=off) — маршрутов нет, общий 404, пасхалка в приложении молчит.
       if (social.game !== 'off') gameRoutes(inst, ctx);
     }
 
@@ -103,7 +104,6 @@ export async function registerSocial(app, { hub, tenants }) {
     });
   });
 
-  // 4) Фоновые задачи; у игры — «пульс» и продление сроков после простоя (во всех режимах).
+  // 4) Фоновые задачи (стол покера запускается вместе со своими маршрутами, game.js).
   startJobs(ctx);
-  startGame(ctx);
 }

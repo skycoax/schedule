@@ -1,381 +1,293 @@
-// Игра «Код» — оверлей поверх расписания (отдельный файл, его грузит AppShell). Тёмный, как экраны моментов:
-// первый экран «вырастает» из часов героя и при закрытии уходит обратно в них (motion.ts), вложенные въезжают
-// справа, «Твой код» и «Код дня» — снизу. Экраны лежат стеком: нижние остаются смонтированными (данные и прокрутка
-// не теряются), видны только верхний и — пока тот въезжает или уезжает — следующий под ним.
-// Слои истории: весь оверлей — 'game' (первым, до экранов), каждый вложенный экран — 'game-screen'; ✕ закрывает всё.
-// Здесь же данные (лобби, игры, код дня) и поток событий (stream.ts): всё решает сервер, поток только подсказывает.
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { JSX, KeyboardEvent, ReactNode } from 'react';
+// Покер — оверлей поверх расписания (отдельный файл, его грузит AppShell). Тёмный, как экраны моментов: вырастает
+// из часов героя и при закрытии уходит обратно в них (motion.ts). Один экран — стол (Table.tsx); листы «Как играть»
+// и меню места — поверх. Данные: стол целиком приходит от сервера (GET /api/social/games и событие table в потоке),
+// приложение только рисует и оживляет разницу. Гость смотрит, сесть может вошедший.
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { JSX, KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { brand } from '../brand';
 import { store } from '../lib/store';
 import { useHideTabBar } from '../ui/bar';
 import { useLayer } from '../ui/layers';
+import { chooseAction, confirmDialog } from '../ui/ActionSheet';
+import { Icon } from '../ui/icons';
 import { toast } from '../ui/Toast';
-import { isApiError } from '../social/api';
-import { currentReturnTo, useSession } from '../social/session';
-import { ixMotion, reducedMotion, setIxOrigin } from '../social/instants/motion';
 import { lockScroll, unlockScroll } from '../ui/Sheet';
-import type { DailyView, DuelView, GameLobby, GameReaction } from '../social/types';
+import { isApiError } from '../social/api';
+import { useSocialActions } from '../social/actions';
+import { currentReturnTo, useSession } from '../social/session';
+import { ixMotion, setIxOrigin } from '../social/instants/motion';
+import type { GameReaction, PokerAction, PokerSeat, PokerView } from '../social/types';
 import { gameClosing } from './entry';
 import type { GameReq } from './entry';
 import { gameApi, streamUrl } from './api';
 import { useGameStream } from './stream';
-import { GxCtx } from './ctx';
-import type { Access, Gx, GxAnim, LoadState, Screen } from './ctx';
-import { ScreenCtx, errText, handledBySession } from './parts';
-import { Lobby } from './Lobby';
-import { CodePad } from './CodePad';
-import { InviteScreen } from './InviteScreen';
-import { JoinScreen } from './JoinScreen';
-import { SearchScreen } from './SearchScreen';
-import { DuelScreen } from './DuelScreen';
-import { BoardScreen, DailyScreen } from './DailyScreen';
-import { Practice } from './Practice';
+import { Actions } from './Actions';
 import { HowToSheet } from './HowToSheet';
-import { FriendPickSheet } from './FriendPickSheet';
+import { ReactRow, Table } from './Table';
+import type { Float } from './Table';
+import { buzz } from './fx';
 import '../social/instants/instants.css';
 import './game.css';
 
 export interface GameHostProps { req: GameReq | null; onClose: () => void }
 
 const LEAVE_MS = 230;
-const ENTER_MS = 380;
-
-interface Entry { key: number; s: Screen; enter: GxAnim; anim: GxAnim }
 
 export default function GameHost(p: GameHostProps): JSX.Element | null {
   if (!p.req) return null;
-  return <GameRoot key={p.req.n} req={p.req} onClose={p.onClose} />;
+  return <GameRoot key={p.req.n} onClose={p.onClose} />;
 }
 
-function firstStack(req: GameReq): Entry[] {
-  const st: Entry[] = [{ key: 1, s: { t: 'lobby' }, enter: 'zoom', anim: 'zoom' }];
-  const top = (s: Screen): Entry => ({ key: 2, s, enter: 'zoom', anim: 'zoom' });
-  if (req.duel) st.push(top({ t: 'join', token: req.duel }));
-  else if (req.screen === 'join') st.push(top({ t: 'join' }));
-  else if (req.screen === 'daily') st.push(top({ t: 'daily' }));
-  else if (req.screen === 'practice') st.push(top({ t: 'pad', purpose: { kind: 'practice' } }));
-  return st;
+/** Эти ошибки показывает сама сессия (вход, профиль, правила, ограничение). */
+function handledBySession(e: unknown): boolean {
+  return isApiError(e) && (e.code === 'auth' || e.code === 'profile' || e.code === 'rules' || e.code === 'banned');
 }
+const errText = (e: unknown): string => (e instanceof Error && e.message ? e.message : 'Не получилось — попробуй ещё раз');
 
-const LABEL: Record<Screen['t'], string> = {
-  lobby: 'Игра «Код»', pad: 'Твой код', invite: 'Вызов готов', join: 'Код вызова', search: 'Поиск соперника',
-  duel: 'Игра', daily: 'Код дня', board: 'Таблица кода дня', practice: 'Тренировка с ботом',
-};
+type Access = 'ok' | 'guest' | 'offline' | 'readonly' | 'banned' | 'off' | 'loading';
 
-function GameRoot({ req, onClose }: { req: GameReq; onClose: () => void }): JSX.Element {
+function GameRoot({ onClose }: { onClose: () => void }): JSX.Element {
   const s = useSession();
   const sRef = useRef(s);
   sRef.current = s;
+  const actions = useSocialActions();
 
-  // ─── Стек экранов ───
-  const [stack, setStack] = useState<Entry[]>(() => firstStack(req));
-  const stackRef = useRef(stack);
-  stackRef.current = stack;
-  const [leaving, setLeaving] = useState<number | null>(null);
-  const leavingRef = useRef<number | null>(null);
-  leavingRef.current = leaving;
-  const [entering, setEntering] = useState<number | null>(null);
+  // ─── Закрытие ───
   const [closing, setClosing] = useState(false);
   const closingRef = useRef(false);
-  const seq = useRef(10);
   const timers = useRef<number[]>([]);
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
-  const later = (fn: () => void, ms: number) => { timers.current.push(window.setTimeout(fn, reducedMotion() ? 0 : ms)); };
-
-  const enterNow = (key: number) => {
-    setEntering(key);
-    later(() => setEntering((k) => (k === key ? null : k)), ENTER_MS);
-  };
-
-  const push = useCallback((scr: Screen, anim: GxAnim = 'push') => {
-    if (closingRef.current) return;
-    const key = ++seq.current;
-    setStack((st) => [...st, { key, s: scr, enter: anim, anim }]);
-    enterNow(key);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const replace = useCallback((scr: Screen, anim: GxAnim = 'push', drop = 1) => {
-    if (closingRef.current) return;
-    const key = ++seq.current;
-    setStack((st) => {
-      const keep = st.slice(0, Math.max(1, st.length - drop));
-      // Экран под новым был скрыт — показываем его без анимации, пока новый въезжает.
-      keep[keep.length - 1] = { ...keep[keep.length - 1], anim: 'still' };
-      return [...keep, { key, s: scr, enter: anim, anim }];
-    });
-    setLeaving(null);
-    enterNow(key);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   const closeAll = useCallback(() => {
     if (closingRef.current) return;
     closingRef.current = true;
-    // Сжиматься — в часы там, где они сейчас (страница под игрой не прокручивается, но экран мог повернуться).
     setIxOrigin(document.querySelector('.hero .clk') ?? document.querySelector('.hero'));
     setClosing(true);
     gameClosing();
-    later(onClose, LEAVE_MS);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    timers.current.push(window.setTimeout(onClose, LEAVE_MS));
   }, [onClose]);
-
-  const back = useCallback(() => {
-    if (closingRef.current) return;
-    const st = stackRef.current;
-    if (st.length <= 1) { closeAll(); return; }
-    const top = st[st.length - 1];
-    if (leavingRef.current === top.key) return;   // уже уезжает
-    leavingRef.current = top.key;
-    setStack((cur) => cur.map((e, i) => (i === cur.length - 2 && cur[cur.length - 1].key === top.key
-      ? { ...e, anim: top.enter === 'up' ? 'still' : 'back' } : e)));
-    setLeaving(top.key);
-    setEntering(null);
-    later(() => {
-      setStack((cur) => (cur.length > 1 ? cur.filter((e) => e.key !== top.key) : cur));
-      setLeaving((k) => (k === top.key ? null : k));
-    }, LEAVE_MS);
-  }, [closeAll]);
-
-  /** «Назад» системы снял слой экрана key: если он сверху — уходим с анимацией, иначе убираем сразу. */
-  const popKey = useCallback((key: number) => {
-    const st = stackRef.current;
-    if (!st.length || st[st.length - 1].key === key) { back(); return; }
-    setStack((cur) => cur.filter((e) => e.key !== key));
-  }, [back]);
-
-  const home = useCallback(() => {
-    const st = stackRef.current;
-    if (st.length <= 1) return;
-    if (st.length === 2) { back(); return; }
-    // Снимаем всё над лобби: верхний уезжает, остальные — сразу.
-    const top = st[st.length - 1];
-    setStack((cur) => [{ ...cur[0], anim: 'back' }, top]);
-    setLeaving(top.key);
-    later(() => {
-      setStack((cur) => cur.filter((e) => e.key !== top.key));
-      setLeaving((k) => (k === top.key ? null : k));
-    }, LEAVE_MS);
-  }, [back]);
 
   // ─── Доступ ───
   const [serverOff, setServerOff] = useState(false);
-  const [lobby, setLobby] = useState<GameLobby | null>(null);
   const signedMe = s.status === 'signed' ? s.me : null;
-  const cfgGame = s.config?.game;
-  const mode: Gx['mode'] = s.mode === 'off' || serverOff || cfgGame === 'off' ? 'off' : (lobby?.cfg.game ?? cfgGame ?? 'on');
-  const access: Access = mode === 'off' ? 'off'
+  const off = s.mode === 'off' || serverOff || s.config?.game === 'off';
+  const access: Access = off ? 'off'
     : !s.online ? 'offline'
       : s.status === 'loading' ? 'loading'
         : !signedMe ? 'guest'
           : signedMe.banned ? 'banned'
             : s.mode === 'readonly' ? 'readonly' : 'ok';
-  const canRead = !!signedMe && mode !== 'off' && s.online;
-  const canReadRef = useRef(canRead);
-  canReadRef.current = canRead;
-
-  // Нашёл игру — точка на герое теперь может появляться.
   useEffect(() => { if (store('game_found') !== '1') store('game_found', '1'); }, []);
 
-  // ─── Данные ───
-  const [lobbyState, setLobbyState] = useState<LoadState>('idle');
-  const lobbySeq = useRef(0);
-  const loadLobby = useCallback(async (quiet?: boolean): Promise<boolean> => {
-    if (!canReadRef.current) return true;
-    const n = ++lobbySeq.current;
-    setLobbyState((st) => (st === 'ready' ? st : 'loading'));
+  // ─── Стол ───
+  const [view, setView] = useState<PokerView | null>(null);
+  const viewRef = useRef<PokerView | null>(null);
+  const [loadErr, setLoadErr] = useState('');
+  const apply = useCallback((v: PokerView) => {
+    const cur = viewRef.current;
+    if (cur && cur.seq > v.seq) return;
+    viewRef.current = v;
+    setView(v);
+    setLoadErr('');
+  }, []);
+  const load = useCallback(async (quiet?: boolean): Promise<boolean> => {
+    if (!sRef.current.online || off) return true;
     try {
-      const l = await gameApi.lobby();
-      if (n === lobbySeq.current) {
-        setLobby(l);
-        setLobbyState('ready');
-      }
+      apply(await gameApi.table());
       return true;
     } catch (e) {
-      if (n === lobbySeq.current) {
-        if (isApiError(e, 'not_found')) setServerOff(true);
-        else if (!quiet && !handledBySession(e)) toast(errText(e), { kind: 'error' });
-        setLobbyState((st) => (st === 'ready' ? st : 'error'));
-      }
+      if (isApiError(e, 'not_found')) { setServerOff(true); return true; }
+      if (!quiet) setLoadErr(errText(e));
       return !isApiError(e, 'network') && !isApiError(e, 'server');
     }
-  }, []);
+  }, [apply, off]);
+  useEffect(() => { void load(); }, [load]);
 
-  const [duels, setDuels] = useState<Record<number, DuelView>>({});
-  const duelsRef = useRef(duels);
-  duelsRef.current = duels;
-  // Игру применяем, только если она не старее нашей (v); при равном v могли измениться реванш и «в игре».
-  const applyDuel = useCallback((d: DuelView) => {
-    setDuels((m) => {
-      const cur = m[d.id];
-      if (cur && cur.v > d.v) return m;
-      return { ...m, [d.id]: d };
-    });
-  }, []);
-  const loadDuel = useCallback(async (id: number, quiet?: boolean): Promise<DuelView | null | undefined> => {
-    try {
-      const d = await gameApi.duel(id);
-      applyDuel(d);
-      return d;
-    } catch (e) {
-      if (isApiError(e, 'not_found')) return null;
-      if (!quiet && !handledBySession(e)) toast(errText(e), { kind: 'error' });
-      return undefined;
-    }
-  }, [applyDuel]);
-
-  const seen = useRef(new Set<number>());
-  const markSeen = useCallback((id: number) => {
-    if (seen.current.has(id) || !canReadRef.current) return;
-    seen.current.add(id);
-    gameApi.seen([id]).then(() => {
-      setLobby((l) => l && { ...l, duels: l.duels.map((r) => (r.id === id ? { ...r, unseen: false } : r)) });
-    }, () => { seen.current.delete(id); });
-  }, []);
-
-  const [daily, setDaily] = useState<DailyView | null>(null);
-  const loadDaily = useCallback(async (quiet?: boolean): Promise<boolean> => {
-    if (!canReadRef.current) return true;
-    try {
-      setDaily(await gameApi.daily());
-      return true;
-    } catch (e) {
-      if (!quiet && !handledBySession(e)) toast(errText(e), { kind: 'error' });
-      return !isApiError(e, 'network') && !isApiError(e, 'server');
-    }
-  }, []);
-
-  // ─── Поток событий ───
-  const reactSubs = useRef(new Set<(duel: number, r: GameReaction) => void>());
-  const lobbyTimer = useRef(0);
-  useEffect(() => () => clearTimeout(lobbyTimer.current), []);
-  const topScreen = () => { const st = stackRef.current; return st[st.length - 1].s; };
-  const lobbySoon = () => {
-    clearTimeout(lobbyTimer.current);
-    lobbyTimer.current = window.setTimeout(() => { if (topScreen().t === 'lobby') void loadLobby(true); }, 300);
-  };
-  /** Запросить текущий экран заново (hello, возвращение на страницу, опрос). false — сервер не ответил. */
-  const refreshTop = async (): Promise<boolean> => {
-    const top = topScreen();
-    if (top.t === 'lobby') return loadLobby(true);
-    if (top.t === 'duel' || top.t === 'search' || top.t === 'invite') {
-      const id = top.id;
-      const d = await loadDuel(id, true);
-      const now = topScreen();
-      if (d === null && now.t === top.t && 'id' in now && now.id === id) { toast('Игра не найдена'); home(); }
-      return d !== undefined;
-    }
-    if (top.t === 'daily') return loadDaily(true);
-    return true;
-  };
-  // Без сети поток не открываем: тренировка с ботом без «Переподключаемся…»; сеть вернулась — поток и hello.
-  const streamOn = !!signedMe && !signedMe.banned && mode !== 'off' && s.online && !closing;
+  // ─── Поток ───
+  const [floats, setFloats] = useState<Record<number, Float>>({});
+  const floatK = useRef(0);
+  const streamOn = !off && s.online && !closing;
   const stream = useGameStream(streamUrl(brand.id), streamOn, {
-    resync: () => { void refreshTop(); },
-    poll: refreshTop,
-    duel: (d) => { applyDuel(d); lobbySoon(); },
-    lobby: (waiting) => {
-      const me = sRef.current.me;
-      if (sRef.current.status === 'signed' && me && me.game?.waiting !== waiting) sRef.current.setMe({ ...me, game: { waiting } });
-      lobbySoon();
-      // Открыт чужой вызов (или свой непринятый): его могли отменить или он истёк — адресат узнаёт об этом
-      // только по lobby. Перечитываем: 404 → «Игра не найдена» и в лобби.
-      const top = topScreen();
-      if (top.t === 'duel' && duelsRef.current[top.id]?.status === 'open') void refreshTop();
-    },
-    react: (duel, r) => reactSubs.current.forEach((f) => f(duel, r)),
-    presence: (duel, live) => setDuels((m) => (m[duel] ? { ...m, [duel]: { ...m[duel], opp: { ...m[duel].opp, live } } } : m)),
+    resync: () => { void load(true); },
+    poll: () => load(true),
+    table: apply,
+    react: (seat, r) => setFloats((f) => ({ ...f, [seat]: { r, k: ++floatK.current } })),
     ended: () => { void sRef.current.refresh(); },
   });
+  const streamRef = useRef(stream);
+  streamRef.current = stream;
+  useEffect(() => { if (view) streamRef.current.clock(view.now); }, [view]);
+  const now = useCallback(() => Date.now() + streamRef.current.offset(), []);
 
-  // Закрыли игру — обновляем сессию: счётчик «ждёт» (точка на герое) мог измениться.
+  // Закрыли стол — обновляем сессию: «за столом играют» (точка на герое) могло измениться.
   useEffect(() => () => { if (sRef.current.status === 'signed') void sRef.current.refresh(); }, []);
 
-  // ─── Листы ───
+  // ─── Мой ход: вибрация; выгнали — тост ───
+  const me = view?.me || null;
+  const myTurn = !!me && me.state === 'seated' && !!me.actions && !!view?.hand?.turn && view.hand.turn.seat === me.seat;
+  const wasTurn = useRef(false);
+  useEffect(() => {
+    if (myTurn && !wasTurn.current) buzz(18);
+    wasTurn.current = myTurn;
+  }, [myTurn]);
+  const kickedShown = useRef(false);
+  useEffect(() => {
+    if (me?.kicked === 'idle' && !kickedShown.current) { kickedShown.current = true; toast('Тебя убрали из-за стола — не было ходов'); }
+    if (me?.state === 'seated') kickedShown.current = false;
+  }, [me?.kicked, me?.state]);
+
+  // ─── Действия ───
+  const [busy, setBusy] = useState(false);
+  const run = async (f: () => Promise<PokerView>, done?: string) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      apply(await f());
+      if (done) toast(done);
+    } catch (e) {
+      if (isApiError(e, 'conflict')) void load(true);      // стол уже изменился — берём свежий
+      else if (!handledBySession(e)) toast(errText(e), { kind: 'error' });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const sit = async () => {
+    if (access === 'guest') {
+      if (!(await sRef.current.ensure('game', currentReturnTo({ game: 1 })))) return;
+    } else if (access !== 'ok') return;
+    await run(() => gameApi.sit());
+  };
+  const stand = async () => {
+    const inHand = !!me && me.state === 'seated' && !!view?.hand && !view.hand.result && !!view.seats[me.seat ?? -1]?.inHand && !view.seats[me.seat ?? -1]?.folded;
+    if (inHand) {
+      const ok = await confirmDialog({ title: 'Встать из-за стола?', message: 'Раздача идёт — карты будут сброшены.', confirm: 'Встать', destructive: true });
+      if (!ok) return;
+    }
+    await run(() => gameApi.stand());
+  };
+  const act = (action: PokerAction, amount?: number) => {
+    if (!view?.hand) return;
+    void run(() => gameApi.act(view.hand!.id, action, amount));
+  };
+  const [reactOpen, setReactOpen] = useState(false);
+  const react = async (r: GameReaction) => {
+    setReactOpen(false);
+    // Свою реакцию сервер обратно не шлёт — показываем сразу у себя.
+    const seat = viewRef.current?.me?.seat;
+    if (seat !== null && seat !== undefined) setFloats((f) => ({ ...f, [seat]: { r, k: ++floatK.current } }));
+    try { await gameApi.react(r); } catch (e) { if (!handledBySession(e)) toast(errText(e), { kind: 'error' }); }
+  };
+
+  const seatMenu = async (seat: PokerSeat) => {
+    const u = seat.user;
+    if (!u) return;
+    const pick = await chooseAction({
+      title: u.name + ' · @' + u.username,
+      actions: [{ id: 'report', label: 'Пожаловаться' }, { id: 'block', label: 'Заблокировать @' + u.username, role: 'destructive' }],
+    });
+    if (pick === 'report') await actions.report({ type: 'user', id: u.id }, { username: u.username, kind: 'user' });
+    else if (pick === 'block') { if (await actions.block(u)) void load(true); }
+  };
+
   const [howOpen, setHowOpen] = useState(false);
-  const [friendsOpen, setFriendsOpen] = useState(false);
-  const [noReact, setNoReactState] = useState(() => store('game_noreact') === '1');
+  const menu = async () => {
+    const seated = !!me && me.state !== 'none';
+    const list = [{ id: 'how', label: 'Как играть' }];
+    if (seated) list.push({ id: 'stand', label: me!.state === 'leaving' ? 'Уже встаёшь…' : 'Встать из-за стола', role: 'destructive' } as { id: string; label: string });
+    const pick = await chooseAction({ actions: list });
+    if (pick === 'how') setHowOpen(true);
+    else if (pick === 'stand') void stand();
+  };
 
-  const gx = useMemo<Gx>(() => ({
-    push, replace, back, closeAll, home,
-    access, mode, signed: !!signedMe,
-    ensure: (returnTo?: string) => sRef.current.ensure('game',
-      returnTo ?? (sRef.current.status === 'signed' ? undefined : currentReturnTo({ game: 1 }))),
-    lobby, lobbyState, loadLobby,
-    duels, applyDuel, loadDuel, markSeen,
-    daily, setDaily, loadDaily,
-    now: () => Date.now() + stream.offset(),
-    stream: stream.status,
-    onReact: (fn) => { reactSubs.current.add(fn); return () => { reactSubs.current.delete(fn); }; },
-    noReact,
-    setNoReact: (v: boolean) => { setNoReactState(v); store('game_noreact', v ? '1' : ''); },
-    howTo: () => setHowOpen(true),
-    pickFriend: () => setFriendsOpen(true),
-    // stream — объект с функциями; меняется только status
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [push, replace, back, closeAll, home, access, mode, signedMe, lobby, lobbyState, loadLobby, duels, applyDuel, loadDuel,
-    markSeen, daily, loadDaily, stream.status, noReact]);
+  // ─── Низ: действия или статус ───
+  const humans = view ? view.seats.filter((x) => x && !x.bot).length : 0;
+  const full = !!view && view.seats.every((x) => !!x && !x.bot);
+  const canSit = access === 'ok' || access === 'guest';
+  let bottom: JSX.Element | null = null;
+  if (view) {
+    if (me && me.state === 'seated' && myTurn && me.actions && view.hand) {
+      bottom = <Actions a={me.actions} hand={view.hand} seats={view.seats} big={view.blinds.big} busy={busy} onAct={act} />;
+    } else if (me && me.state !== 'none') {
+      const turnSeat = view.hand?.turn ? view.seats[view.hand.turn.seat] : null;
+      const who = turnSeat ? (turnSeat.bot ? 'Бот Para' : turnSeat.masked || !turnSeat.user ? 'Игрок' : turnSeat.user.name) : '';
+      const botSeated = view.seats.some((x) => x && x.bot);
+      const text = me.state === 'reserved' ? 'Ты сядешь со следующей раздачи'
+        : me.state === 'leaving' ? 'Встанешь после раздачи'
+          : view.hand ? (!view.hand.result && who ? 'Ход: ' + who : '')
+            : view.countdown ? '' : humans < 2 && !botSeated ? 'Сейчас сядет бот' : humans >= 2 ? 'Ждём игроков…' : '';
+      bottom = (
+        <div className="pk-status">
+          {reactOpen && <ReactRow onPick={(r) => void react(r)} />}
+          {text && <span>{text}</span>}
+        </div>
+      );
+    } else {
+      const note = access === 'offline' ? 'Без интернета можно только смотреть'
+        : access === 'readonly' ? 'Сейчас можно только смотреть'
+          : access === 'banned' ? 'Пока действует ограничение, можно только смотреть'
+            : full ? 'Все места заняты — подожди, кто-нибудь встанет'
+              : view.hand && !view.hand.result ? 'Идёт раздача — сядешь со следующей' : '';
+      bottom = (
+        <div className="pk-status">
+          {note && <span>{note}</span>}
+          {canSit && !full && (
+            <button type="button" className="pk-btn pk-btn--main pk-btn--sit" disabled={busy} onClick={() => void sit()}>
+              {access === 'guest' ? 'Войти, чтобы сесть' : 'Сесть за стол'}
+            </button>
+          )}
+        </div>
+      );
+    }
+  }
 
-  const topKey = stack[stack.length - 1].key;
-  const topEntry = stack[stack.length - 1];
-  const showUnder = leaving === topKey || (entering === topKey && topEntry.enter !== 'zoom');
+  const sub = view ? (humans ? humans + ' за столом' + (view.watchers > humans ? ' · смотрят ' + (view.watchers - humans) : '') : 'Стол свободен') : '';
+  const motion = ixMotion('zoom', closing);
+  const onKeyDown = (ev: KeyboardEvent<HTMLDivElement>) => { if (ev.key === 'Escape') { ev.stopPropagation(); closeAll(); } };
 
   return (
-    <GxCtx.Provider value={gx}>
+    <>
       {createPortal(
         <>
           <Root closing={closing} onClose={closeAll} />
-          {stack.map((e, i) => {
-            const top = i === stack.length - 1;
-            const visible = top || (!closing && i === stack.length - 2 && showUnder);
-            return (
-              <Frame key={e.key} e={e} index={i} top={top} visible={visible}
-                leaving={closing ? top : leaving === e.key} closing={closing && top}
-                onPop={() => popKey(e.key)} onEsc={i === 0 ? closeAll : back}>
-                {renderScreen(e.s)}
-              </Frame>
-            );
-          })}
-          {stream.status === 'reconnecting' && !closing && (
-            <div className="gx-status" role="status">Переподключаемся…</div>
-          )}
-          {stream.status === 'replaced' && !closing && (
-            <div className="gx-banner" role="status">
-              <span>Игра открыта в другом окне</span>
-              <button type="button" onClick={stream.resume}>Играть здесь</button>
+          <div className={'ix gx pk-root ' + motion} role="dialog" aria-modal="true" aria-label="Покер" tabIndex={-1} onKeyDown={onKeyDown}>
+            <div className="ix__bar pk-bar">
+              <button type="button" className="ix__icon" aria-label="Закрыть" onClick={closeAll}><Icon name="close" size={24} /></button>
+              <div className="pk-bar__mid"><h2 className="pk-bar__t">Покер</h2>{sub && <span className="pk-bar__s">{sub}</span>}</div>
+              <button type="button" className="ix__icon" aria-label="Меню" aria-haspopup="menu" onClick={() => void menu()}><Icon name="ellipsis" size={24} /></button>
             </div>
-          )}
+            {view ? (
+              <Table view={view} now={now} floats={floats} canSit={canSit && !full} sitLabel="Сесть" onSit={() => void sit()}
+                onSeatMenu={(x) => void seatMenu(x)} onMyAvatar={() => setReactOpen((o) => !o)}>
+                {bottom}
+              </Table>
+            ) : (
+              <div className="pk-load">
+                {access === 'off' ? <p>Игра сейчас недоступна</p>
+                  : loadErr ? <><p>{loadErr}</p><button type="button" className="pk-btn pk-btn--main" onClick={() => void load()}>Повторить</button></>
+                    : <p className="pk-load__dots"><i /><i /><i /></p>}
+              </div>
+            )}
+            {stream.status === 'reconnecting' && !closing && <div className="gx-status" role="status">Переподключаемся…</div>}
+            {stream.status === 'replaced' && !closing && (
+              <div className="gx-banner" role="status">
+                <span>Стол открыт в другом окне</span>
+                <button type="button" onClick={stream.resume}>Играть здесь</button>
+              </div>
+            )}
+          </div>
         </>,
         document.body,
       )}
       <HowToSheet open={howOpen} onClose={() => setHowOpen(false)} />
-      <FriendPickSheet open={friendsOpen} onClose={() => setFriendsOpen(false)} />
-    </GxCtx.Provider>
+    </>
   );
-}
-
-function renderScreen(s: Screen): ReactNode {
-  switch (s.t) {
-    case 'lobby': return <Lobby />;
-    case 'pad': return <CodePad purpose={s.purpose} />;
-    case 'invite': return <InviteScreen id={s.id} />;
-    case 'join': return <JoinScreen token={s.token} />;
-    case 'search': return <SearchScreen id={s.id} />;
-    case 'duel': return <DuelScreen id={s.id} />;
-    case 'daily': return <DailyScreen />;
-    case 'board': return <BoardScreen />;
-    case 'practice': return <Practice code={s.code} />;
-  }
 }
 
 let gameRoots = 0;
 
 /**
- * Подложка и слой всего оверлея. Рисуется первым: её слой истории должен лечь раньше слоёв экранов.
- * Пока игра открыта: страница под ней не прокручивается (иначе при закрытии оверлей сжимался бы в пустое место,
- * а не в часы), а html.has-game поднимает тосты наверх (внизу — клавиатура игры) и прячет плашку отзыва.
+ * Подложка и слой всего оверлея. Пока стол открыт: страница под ним не прокручивается (иначе при закрытии оверлей
+ * сжимался бы в пустое место, а не в часы), html.has-game поднимает тосты наверх и прячет плашку отзыва.
  */
 function Root({ closing, onClose }: { closing: boolean; onClose: () => void }): JSX.Element {
   useLayer(true, onClose, 'game');
@@ -389,33 +301,4 @@ function Root({ closing, onClose }: { closing: boolean; onClose: () => void }): 
     };
   }, []);
   return <div className={'ix-shade' + (closing ? ' is-leaving' : '')} aria-hidden="true" />;
-}
-
-/** Экран в стеке: свой слой истории (кроме лобби), анимация появления и ухода, фокус, Esc. */
-function Frame(p: {
-  e: Entry; index: number; top: boolean; visible: boolean; leaving: boolean; closing: boolean;
-  onPop: () => void; onEsc: () => void; children: ReactNode;
-}): JSX.Element {
-  useLayer(p.index > 0, p.onPop, 'game-screen');
-  const ref = useRef<HTMLDivElement>(null);
-  const live = p.top && !p.leaving;
-  useEffect(() => {
-    const el = ref.current;
-    if (live && el && !el.contains(document.activeElement)) el.focus({ preventScroll: true });
-  }, [live]);
-  const motion = p.closing ? ixMotion('zoom', true)
-    : p.leaving ? ixMotion(p.e.enter === 'still' ? 'push' : p.e.enter, true)
-      : 'ix--' + p.e.anim;
-  const onKeyDown = (ev: KeyboardEvent<HTMLDivElement>) => {
-    if (ev.key !== 'Escape' || !live) return;
-    ev.stopPropagation();
-    p.onEsc();
-  };
-  const info = useMemo(() => ({ top: live, index: p.index }), [live, p.index]);
-  return (
-    <div ref={ref} className={'ix gx ' + motion + (p.visible ? '' : ' is-under')} role="dialog" aria-modal="true"
-      aria-label={LABEL[p.e.s.t]} tabIndex={-1} data-no-ptr="" inert={!live || undefined} onKeyDown={onKeyDown}>
-      <ScreenCtx.Provider value={info}>{p.children}</ScreenCtx.Provider>
-    </div>
-  );
 }

@@ -99,7 +99,7 @@ export function lazyWithReload<P>(importer: () => Promise<{ default: ComponentTy
 const chatPanel = lazyWithReload<ChatTabProps>(() => import('../social/chat/ChatTab'));
 const profilePanel = lazyWithReload<ProfileTabProps>(() => import('../social/profile/ProfileTab'));
 const authPanel = lazyWithReload<Record<string, never>>(() => import('../social/profile/AuthHost'));
-/** Игра «Код» (game/): открывается пятью нажатиями на часы героя, точкой на герое или ссылкой ?duel= / ?game=1. */
+/** Покер (game/): открывается пятью нажатиями на часы героя, точкой на герое или ссылкой ?game=1. */
 const gamePanel = lazyWithReload<GameHostProps>(() => import('../game/GameHost'));
 
 // ─── Оболочка ──────────────────────────────────────────────────────────────
@@ -219,7 +219,7 @@ function HubShell({ theme, role, setRole, renderSchedule, dl }: AppShellProps & 
   barHiddenRef.current = barHidden;
   useKeyboardWatcher();
   const game = useGameRequest();
-  // До эффектов расписания: первый onContext (ссылка ?duel=, ?game=1) уже может открыть игру.
+  // До эффектов расписания: первый onContext (ссылка ?game=1) уже может открыть игру.
   useLayoutEffect(() => registerGameHost(), []);
 
   // Сменили режим (студент ↔ преподаватель) — прежний контекст больше не про этот режим.
@@ -386,9 +386,8 @@ function HubShell({ theme, role, setRole, renderSchedule, dl }: AppShellProps & 
         if (h.profile) setProfileLink(h.profile);
       });
     }
-    // Вызов в игру по ссылке (?duel=) или «открыть игру» (?game=1): уже после согласия, группы и вуза.
-    if (dl.duel) openGame({ duel: dl.duel });
-    else if (dl.game) openGame({});
+    // «Открыть игру» по ссылке (?game=1): уже после согласия, группы и вуза.
+    if (dl.game) openGame({});
 
     if (navigator.onLine !== false) {
       idle(() => {

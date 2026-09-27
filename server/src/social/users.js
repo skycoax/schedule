@@ -13,8 +13,7 @@ import { cleanText, tooLong, isProfane, maskProfanity, fold, graphemes } from '.
 import { mediaUrl, thumbUrl, unlinkMedia, MEDIA_ID_RE } from './media.js';
 import { audit } from './moderation.js';
 import { postsOut, deleteAccount, viewerOf } from './posts.js';
-import { gameMeOf, cancelDuelsBetween } from './game-db.js';
-import { publishDuels } from './game-stream.js';
+import { humans as pokerHumans } from './poker-table.js';
 
 // ─── Имя пользователя (§C.3, §B.4) ───
 
@@ -220,8 +219,8 @@ export function meOf(ctx, u) {
     counts: { friends: friendCount(db, u.id), posts },
     usernameNextChange: usernameNextChange(u),
     createdAt: u.created_at,
-    // Мини-игра «Код»: { waiting } — только тем, кто её уже нашёл; игра выключена — null.
-    game: gameMode() === 'off' ? null : gameMeOf(db, u.id),
+    // «Покер»: сколько людей сейчас за столом; игра выключена — null.
+    game: gameMode() === 'off' ? null : { players: pokerHumans() },
   };
 }
 
@@ -703,7 +702,8 @@ export function userRoutes(inst, ctx) {
     return ok({ items: blockRows.all(me.id).map((u) => userCardOf(ctx, u, false)) });
   });
 
-  // #30 — заблокировать: дружба и заявки в обе стороны удаляются, открытые и идущие игры «Код» пары прерываются.
+  // #30 — заблокировать: дружба и заявки в обе стороны удаляются. Стол покера не трогаем: если оба уже за ним,
+  // каждый видит другого как «Игрока» (masked), см. poker-table.js.
   inst.put('/api/social/blocks/:userId', async (req) => {
     const me = guard(req, 'S');
     const id = userIdParam(req.params.userId);
@@ -716,12 +716,10 @@ export function userRoutes(inst, ctx) {
       throw new SocialError(429, 'rate', FIELD_TEXT.blockMany, { retryAfter: 3600 });
     }
     const [lo, hi] = pair(me.id, id);
-    const duels = tx(db, () => {
+    tx(db, () => {
       db.prepare('INSERT OR IGNORE INTO blocks (blocker_id, blocked_id, created_at) VALUES (?,?,?)').run(me.id, id, nowIso());
       db.prepare('DELETE FROM friends WHERE user_lo = ? AND user_hi = ?').run(lo, hi);
-      return cancelDuelsBetween(db, me.id, id);
     });
-    publishDuels(ctx, duels);
     return ok({ relation: 'blocked' });
   });
 

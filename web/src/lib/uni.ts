@@ -3,7 +3,7 @@
 // уже с брендом этого вуза (server/src/hub.js). Группа и преподаватель у каждого вуза
 // свои: при смене вуза прежние откладываем в prev_<id> и возвращаем, когда человек
 // вернётся к тому вузу.
-// Ссылки на «Обсуждения», «Профиль» и игру «Код» (?post=, ?user=, ?tab=…, ?duel=, ?game=1, #auth=) переживают
+// Ссылки на «Обсуждения», «Профиль» и покер (?post=, ?user=, ?tab=…, ?game=1, #auth=) переживают
 // выбор вуза и переход на его страницу: их разбирает shell/deeplink.ts уже внутри приложения.
 import { brand } from '../brand';
 import { store } from './store';
@@ -28,7 +28,7 @@ function fromOldHost(): boolean {
 }
 
 /** Параметры адреса для вкладок «Обсуждения», «Профиль» и игры «Код» (их читает shell/deeplink.ts). */
-export const DEEP_PARAMS: readonly string[] = ['tab', 'post', 'user', 'compose', 'delete', 'mod', 'duel', 'game'];
+export const DEEP_PARAMS: readonly string[] = ['tab', 'post', 'user', 'compose', 'delete', 'mod', 'game'];
 
 const AUTH_HASH = /^#auth=/;
 
@@ -69,7 +69,7 @@ export function initUni(): boolean {
   // Ссылка на пост, профиль или вызов в игру из другого вуза: остаёмся в своём вузе (лента — своя),
   // а пост, профиль или игра всё равно откроются. Остальные параметры и фрагмент — как были.
   const q = url.searchParams;
-  if ((q.has('post') || q.has('user') || q.has('duel') || q.has('game')) && saved && (asked || brand.id) !== saved) {
+  if ((q.has('post') || q.has('user') || q.has('game')) && saved && (asked || brand.id) !== saved) {
     url.searchParams.set('uni', saved);
     location.replace('/?' + url.searchParams.toString() + url.hash);
     return false;
