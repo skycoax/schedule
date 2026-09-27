@@ -15,6 +15,8 @@
 //   «Покер» проверяется в прогоне A (раздел «Покер»), в readonly и off. Серверу нужны POKER_FAST=1 (быстрые
 //     таймеры стола: ход 2 с, away 1,5 с), GAME_PING_MS=1000 GAME_STREAM_MAX_MS=5000 (ping раз в секунду, поток живёт 5 с).
 //     Стол один на сервер: раздел ждёт, пока он опустеет (игроки прошлого прогона встают сами: away → kick).
+//     Экономика фишек (§I.10) — там же: бонус, «фишки кончились» (двое играют ва-банк друг против друга, пока один
+//     не проиграет всё; без помощников в базе) и рейтинг. Серию бонуса по дням проверяет poker-logic.test.mjs.
 //   «Живые обновления» (GET /api/social/live, приглашения в покер) — в прогоне A после «Покера» (те же GAME_PING_MS
 //     и GAME_STREAM_MAX_MS: потоки открываются на каждый шаг заново), в readonly и off. SMOKE_LIVE_SHOW=1 — напечатать
 //     по одному настоящему событию каждого вида.
@@ -1346,6 +1348,18 @@ const act = (u, hand, action, amount) =>
   paced(() => gcall(u, 'POST', '/act', { json: { hand, action, ...(amount !== undefined ? { amount } : {}) } }));
 /** Пассивный авто-ход: check, если можно, иначе fold — чтобы раздачи шли, пока проверяем другое. */
 const passive = (v) => ({ action: v.me.actions.check ? 'check' : 'fold' });
+/** Ва-банк против человека (есть что уравнять — call, иначе allin); с ботом — сразу fold. */
+const shove = (v) => (botOf(v) ? { action: 'fold' } : v.me.actions.call > 0 ? { action: 'call' } : { action: 'allin' });
+
+/**
+ * me.bonus (§I.10): поля, как ждём, и resetAt — ближайшая полночь по Ташкенту (19:00 UTC) в пределах суток от now.
+ */
+function checkBonus(b, want, now, what) {
+  const { resetAt, ...rest } = b || {};
+  assert.deepEqual(rest, want, what + ': ' + JSON.stringify(b));
+  assert.ok(Number.isInteger(resetAt) && resetAt > now && resetAt <= now + 86_400_000, what + ': resetAt ' + resetAt);
+  assert.equal((resetAt - 19 * 3_600_000) % 86_400_000, 0, what + ': resetAt — полночь по Ташкенту');
+}
 
 /**
  * Ждать состояния стола (опрос раз в 100 мс, как опрос приложения): pred(view) → true. Возвращает view.
@@ -1466,12 +1480,16 @@ async function runGame(st, boss, guest, limitsOn) {
     assert.deepEqual([gv.me, gv.seats.length, gv.hand, gv.countdown, gv.blinds, gv.startStack], [null, 4, null, null, { small: 10, big: 20 }, 1000]);
     assert.ok(Number.isInteger(gv.seq) && Number.isInteger(gv.now) && Number.isInteger(gv.watchers), 'seq, now, watchers');
     const ga = await gamer('ga', `Гоша ${RUN}`);
-    assert.deepEqual((await meOf(ga.jar)).game, { players: 0, invite: null }, 'me.game — сколько людей за столом, приглашения нет');
+    assert.deepEqual((await meOf(ga.jar)).game, { players: 0, invite: null, bonus: false },
+      'me.game — сколько людей за столом, приглашения нет, бонус не ждёт (стол не находил)');
     const gaView = await tableOf(ga);
-    assert.deepEqual(gaView.me, { seat: null, state: 'none', chips: 1000, cards: null, actions: null, stats: { hands: 0, wins: 0, bestPot: 0 }, kicked: null });
+    const { bonus: gaBonus, ...gaMe } = gaView.me;
+    assert.deepEqual(gaMe, { seat: null, state: 'none', chips: 1000, cards: null, actions: null, stats: { hands: 0, wins: 0, bestPot: 0 }, kicked: null, broke: false });
+    checkBonus(gaBonus, { available: true, amount: 500, streak: 0, tomorrow: 600 }, gaView.now, 'me.bonus нового');
+    assert.equal((await meOf(ga.jar)).game.bonus, true, 'нашёл стол — me.game.bonus');
     r = await call(ga.jar, 'POST', G + '/sit', { json: {} });
     expect(r, 403, 'sit без X-Para', 'csrf');
-    ok('«Покер»: config.game on; гостю стол — 200 с me null и 4 пустыми местами; вошедшему me с банкроллом 1000; sit без X-Para → 403');
+    ok('«Покер»: config.game on; гостю стол — 200 с me null и 4 пустыми местами; вошедшему me с банкроллом 1000 и бонусом 500 (серия 0); sit без X-Para → 403');
 
     // 2. Сесть: бот напротив, отсчёт, раздача сама; свои карты — настоящие, чужие — «?».
     ga.auto = null;
@@ -1483,7 +1501,7 @@ async function runGame(st, boss, guest, limitsOn) {
     let bot = botOf(tv);
     assert.ok(bot && bot.seat === (mySeat + 2) % 4 && bot.user === null && bot.masked === false, 'бот сел напротив');
     assert.ok(Number.isInteger(tv.countdown) && tv.countdown > tv.now, 'отсчёт до раздачи');
-    assert.deepEqual((await meOf(ga.jar)).game, { players: 1, invite: null });
+    assert.deepEqual((await meOf(ga.jar)).game, { players: 1, invite: null, bonus: true });
     assert.equal(expect(await gcall(ga, 'POST', '/sit'), 200, 'сесть ещё раз').table.me.seat, mySeat, 'повтор — то же место');
     tv = await until(ga, (v) => v.hand && v.hand.phase === 'preflop', { what: 'раздача' });
     assert.ok(tv.me.cards.length === 2 && tv.me.cards.every((c) => CARD_RE.test(c)), 'свои карты: ' + JSON.stringify(tv.me.cards));
@@ -1536,7 +1554,7 @@ async function runGame(st, boss, guest, limitsOn) {
     const seatB = sitB.me.seat;
     assert.deepEqual([sitB.me.state, sitB.seats[seatB].reserved, sitB.seats[seatB].inHand, sitB.seats[seatB].cards, sitB.me.cards, sitB.me.actions],
       ['reserved', true, false, null, null, null]);
-    assert.deepEqual((await meOf(gb.jar)).game, { players: 2, invite: null });
+    assert.deepEqual((await meOf(gb.jar)).game, { players: 2, invite: null, bonus: true });
     tv = await until(gb, (v) => v.hand && v.hand.phase === 'preflop' && !v.hand.result && seatOfUser(v, gb.me.id) && seatOfUser(v, gb.me.id).inHand,
       { what: 'раздача с gb' });
     assert.equal(botOf(tv), null, 'бот встал, когда людей двое');
@@ -1579,7 +1597,7 @@ async function runGame(st, boss, guest, limitsOn) {
     assert.ok(['leaving', 'none'].includes(stood.me.state), 'встал: ' + stood.me.state);
     tv = await until(ga, (v) => botOf(v) && !seatOfUser(v, gb.me.id), { what: 'бот вернулся' });
     assert.equal(expect(await gcall(gb, 'POST', '/stand'), 200, 'встать, не сидя').table.me.state, 'none');
-    assert.deepEqual((await meOf(ga.jar)).game, { players: 1, invite: null });
+    assert.deepEqual((await meOf(ga.jar)).game, { players: 1, invite: null, bonus: true });
     ok('«Покер»: gb встал — место освободилось, бот вернулся; «встать» не сидя — 200');
 
     // 7. Блокировки: заблокировавший ga не сядет; блокировка за столом — другой показан «Игроком» (masked).
@@ -1725,12 +1743,188 @@ async function runGame(st, boss, guest, limitsOn) {
     expect(await gcall(ga, 'POST', '/stand'), 200, 'ga встал');
     tv = await until(ga, (v) => !seatOfUser(v, ga.me.id), { what: 'ga вне стола' });
     assert.deepEqual([tv.me.state, tv.me.chips, tv.me.stats], ['none', before.chips, before.stats], 'банкролл и счёт сохранились');
-    assert.deepEqual((await meOf(ga.jar)).game, { players: 0, invite: null });
+    assert.deepEqual((await meOf(ga.jar)).game, { players: 0, invite: null, bonus: true });
     await until(null, (v) => v.seats.every((s) => !s), { what: 'стол пуст' });
     ok('«Покер»: встал — стек и счёт остались в базе (me.chips, me.stats), стол пуст');
+
+    await runEconomy(stops);
+    await runTop();
   } finally {
     for (const stop of stops) stop();
   }
+}
+
+/**
+ * «Покер»: экономика фишек (CONTRACT.md §I.10). Стол пуст на входе и на выходе. Бесплатной подпитки нет:
+ *  1) бонус «ждёт раздачи» (место есть, но в раздачу не сдан) — сразу в стек и в базу; второй раз — 409; me.game.bonus;
+ *  2) бонус в раздаче — в стек только после неё (по потоку: стек после конца раздачи = стек на её итоге + 500);
+ *  3) двое ва-банк друг против друга, пока у кого-то не останется меньше большого блайнда: в начале следующей раздачи
+ *     он встаёт сам (me.kicked = 'broke' один раз), me.broke, сесть — 409; бонус — и снова можно сесть.
+ */
+async function runEconomy(stops) {
+  let r;
+  let tv;
+  // 1. gp с ботом; ждём ход gp (сам он не ходит: на ход 2 с) — раздача точно идёт. gr садится в неё и забирает бонус.
+  const gp = await gamer('gp', `Паша ${RUN}`);
+  const gr = await gamer('gr', `Рома ${RUN}`);
+  gp.auto = null;
+  stops.push(keep(gp));
+  expect(await gcall(gp, 'POST', '/sit'), 200, 'gp сел');
+  const myTurn = (u) => (v) => {
+    const s = seatOfUser(v, u.me.id);
+    return !!(s && v.hand && !v.hand.result && v.hand.turn && v.hand.turn.seat === s.seat);
+  };
+  tv = await until(gp, myTurn(gp), { ms: 15_000, what: 'ход gp' });
+  const seatP = seatOfUser(tv, gp.me.id).seat;
+  const handP = tv.hand.id;
+  assert.equal((await meOf(gr.jar)).game.bonus, false, 'стол не находил — бонус не ждёт');
+  const sitR = expect(await gcall(gr, 'POST', '/sit'), 200, 'gr сел во время раздачи').table;
+  const seatR = sitR.me.seat;
+  assert.deepEqual([sitR.me.state, sitR.me.chips, sitR.me.broke], ['reserved', 1000, false]);
+  checkBonus(sitR.me.bonus, { available: true, amount: 500, streak: 0, tomorrow: 600 }, sitR.now, 'бонус gr до');
+  const br = expect(await gcall(gr, 'POST', '/bonus'), 200, 'бонус «ждёт раздачи»');
+  assert.equal(br.got, 500);
+  assert.deepEqual([br.table.me.state, br.table.me.chips, br.table.seats[seatR].chips, br.table.me.broke], ['reserved', 1500, 1500, false],
+    'не в раздаче — сразу в стек');
+  checkBonus(br.table.me.bonus, { available: false, amount: 500, streak: 1, tomorrow: 600 }, br.table.now, 'бонус gr после');
+  r = await gcall(gr, 'POST', '/bonus');
+  expect(r, 409, 'бонус второй раз', 'conflict', 'Бонус на сегодня уже получен');
+  assert.equal(r.json.field, 'status');
+  assert.equal((await meOf(gr.jar)).game.bonus, false, 'me.game.bonus после бонуса');
+  tv = expect(await gcall(gr, 'POST', '/stand'), 200, 'gr встал').table;
+  assert.deepEqual([tv.me.state, tv.me.chips], ['none', 1500], 'встал — бонус в банкролле (база)');
+  ok('«Покер»: бонус новому — 500 (серия 0); «ждёт раздачи» забрал — +500 сразу в стек и в базу, серия 1, завтра 600; второй раз — 409 «Бонус на сегодня уже получен»; me.game.bonus false');
+
+  // 2. Бонус gp в его раздаче (всё ещё его ход): стек не меняется, пока раздача не кончится; потом — +500.
+  const sp = await stream(gp);
+  await sp.wait('hello');
+  const bp = expect(await gcall(gp, 'POST', '/bonus'), 200, 'бонус в раздаче');
+  const mine = bp.table.seats[seatP];
+  assert.ok(bp.table.hand && bp.table.hand.id === handP && mine.inHand, 'бонус забран в раздаче: ' + JSON.stringify(bp.table.hand && bp.table.hand.phase));
+  assert.equal(bp.got, 500);
+  assert.equal(bp.table.me.chips, mine.chips);
+  assert.ok(mine.chips + mine.bet <= 1100, 'в раздаче стек ещё без бонуса: ' + (mine.chips + mine.bet));
+  checkBonus(bp.table.me.bonus, { available: false, amount: 500, streak: 1, tomorrow: 600 }, bp.table.now, 'бонус gp после');
+  gp.auto = passive;
+  const claimSeq = bp.table.seq;
+  const ends = await sp.until(() => {
+    const ev = sp.events.filter((e) => e.event === 'table' && e.data.view.seq >= claimSeq).map((e) => e.data.view);
+    const i = ev.findIndex((v) => !v.hand || v.hand.id !== handP);
+    return i > 0 ? { last: ev[i - 1], after: ev[i] } : null;
+  }, 4500, 'конец раздачи с бонусом');
+  sp.close();
+  assert.ok(ends.last.hand && ends.last.hand.result, 'перед концом раздачи — её итог');
+  assert.equal(ends.after.seats[seatP].chips, ends.last.seats[seatP].chips + 500, 'бонус — в стек по окончании раздачи');
+  expect(await gcall(gp, 'POST', '/stand'), 200, 'gp встал');
+  await until(null, (v) => v.seats.every((s) => !s), { ms: 15_000, what: 'стол пуст после gp' });
+  ok(`«Покер»: бонус в раздаче — стек не меняется до её конца, потом +500 (${ends.last.seats[seatP].chips} → ${ends.after.seats[seatP].chips})`);
+
+  // 3. Ва-банк: gu и gv, пока кто-то не проиграется (меньше 20 в начале раздачи — встаёт сам).
+  const gu = await gamer('gu', `Уля ${RUN}`);
+  const gv = await gamer('gv', `Вова ${RUN}`);
+  for (const u of [gu, gv]) {
+    u.auto = shove;
+    u.kickedSeen = null;
+    stops.push(keep(u));
+  }
+  expect(await gcall(gu, 'POST', '/sit'), 200, 'gu сел');
+  expect(await gcall(gv, 'POST', '/sit'), 200, 'gv сел');
+  let L = null;
+  let lv = null;
+  const t0 = Date.now();
+  while (!L) {
+    if (Date.now() - t0 > 60_000) throw new Error('ва-банк: за 60 с никто не проигрался');
+    for (const u of [gu, gv]) {
+      const v = await tableOf(u);
+      if (v.me.kicked) u.kickedSeen = v.me.kicked;
+      if (v.me.state === 'none') { L = u; lv = v; break; }
+    }
+    if (!L) await sleep(150);
+  }
+  const W = L === gu ? gv : gu;
+  L.auto = null;
+  W.auto = passive;
+  await sleep(700);   // me.kicked мог уйти в опрос keep — ждём его ответа
+  assert.ok(lv.me.kicked === 'broke' || L.kickedSeen === 'broke', 'me.kicked = broke пришёл: ' + JSON.stringify([lv.me.kicked, L.kickedSeen]));
+  tv = await tableOf(L);
+  assert.equal(tv.me.kicked, null, 'второй раз kicked не приходит');
+  assert.ok(tv.me.state === 'none' && tv.me.broke === true && tv.me.chips < 20, 'фишки кончились: ' + JSON.stringify(tv.me));
+  checkBonus(tv.me.bonus, { available: true, amount: 500, streak: 0, tomorrow: 600 }, tv.now, 'бонус проигравшегося');
+  r = await gcall(L, 'POST', '/sit');
+  expect(r, 409, 'сесть без фишек', 'conflict', 'Фишки кончились — новые завтра');
+  assert.equal(r.json.field, 'status');
+  assert.equal((await meOf(L.jar)).game.bonus, true, 'бонус ждёт');
+  const lb = expect(await gcall(L, 'POST', '/bonus'), 200, 'бонус проигравшегося');
+  assert.deepEqual([lb.got, lb.table.me.state, lb.table.me.chips, lb.table.me.broke], [500, 'none', tv.me.chips + 500, false], 'бонус — в банкролл');
+  const back = expect(await gcall(L, 'POST', '/sit'), 200, 'с бонусом — снова за стол').table;
+  assert.ok(['seated', 'reserved'].includes(back.me.state), 'сел: ' + back.me.state);
+  expect(await gcall(L, 'POST', '/stand'), 200, 'проигравшийся встал');
+  expect(await gcall(W, 'POST', '/stand'), 200, 'победитель встал');
+  await until(null, (v) => v.seats.every((s) => !s), { ms: 15_000, what: 'стол пуст' });
+  ok(`«Покер»: ва-банк до конца фишек — в начале раздачи встал сам, me.kicked = broke (один раз), me.broke, сесть → 409 «Фишки кончились — новые завтра»; бонус +500 — снова за стол (${Math.round((Date.now() - t0) / 1000)} с)`);
+}
+
+/**
+ * «Покер»: рейтинг по фишкам (GET /api/social/games/top, §I.10). «Друзья» — друзья и я; «Все» — взрослые, которых можно
+ * найти в поиске, друзья и я; 16–17 чужим не видны (даже с поиском), другу — видны; скрылся из поиска или блокировка —
+ * не виден. База общая с прошлыми прогонами, поэтому «Все» проверяется по total: разница между зрителями — ровно наши люди.
+ */
+async function runTop() {
+  const top = async (u, scope) => expect(await paced(() => gcall(u, 'GET', '/top?scope=' + scope)), 200, 'рейтинг ' + scope);
+  const total = async (u) => (await top(u, 'all')).total;
+  const S = await gamer('ts', `Стас ${RUN}`);
+  const F = await gamer('tf', `Фарид ${RUN}`);
+  const M = await gamer('tm', `Мадина ${RUN}`, { age: 'minor' });
+  const H = await gamer('th', `Хилола ${RUN}`);
+  expect(await gcall(null, 'GET', '/top?scope=all'), 401, 'рейтинг гостю', 'auth');
+  bad(await gcall(S, 'GET', '/top?scope=world'), 'кривой scope', 'Неверный запрос', 'scope');
+  bad(await gcall(S, 'GET', '/top'), 'без scope', 'Неверный запрос', 'scope');
+  let t = await top(S, 'friends');
+  assert.deepEqual([t.scope, t.items, t.me, t.total], ['friends', [], null, 0], 'стол не находил — своей строки нет');
+  for (const u of [S, F, M, H]) await tableOf(u);   // нашли стол — строки poker_players (по 1000)
+  // M (16–17) открывает себя поиску — во «Всех» её всё равно не видно чужим; бонус — 1500, выше F. F и M — друзья.
+  expect(await call(M.jar, 'PATCH', '/api/social/me', { json: { searchable: true }, headers: W }), 200, 'M в поиске');
+  expect(await gcall(M, 'POST', '/bonus'), 200, 'бонус M');
+  expect(await call(F.jar, 'POST', `/api/social/friends/${M.me.id}`, { json: {}, headers: W }), 200, 'F → M');
+  expect(await call(M.jar, 'POST', `/api/social/friends/${F.me.id}/accept`, { json: {}, headers: W }), 200, 'M принимает F');
+
+  // «Друзья»: у S — только он сам; у F и M — оба, M выше (1500 > 1000).
+  t = await top(S, 'friends');
+  assert.equal(t.scope, 'friends');
+  assert.deepEqual([t.total, t.me, t.items.length, t.items[0].place, t.items[0].user.id, t.items[0].chips, t.items[0].me],
+    [1, { place: 1, chips: 1000 }, 1, 1, S.me.id, 1000, true], 'друзья S: только своя строка');
+  assert.deepEqual(Object.keys(t.items[0].user).sort(), ['avatar', 'badge', 'id', 'name', 'team', 'uni', 'uniShort', 'username']);
+  t = await top(F, 'friends');
+  assert.deepEqual(t.items.map((x) => [x.place, x.user.id, x.chips, x.me]), [[1, M.me.id, 1500, false], [2, F.me.id, 1000, true]]);
+  assert.deepEqual([t.total, t.me], [2, { place: 2, chips: 1000 }]);
+  t = await top(M, 'friends');
+  assert.deepEqual([t.items.map((x) => [x.user.id, x.me]), t.me], [[[M.me.id, true], [F.me.id, false]], { place: 1, chips: 1500 }]);
+  ok('«Покер»: рейтинг — гостю 401, кривой или пустой scope → 400 scope; стол не находил — me null; «Друзья» — друзья и я, места по фишкам');
+
+  // «Все»: F видит M (друг), S — нет; M видит себя; места идут подряд, фишки не растут, своя строка — на своём месте.
+  const tS = await total(S);
+  const tF = await total(F);
+  assert.equal(tF, tS + 1, `F видит M-друга, S — нет (${tF} / ${tS})`);
+  assert.equal(await total(M), tS + 1, 'M (16–17) видит себя');
+  t = await top(S, 'all');
+  assert.equal(t.scope, 'all');
+  assert.ok(!t.items.some((x) => x.user.id === M.me.id), '16–17 чужим во «Всех» не видна');
+  assert.ok(t.items.every((x, i) => x.place === i + 1 && (i === 0 || t.items[i - 1].chips >= x.chips)), 'места подряд, по фишкам');
+  assert.ok(t.items.length <= 20 && t.items.filter((x) => x.me).every((x) => x.user.id === S.me.id), 'me — только своя строка');
+  const own = t.items.find((x) => x.me);
+  assert.ok(t.me && t.me.chips === 1000 && t.me.place >= 1 && t.me.place <= t.total && (!own || own.place === t.me.place),
+    'своё место совпадает со строкой в списке: ' + JSON.stringify(t.me));
+  // H скрылась из поиска — чужим не видна, себе — да; S блокирует F — не видят друг друга.
+  expect(await call(H.jar, 'PATCH', '/api/social/me', { json: { searchable: false }, headers: W }), 200, 'H скрылась из поиска');
+  const tS1 = await total(S);
+  assert.equal(tS1, tS - 1, 'скрылась из поиска — не во «Всех» у чужих');
+  assert.equal(await total(H), tS1 + 1, 'своя строка — всегда');
+  const tF1 = await total(F);
+  expect(await call(S.jar, 'PUT', `/api/social/blocks/${F.me.id}`, { json: {}, headers: W }), 200, 'S блокирует F');
+  assert.deepEqual([await total(S), await total(F)], [tS1 - 1, tF1 - 1], 'блокировка — не видят друг друга');
+  expect(await call(S.jar, 'DELETE', `/api/social/blocks/${F.me.id}`, { json: {}, headers: W }), 200, 'S разблокировал F');
+  assert.equal(await total(S), tS1);
+  ok(`«Покер»: рейтинг «Все» (${tS} чел.) — 16–17 чужим не видна, другу — да; скрытые из поиска и заблокированные — нет; своя строка всегда, места подряд`);
 }
 
 // ═══════════════ Живые обновления (CONTRACT.md §J) ═══════════════
@@ -2163,20 +2357,24 @@ async function runReadonly() {
 
   // ── «Покер» в readonly: смотреть и поток — можно (и гостю); сесть, ход, реакция → 403 readonly; встать — можно ──
   const aliceGame = (await meOf(alice.jar)).game;
-  assert.ok(aliceGame && typeof aliceGame.players === 'number', 'me.game в readonly: ' + JSON.stringify(aliceGame));
+  assert.ok(aliceGame && typeof aliceGame.players === 'number' && typeof aliceGame.bonus === 'boolean', 'me.game в readonly: ' + JSON.stringify(aliceGame));
   const tv = expect(await gcall(alice, 'GET', ''), 200, 'стол в readonly');
   assert.ok(tv.me && tv.me.state === 'none' && tv.seats.length === 4, 'стол читается');
+  assert.ok(tv.me.bonus && typeof tv.me.bonus.available === 'boolean' && typeof tv.me.broke === 'boolean', 'me.bonus и me.broke в readonly');
   assert.equal(expect(await gcall(null, 'GET', ''), 200, 'стол гостю в readonly').me, null);
   await ro(await gcall(alice, 'POST', '/sit'), 'сесть');
   await ro(await gcall(alice, 'POST', '/act', { json: { hand: 1, action: 'fold' } }), 'ход');
   await ro(await gcall(alice, 'POST', '/react', { json: { r: 'wave' } }), 'реакция');
+  await ro(await gcall(alice, 'POST', '/bonus'), 'бонус');
   assert.equal(expect(await gcall(alice, 'POST', '/stand'), 200, 'встать в readonly').table.me.state, 'none');
+  const tt = expect(await gcall(alice, 'GET', '/top?scope=all'), 200, 'рейтинг в readonly');
+  assert.ok(tt.scope === 'all' && Array.isArray(tt.items) && tt.me && tt.me.chips === tv.me.chips, 'рейтинг в readonly: ' + JSON.stringify(tt.me));
   const s = await stream(alice);
   assert.equal(s.status, 200, 'поток в readonly: ' + s.raw.slice(0, 200));
   await s.wait('hello');
   await s.wait('table', (d) => d.view && d.view.me && d.view.me.state === 'none', 2000);
   s.close();
-  ok('readonly: «Покер» — стол читается (и гостю), поток открывается (hello, table); сесть, ход, реакция → 403 readonly; встать — 200');
+  ok('readonly: «Покер» — стол читается (и гостю), поток открывается (hello, table), рейтинг — 200; сесть, ход, реакция, бонус → 403 readonly; встать — 200');
 
   // ── Живые обновления в readonly: поток открывается (гостю — 401); позвать в покер → 403 readonly; «не сейчас» — 200 ──
   expect(await call(guest, 'GET', LIVE), 401, 'живые обновления гостю в readonly', 'auth');
@@ -2208,7 +2406,9 @@ async function runOff() {
   expect(await call(X.jar, 'POST', G + '/sit', { json: {}, headers: W }), 404, 'сесть в off', 'not_found');
   expect(await call(X.jar, 'POST', G + '/invite', { json: { to: 1 }, headers: W }), 404, 'позвать в off', 'not_found');
   expect(await call(X.jar, 'POST', G + '/invite/dismiss', { json: {}, headers: W }), 404, '«не сейчас» в off', 'not_found');
-  ok('off: «Покер» — config.game off, me.game null, /api/social/games, поток и приглашения → 404 not_found');
+  expect(await call(X.jar, 'POST', G + '/bonus', { json: {}, headers: W }), 404, 'бонус в off', 'not_found');
+  expect(await call(X.jar, 'GET', G + '/top?scope=all'), 404, 'рейтинг в off', 'not_found');
+  ok('off: «Покер» — config.game off, me.game null, /api/social/games, поток, приглашения, бонус и рейтинг → 404 not_found');
   expect(await call(X.jar, 'GET', LIVE), 404, 'живые обновления в off', 'not_found', 'Нет такого адреса API');
   expect(await call(guest, 'GET', LIVE), 404, 'живые обновления гостю в off', 'not_found');
   ok('off: живые обновления — /api/social/live → 404 not_found');

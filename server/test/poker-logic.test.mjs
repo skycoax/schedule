@@ -1,9 +1,10 @@
-// «Покер»: правила без сервера (poker-logic.js) и бот (poker-bot.js). Запуск из корня проекта:
+// «Покер»: правила без сервера (poker-logic.js), бот (poker-bot.js) и ежедневный бонус. Запуск из корня проекта:
 //   node --test server/test/poker-logic.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   FULL_DECK, newDeck, isCard, evaluate5, evaluate7, compare, handName, sidePots, chen, CATEGORY_NAMES,
+  BONUS, bonusAmount, bonusFor, tashkentDay, nextMidnight, dayBefore,
 } from '../src/social/poker-logic.js';
 import { decide, strength, raiseAmount } from '../src/social/poker-bot.js';
 
@@ -166,4 +167,67 @@ test('бот: AA префлоп повышает, 72o без ставки — ch
   assert.ok(st > 0.9, 'флеш от туза: ' + st);
   const weak = strength(['7s', '2d'], ['Ah', 'Kh', 'Qc'], 2, mulberry32(4));
   assert.ok(weak < 0.3, 'мусор против двух: ' + weak);
+});
+
+// ─── Ежедневный бонус (§I.10): сутки по Ташкенту (UTC+5), серия дней ───
+
+test('tashkentDay, nextMidnight, dayBefore: полночь по Ташкенту — 19:00 UTC, високосный год, смена года', () => {
+  assert.equal(tashkentDay(Date.parse('2026-09-27T18:59:59.999Z')), '2026-09-27');
+  assert.equal(tashkentDay(Date.parse('2026-09-27T19:00:00.000Z')), '2026-09-28', 'в 00:00 по Ташкенту — новый день');
+  assert.equal(tashkentDay(Date.parse('2026-12-31T20:30:00Z')), '2027-01-01');
+  assert.equal(nextMidnight(Date.parse('2026-09-27T22:15:00Z')), Date.parse('2026-09-28T19:00:00Z'));
+  assert.equal(nextMidnight(Date.parse('2026-09-27T18:59:59.999Z')), Date.parse('2026-09-27T19:00:00Z'));
+  assert.equal(nextMidnight(Date.parse('2026-09-27T19:00:00Z')), Date.parse('2026-09-28T19:00:00Z'), 'ровно в полночь — следующая');
+  assert.equal(dayBefore('2026-09-28'), '2026-09-27');
+  assert.equal(dayBefore('2027-01-01'), '2026-12-31');
+  assert.equal(dayBefore('2028-03-01'), '2028-02-29');
+  assert.equal(dayBefore('2027-03-01'), '2027-02-28');
+});
+
+test('бонус по дню серии: 500 … 1000, с седьмого — 1200', () => {
+  assert.deepEqual([...BONUS], [500, 600, 700, 800, 900, 1000, 1200]);
+  assert.deepEqual([1, 2, 3, 4, 5, 6, 7, 8, 30].map(bonusAmount), [500, 600, 700, 800, 900, 1000, 1200, 1200, 1200]);
+  assert.equal(bonusAmount(0), 500);
+});
+
+test('bonusFor: новый, вчера → +1, сегодня → нельзя, позавчера → 1 (серия сгорела), 7+ → 1200', () => {
+  const today = '2026-09-28';
+  const pick = (b) => [b.available, b.streak, b.next, b.amount, b.tomorrow];
+  // Строки нет или бонус не брал: первый день серии.
+  assert.deepEqual(pick(bonusFor(null, today)), [true, 0, 1, 500, 600]);
+  assert.deepEqual(pick(bonusFor({ bonus_day: null, streak: 0 }, today)), [true, 0, 1, 500, 600]);
+  // Вчера: серия продолжается.
+  assert.deepEqual(pick(bonusFor({ bonus_day: '2026-09-27', streak: 1 }, today)), [true, 1, 2, 600, 700]);
+  assert.deepEqual(pick(bonusFor({ bonus_day: '2026-09-27', streak: 3 }, today)), [true, 3, 4, 800, 900]);
+  // Сегодня уже забран: нельзя; серия — с сегодняшним днём, amount — сколько пришло.
+  assert.deepEqual(pick(bonusFor({ bonus_day: today, streak: 4 }, today)), [false, 4, 4, 800, 900]);
+  assert.deepEqual(pick(bonusFor({ bonus_day: today, streak: 1 }, today)), [false, 1, 1, 500, 600]);
+  // Позавчера и раньше: серия сгорела — снова первый день.
+  assert.deepEqual(pick(bonusFor({ bonus_day: '2026-09-26', streak: 5 }, today)), [true, 0, 1, 500, 600]);
+  assert.deepEqual(pick(bonusFor({ bonus_day: '2025-01-01', streak: 40 }, today)), [true, 0, 1, 500, 600]);
+  // Седьмой день подряд и дальше — 1200.
+  assert.deepEqual(pick(bonusFor({ bonus_day: '2026-09-27', streak: 6 }, today)), [true, 6, 7, 1200, 1200]);
+  assert.deepEqual(pick(bonusFor({ bonus_day: '2026-09-27', streak: 7 }, today)), [true, 7, 8, 1200, 1200]);
+  assert.deepEqual(pick(bonusFor({ bonus_day: '2026-09-27', streak: 100 }, today)), [true, 100, 101, 1200, 1200]);
+  assert.deepEqual(pick(bonusFor({ bonus_day: '2026-09-27', streak: 5 }, today)), [true, 5, 6, 1000, 1200]);
+  // Через год и смену месяца: вчера — это 31 декабря / 29 февраля.
+  assert.equal(bonusFor({ bonus_day: '2026-12-31', streak: 2 }, '2027-01-01').next, 3);
+  assert.equal(bonusFor({ bonus_day: '2028-02-29', streak: 2 }, '2028-03-01').next, 3);
+  // День последнего бонуса «из будущего» (часы сервера перевели назад) — сегодня не дают второй раз.
+  assert.equal(bonusFor({ bonus_day: '2026-09-29', streak: 2 }, today).available, false);
+});
+
+test('серия дней подряд: забирать каждый день — 500, 600 … 1200, 1200; пропуск — снова 500', () => {
+  let row = null;
+  const got = [];
+  const days = ['2026-09-01', '2026-09-02', '2026-09-03', '2026-09-04', '2026-09-05', '2026-09-06', '2026-09-07', '2026-09-08',
+    '2026-09-10', '2026-09-11'];   // 9-е пропущено
+  for (const day of days) {
+    const b = bonusFor(row, day);
+    assert.equal(b.available, true, day);
+    got.push(b.amount);
+    row = { bonus_day: day, streak: b.next };
+    assert.equal(bonusFor(row, day).available, false, 'второй раз в тот же день — нельзя: ' + day);
+  }
+  assert.deepEqual(got, [500, 600, 700, 800, 900, 1000, 1200, 1200, 500, 600]);
 });

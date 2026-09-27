@@ -1,7 +1,8 @@
 // «Покер» (CONTRACT.md §I): правила без стола и базы — колода и честная тасовка (crypto.randomInt), сила руки
-// из 5–7 карт (evaluate7), сравнение, русские названия комбинаций, побочные банки (sidePots) и формула Чена
-// для двух закрытых карт (бот, poker-bot.js). Карта — строка «As», «Td», «7h», «2c»: ранг A K Q J T 9 8 7 6 5 4 3 2,
-// масть s h d c. Всё здесь — чистые функции: их проверяет poker-logic.test.mjs.
+// из 5–7 карт (evaluate7), сравнение, русские названия комбинаций, побочные банки (sidePots), формула Чена
+// для двух закрытых карт (бот, poker-bot.js) и ежедневный бонус (сутки по Ташкенту, серия дней — §I.10).
+// Карта — строка «As», «Td», «7h», «2c»: ранг A K Q J T 9 8 7 6 5 4 3 2, масть s h d c. Всё здесь — чистые функции:
+// их проверяет poker-logic.test.mjs.
 import { randomInt } from 'node:crypto';
 
 export const RANKS = 'AKQJT98765432';
@@ -162,4 +163,42 @@ export function chen(cards) {
   s -= gap === 0 ? 0 : gap === 1 ? 1 : gap === 2 ? 2 : gap === 3 ? 4 : 5;
   if (gap <= 1 && hi < 12) s += 1;
   return Math.ceil(s);
+}
+
+// ─── Ежедневный бонус (§I.10) ───
+// Сутки — по Ташкенту: UTC+5 круглый год, без перехода на летнее время. День — строка 'YYYY-MM-DD'.
+
+/** Бонус k-го дня серии (k = 1…): 500, 600 … 1000, с седьмого дня подряд — 1200. */
+export const BONUS = Object.freeze([500, 600, 700, 800, 900, 1000, 1200]);
+const TZ_MS = 5 * 3600_000;
+const DAY_MS = 24 * 3600_000;
+
+/** День по Ташкенту для момента ms: 'YYYY-MM-DD'. */
+export const tashkentDay = (ms) => new Date(ms + TZ_MS).toISOString().slice(0, 10);
+/** Ближайшая полночь по Ташкенту после момента ms (epoch ms): с неё — новый бонус. */
+export const nextMidnight = (ms) => Date.parse(tashkentDay(ms) + 'T00:00:00Z') - TZ_MS + DAY_MS;
+/** Вчера для дня 'YYYY-MM-DD'. */
+export const dayBefore = (day) => new Date(Date.parse(day + 'T00:00:00Z') - DAY_MS).toISOString().slice(0, 10);
+/** Бонус k-го дня серии (k < 1 считается первым днём). */
+export const bonusAmount = (k) => BONUS[Math.min(Math.max(1, k), BONUS.length) - 1];
+
+/**
+ * Бонус игрока на день today. row — строка poker_players { bonus_day, streak } (null — строки ещё нет).
+ * → { available, streak, next, amount, tomorrow }:
+ *   available — сегодня ещё не забирал (день последнего бонуса «из будущего» после перевода часов — тоже нельзя);
+ *   streak — текущая серия: забрал сегодня или вчера — как в базе, раньше — 0 (сгорела);
+ *   next — серия, с которой записывается сегодняшний бонус: вчера → streak + 1, иначе 1 (уже забран — та же);
+ *   amount — бонус сегодняшнего дня серии: сколько дадут сейчас, а если уже забран — сколько пришло;
+ *   tomorrow — сколько завтра, если не пропустить день.
+ */
+export function bonusFor(row, today) {
+  const last = row && row.bonus_day ? String(row.bonus_day) : null;
+  const had = Math.max(0, Math.floor(Number(row && row.streak) || 0));
+  if (last && last >= today) {
+    const k = Math.max(1, had);
+    return { available: false, streak: k, next: k, amount: bonusAmount(k), tomorrow: bonusAmount(k + 1) };
+  }
+  const streak = last === dayBefore(today) ? had : 0;
+  const next = streak + 1;
+  return { available: true, streak, next, amount: bonusAmount(next), tomorrow: bonusAmount(next + 1) };
 }

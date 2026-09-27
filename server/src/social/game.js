@@ -5,9 +5,11 @@
 // Стол один на все вузы, поэтому проверки U нет нигде; смотреть могут и гости.
 // Приглашения друзей (§J.5): позвать — событие invite другу в поток живых обновлений (live.js) и me.game.invite
 // на 10 минут; хранятся только в памяти (poker-table.js).
+// Экономика фишек (§I.10): ежедневный бонус (#9, poker-table.js claimBonus) и рейтинг по фишкам (#10, здесь — запрос
+// к базе: видимость как у поиска и друзей).
 import { ok, invalid, blocked, guard, bodyOf, intField, TEXT, marks } from './http.js';
 import { limit, keyOf, rateError } from './limits.js';
-import { usersByIds, userCardOf, blockedEither } from './users.js';
+import { usersByIds, userCardOf, blockedEither, CARD_COLS } from './users.js';
 import { areFriends } from './instant-access.js';
 import { streamHandler } from './game-stream.js';
 import { liveTo } from './live.js';
@@ -21,9 +23,27 @@ const INVITE_TEXT = {
 };
 const INVITE_AGAIN = 60_000;   // одному и тому же другу — не чаще раза в минуту
 
+// ─── Рейтинг по фишкам (#10) ───
+const TOP_N = 20;
+const TOP_SCOPES = ['friends', 'all'];
+// Кого видит $me: себя — всегда; остальных — активных с профилем и без блокировки в любую сторону; в «Друзьях» —
+// принятых друзей, во «Всех» — ещё и взрослых, которых можно найти в поиске (searchable), — как у поиска людей.
+const FRIEND_OF_ME = `EXISTS (SELECT 1 FROM friends f WHERE f.status = 'accepted'
+  AND f.user_lo = MIN($me, u.id) AND f.user_hi = MAX($me, u.id))`;
+const NO_BLOCK = `NOT EXISTS (SELECT 1 FROM blocks b
+  WHERE (b.blocker_id = $me AND b.blocked_id = u.id) OR (b.blocker_id = u.id AND b.blocked_id = $me))`;
+const TOP_VISIBLE = {
+  friends: `(u.id = $me OR (u.status = 'active' AND u.username IS NOT NULL AND ${FRIEND_OF_ME} AND ${NO_BLOCK}))`,
+  all: `(u.id = $me OR (u.status = 'active' AND u.username IS NOT NULL
+    AND ((u.age_group = 'adult' AND u.searchable = 1) OR ${FRIEND_OF_ME}) AND ${NO_BLOCK}))`,
+};
+// Порядок мест: больше фишек — выше, при равенстве — кто раньше нашёл стол (found_at), затем id.
+const TOP_ORDER = 'p.chips DESC, p.found_at, p.user_id';
+
 /**
- * /api/social/games (#1–#5), поток (#6) и приглашения (#7, #8). Регистрируется, только если SOCIAL_MODE ≠ off и SOCIAL_GAME ≠ off
- * (иначе — общий 404). Порядок в обработчике: проверки доступа → поля → пределы частоты → стол (§B.2).
+ * /api/social/games (#1–#5), поток (#6), приглашения (#7, #8), бонус (#9) и рейтинг (#10). Регистрируется, только
+ * если SOCIAL_MODE ≠ off и SOCIAL_GAME ≠ off (иначе — общий 404). Порядок в обработчике: проверки доступа → поля →
+ * пределы частоты → стол (§B.2).
  * @param {import('fastify').FastifyInstance} inst
  */
 export function gameRoutes(inst, ctx) {
@@ -108,6 +128,51 @@ export function gameRoutes(inst, ctx) {
     bodyOf(req);
     pokerTable.dropInvite(me.id);
     return ok({});
+  });
+
+  // #9 — ежедневный бонус: {} → { got, table }. Раз в сутки по Ташкенту, растёт с серией дней подряд; уже забран
+  // сегодня → 409 status «Бонус на сегодня уже получен». За столом вне раздачи — сразу в стек, в раздаче — после неё.
+  inst.post('/api/social/games/bonus', async (req) => {
+    const me = guard(req, 'SPNM');
+    bodyOf(req);
+    limit('gameSit', 'u:' + me.id);
+    return ok(pokerTable.claimBonus(me.id));
+  });
+
+  // #10 — рейтинг по фишкам: ?scope=friends|all → { scope, items (первые 20: place, user, chips, me), me, total }.
+  // Кривой scope → 400 scope. Работает и в readonly, и ограниченным (они читают). Строки poker_players — у тех, кто
+  // находил стол; фишки — из базы (у сидящих — на конец последней раздачи). me.place — 1 + сколько видимых стоит
+  // выше меня в том же порядке, что и items; me — null, если я стол ещё не находил.
+  const topQ = {};
+  for (const scope of TOP_SCOPES) {
+    const vis = TOP_VISIBLE[scope];
+    const from = `FROM poker_players p JOIN users u ON u.id = p.user_id`;
+    topQ[scope] = {
+      items: db.prepare(`SELECT ${CARD_COLS}, p.chips AS p_chips ${from} LEFT JOIN media m ON m.id = u.avatar_id
+        WHERE ${vis} ORDER BY ${TOP_ORDER} LIMIT ${TOP_N}`),
+      total: db.prepare(`SELECT COUNT(*) n ${from} WHERE ${vis}`),
+      above: db.prepare(`SELECT COUNT(*) n ${from} WHERE ${vis}
+        AND (p.chips > $chips OR (p.chips = $chips AND (p.found_at < $found OR (p.found_at = $found AND p.user_id < $me))))`),
+    };
+  }
+  const myRow = db.prepare('SELECT chips, found_at FROM poker_players WHERE user_id = ?');
+  inst.get('/api/social/games/top', async (req) => {
+    const me = guard(req, 'S');
+    const scope = (req.query || {}).scope;
+    if (!TOP_SCOPES.includes(scope)) throw invalid(TEXT.invalid, 'scope');
+    limit('read', keyOf(req));
+    const q = topQ[scope];
+    const items = q.items.all({ $me: me.id }).map((r, i) => ({
+      place: i + 1, user: userCardOf(ctx, r, false), chips: Number(r.p_chips), me: r.id === me.id,
+    }));
+    const mine = myRow.get(me.id);
+    const place = mine ? Number(q.above.get({ $me: me.id, $chips: mine.chips, $found: mine.found_at }).n) + 1 : 0;
+    return ok({
+      scope,
+      items,
+      me: mine ? { place, chips: Number(mine.chips) } : null,
+      total: Number(q.total.get({ $me: me.id }).n),
+    });
   });
 
   // Стол: карточки сидящих и блокировки — из базы, по разу на рассылку.

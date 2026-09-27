@@ -1,10 +1,12 @@
 // «Покер» (CONTRACT.md §I): один общий стол Para на 4 места — состояние в памяти, таймеры, раздача, ход,
 // бот, присутствие, view для каждого зрителя. Всё, что меняет стол, проходит через bump(): seq растёт и каждому
-// открытому потоку уходит его view (game-stream.js). База (poker_players) — только стек и счёт людей:
-// при посадке, в конце раздачи и когда человек встаёт; история раздач не хранится. Перезапуск сервера
-// обрывает раздачу (фишки, поставленные в неё, теряются — допустимо), стол после старта пуст.
+// открытому потоку уходит его view (game-stream.js). База (poker_players) — только стек, счёт и бонус людей:
+// при посадке, в конце раздачи, когда человек встаёт и когда забирает бонус; история раздач не хранится.
+// Перезапуск сервера обрывает раздачу (фишки, поставленные в неё, теряются — допустимо), стол после старта пуст.
 // Таймеры ходов, бота, улиц и пауз — один слот ('hand'); тела таймеров — в try/catch: стол не должен
 // ни упасть, ни зависнуть (сторож раз в несколько секунд отменяет раздачу без таймера).
+// Экономика (§I.10): бесплатной подпитки нет — у кого фишек меньше большого блайнда, тот в начале раздачи встаёт
+// сам и до ежедневного бонуса (claimBonus, сутки по Ташкенту) не сядет; бот — «дом» и доливается сам.
 // Живые обновления приложения (live.js, §J): число людей за столом — всем живым (players); приглашения друзей
 // в покер (маршруты — game.js) — здесь же, в памяти: сел за стол — приглашение снято.
 import { randomInt } from 'node:crypto';
@@ -12,7 +14,7 @@ import { social } from '../config.js';
 import { tx, nowIso } from './db.js';
 import { SocialError } from './http.js';
 import { rateError } from './limits.js';
-import { newDeck, evaluate7, handName, sidePots } from './poker-logic.js';
+import { newDeck, evaluate7, handName, sidePots, bonusFor, tashkentDay, nextMidnight } from './poker-logic.js';
 import { decide } from './poker-bot.js';
 import { broadcast, sendReact, isLive, streamCount, setStreamHooks } from './game-stream.js';
 import { liveAll, liveThrottle } from './live.js';
@@ -38,6 +40,8 @@ export const POKER_TEXT = {
   full: 'Стол заполнен',
   blocked: 'За этот стол сейчас не сесть — попробуй позже',
   notSeated: 'Ты не за столом',
+  broke: 'Фишки кончились — новые завтра',
+  bonusTaken: 'Бонус на сегодня уже получен',
 };
 
 const conflict = (message) => new SocialError(409, 'conflict', message, { field: 'status' });
@@ -56,18 +60,19 @@ const table = {
 let ctx = null;           // { db, log }
 let deps = null;          // { cardsOf(ids) → Map<id, {full, guest}>, blocksAmong(ids) → Set<'a:b'>, blockedWith(id, ids) → boolean }
 const timers = { hand: null, presence: null };
-const stats = new Map();  // userId → { chips, hands, wins, bestPot, row }
-const kickedIdle = new Set();
+const stats = new Map();  // userId → { chips, hands, wins, bestPot, bonusDay, streak, row }
+const kicked = new Map(); // userId → 'idle' | 'broke': почему встал сам — один раз в его me.kicked
 let handSeq = Math.floor(Date.now() / 1000);   // id раздачи растёт и после перезапуска
 
 const now = () => Date.now();
 const log = (level, obj, msg) => { if (ctx && ctx.log) ctx.log[level](obj, msg); };
 
+// bonus — бонус, забранный во время раздачи, в которую место сдано: в стек — по её окончании (settleBonus).
 function makeSeat(seat, { userId = null, bot = false, chips }) {
   return {
     seat, userId, bot, chips,
     bet: 0, put: 0, folded: false, allIn: false, away: false, reserved: false, leaving: false, inHand: false,
-    cards: null, last: null, acted: false, timeouts: 0, won: 0, reacts: 0,
+    cards: null, last: null, acted: false, timeouts: 0, won: 0, reacts: 0, bonus: 0,
     online: bot, seenAt: now(),
   };
 }
@@ -225,16 +230,16 @@ function startHand() {
   table.countdown = null;
   if (table.hand) return;
   for (const s of table.seats) if (s && s.reserved) s.reserved = false;
+  // Не хватает на большой блайнд: человек встаёт сам (стек — в базу; в его view один раз me.kicked = 'broke'),
+  // новые фишки — только ежедневный бонус. Бот — «дом»: доливается до стартового стека.
+  for (const s of [...table.seats]) {
+    if (!s || s.chips >= BLINDS.big) continue;
+    if (s.bot) { s.chips = START_STACK; continue; }
+    kicked.set(s.userId, 'broke');
+    removeSeat(s, true);
+  }
   const players = table.seats.filter((s) => s && !s.away && !s.leaving);
   if (players.length < 2) { plan(); return; }
-  // Не хватает на большой блайнд — бесплатно долили до стартового стека (бот — так же).
-  const rebuys = [];
-  for (const s of players) {
-    if (s.chips >= BLINDS.big) continue;
-    s.chips = START_STACK;
-    if (!s.bot) rebuys.push([s.userId, s.chips]);
-  }
-  persistChips(rebuys);
 
   const deck = newDeck();
   for (const s of table.seats) {
@@ -470,11 +475,22 @@ function finishByFold(w) {
   setTimer('hand', T.DONE_FOLD, () => { endHand(); bump(); });
 }
 
-/** Конец раздачи: счёт людей в базу; убрать вставших, выгнанных за два пропуска и отошедших надолго; plan(). */
+/** Бонус, забранный во время раздачи, — в стек (в базе он уже есть: claimBonus). */
+function settleBonus(s) {
+  if (!s.bonus) return;
+  s.chips += s.bonus;
+  s.bonus = 0;
+}
+
+/**
+ * Конец раздачи: бонусы, забранные в ней, — в стеки; счёт людей в базу; убрать вставших, выгнанных за два
+ * пропуска и отошедших надолго; plan().
+ */
 function endHand() {
   const h = table.hand;
   if (!h) return;
   clearTimer('hand');
+  for (const s of table.seats) if (s) settleBonus(s);
   persistResults(inHandSeats().filter((s) => !s.bot).map((s) => ({ id: s.userId, chips: s.chips, won: s.won })));
   const t = now();
   for (const s of table.seats) {
@@ -482,7 +498,7 @@ function endHand() {
     const idle = !s.bot && s.timeouts >= 2;
     const awayLong = !s.bot && !s.online && t - s.seenAt >= T.AWAY_KICK;
     if (s.leaving || idle || awayLong) {
-      if (idle) kickedIdle.add(s.userId);
+      if (idle) kicked.set(s.userId, 'idle');
       removeSeat(s, !s.inHand);
     }
   }
@@ -494,7 +510,10 @@ function endHand() {
   plan();
 }
 
-/** Раздача без таймера (после ошибки): ставки возвращаются, раздача отменяется — стол не должен зависнуть. */
+/**
+ * Раздача без таймера (после ошибки): ставки возвращаются, бонусы — в стеки, раздача отменяется — стол не должен
+ * зависнуть. Стеки в базе и так те, что до раздачи (плюс бонусы).
+ */
 function abortHand() {
   const h = table.hand;
   if (!h) return;
@@ -502,7 +521,11 @@ function abortHand() {
   for (const s of table.seats) if (s && s.inHand && !h.result) s.chips += s.put;
   clearTimer('hand');
   if (h.result) return endHand();
-  for (const s of table.seats) if (s) Object.assign(s, { inHand: false, cards: null, bet: 0, put: 0, folded: false, allIn: false, last: null, acted: false, won: 0 });
+  for (const s of table.seats) {
+    if (!s) continue;
+    settleBonus(s);
+    Object.assign(s, { inHand: false, cards: null, bet: 0, put: 0, folded: false, allIn: false, last: null, acted: false, won: 0 });
+  }
   table.hand = null;
   return plan();
 }
@@ -569,6 +592,7 @@ export function act(userId, handId, action, amount) {
 
 /**
  * Сесть: во время раздачи — «ждёт раздачи» (reserved). Повтор — 200 (вставшему во время раздачи — место остаётся).
+ * Фишек меньше большого блайнда — 409 «Фишки кончились — новые завтра» (подпитки нет, только ежедневный бонус).
  * Сел (или уже сидит) — его входящее приглашение в покер снимается.
  */
 export function sit(u) {
@@ -579,17 +603,13 @@ export function sit(u) {
     if (s.leaving) { s.leaving = false; bump(); }
     return viewFor(u.id);
   }
+  const st = ensurePlayer(u.id);
+  if (st.chips < BLINDS.big) throw conflict(POKER_TEXT.broke);
   const others = humanSeats().map((x) => x.userId);
   if (others.length && deps.blockedWith(u.id, others)) throw conflict(POKER_TEXT.blocked);
   const i = pickSeat();
   if (i < 0) throw conflict(POKER_TEXT.full);
-  const st = ensurePlayer(u.id);
-  let chips = st.chips;
-  if (chips < BLINDS.big) {
-    chips = START_STACK;
-    persistChips([[u.id, chips]]);
-  }
-  s = makeSeat(i, { userId: u.id, chips });
+  s = makeSeat(i, { userId: u.id, chips: st.chips });
   s.online = isLive(u.id);
   s.reserved = !!table.hand;
   table.seats[i] = s;
@@ -639,7 +659,7 @@ export function stand(userId) {
 /** Бан или удаление аккаунта: сброс и встать (место — по окончании раздачи). Потоки закрывает вызывающий. */
 export function kick(userId) {
   stats.delete(userId);
-  kickedIdle.delete(userId);
+  kicked.delete(userId);
   const s = seatOf(userId);
   if (!s) return;
   try { leave(s); } catch (err) { log('error', { msg: err && err.message }, 'покер: kick'); }
@@ -710,14 +730,18 @@ function checkPresence() {
   schedulePresence();
 }
 
-// ─── База: стек и счёт ───
+// ─── База: стек, счёт и бонус ───
+
+const NO_ROW = Object.freeze({ chips: START_STACK, hands: 0, wins: 0, bestPot: 0, bonusDay: null, streak: 0, row: false });
 
 function readStats(userId) {
-  if (!ctx) return { chips: START_STACK, hands: 0, wins: 0, bestPot: 0, row: false };
-  const row = ctx.db.prepare('SELECT chips, hands, wins, best_pot FROM poker_players WHERE user_id = ?').get(userId);
+  if (!ctx) return { ...NO_ROW };
+  const row = ctx.db.prepare('SELECT chips, hands, wins, best_pot, bonus_day, streak FROM poker_players WHERE user_id = ?')
+    .get(userId);
   const st = row
-    ? { chips: Number(row.chips), hands: Number(row.hands), wins: Number(row.wins), bestPot: Number(row.best_pot), row: true }
-    : { chips: START_STACK, hands: 0, wins: 0, bestPot: 0, row: false };
+    ? { chips: Number(row.chips), hands: Number(row.hands), wins: Number(row.wins), bestPot: Number(row.best_pot),
+      bonusDay: row.bonus_day || null, streak: Number(row.streak) || 0, row: true }
+    : { ...NO_ROW };
   stats.set(userId, st);
   return st;
 }
@@ -763,6 +787,48 @@ function persistResults(rows) {
   }
 }
 
+/**
+ * POST /api/social/games/bonus: ежедневный бонус (§I.10). Сегодня (по Ташкенту) уже забран — 409 «Бонус на сегодня
+ * уже получен». Серия: прошлый бонус вчера — +1, иначе — 1 (poker-logic.js bonusFor). В одной транзакции — день,
+ * серия и фишки в базе: вне стола — банкролл + бонус; за столом вне раздачи (сидит, ждёт раздачи) — стек + бонус,
+ * и стек растёт сразу; в раздаче — банкролл до раздачи + бонус, а в стек — по её окончании (settleBonus).
+ * → { got, table: PokerView }.
+ */
+export function claimBonus(userId) {
+  touch(userId);
+  ensurePlayer(userId);
+  const t = now();
+  const today = tashkentDay(t);
+  const s = seatOf(userId);
+  const inHand = !!(s && s.inHand && table.hand);
+  const got = tx(ctx.db, () => {
+    const row = ctx.db.prepare('SELECT chips, bonus_day, streak FROM poker_players WHERE user_id = ?').get(userId);
+    const b = bonusFor(row, today);
+    if (!row || !b.available) throw conflict(POKER_TEXT.bonusTaken);
+    const chips = (s && !inHand ? s.chips : Number(row.chips)) + b.amount;
+    ctx.db.prepare(`UPDATE poker_players SET chips = ?, bonus_day = ?, streak = ?, best_streak = MAX(best_streak, ?),
+      updated_at = ? WHERE user_id = ?`).run(chips, today, b.next, b.next, nowIso(t), userId);
+    return b.amount;
+  });
+  if (s) {
+    if (inHand) s.bonus += got;
+    else s.chips += got;
+  }
+  readStats(userId);
+  bump();
+  return { got, table: viewFor(userId) };
+}
+
+/**
+ * Me.game.bonus (/api/auth/me): стол уже находил (строка poker_players есть) и сегодня бонус ещё не забирал.
+ * Без кеша счёта — одна строка по ключу.
+ */
+export function bonusWaiting(userId) {
+  if (!ctx) return false;
+  const row = ctx.db.prepare('SELECT bonus_day, streak FROM poker_players WHERE user_id = ?').get(userId);
+  return !!row && bonusFor(row, tashkentDay(now())).available;
+}
+
 // ─── View ───
 
 /** Карточки и блокировки сидящих — по разу на рассылку. */
@@ -798,21 +864,31 @@ function potsOut() {
   return sidePots(inHandSeats().map((s) => ({ seat: s.seat, put: s.put - s.bet, folded: s.folded })));
 }
 
+/**
+ * PokerMe. kicked — почему встал сам ('idle' — два пропуска хода, 'broke' — фишек меньше большого блайнда в начале
+ * раздачи), один раз. bonus — ежедневный бонус (§I.10; resetAt — ближайшая полночь по Ташкенту), broke — фишек меньше
+ * большого блайнда и сейчас не в раздаче (сесть нельзя до бонуса).
+ */
 function meOut(uid) {
   const s = seatOf(uid);
   const h = table.hand;
   const st = statsOf(uid);
   const myTurn = !!(s && h && h.turn && !h.result && h.turn.seat === s.seat);
-  let kicked = null;
-  if (kickedIdle.has(uid)) { kickedIdle.delete(uid); kicked = 'idle'; }
+  const why = kicked.get(uid) || null;
+  if (why) kicked.delete(uid);
+  const chips = s ? s.chips : st.chips;
+  const t = now();
+  const b = bonusFor({ bonus_day: st.bonusDay, streak: st.streak }, tashkentDay(t));
   return {
     seat: s ? s.seat : null,
     state: !s ? 'none' : s.leaving ? 'leaving' : s.reserved ? 'reserved' : 'seated',
-    chips: s ? s.chips : st.chips,
+    chips,
     cards: s && s.inHand && s.cards ? s.cards.slice() : null,
     actions: myTurn ? actionsFor(s) : null,
     stats: { hands: st.hands, wins: st.wins, bestPot: st.bestPot },
-    kicked,
+    kicked: why,
+    bonus: { available: b.available, amount: b.amount, streak: b.streak, tomorrow: b.tomorrow, resetAt: nextMidnight(t) },
+    broke: chips < BLINDS.big && !(s && s.inHand && h),
   };
 }
 

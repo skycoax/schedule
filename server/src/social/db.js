@@ -343,7 +343,16 @@ CREATE TABLE IF NOT EXISTS poker_players (
 );
 `;
 
-const MIGRATIONS = [SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6, SCHEMA_V7, SCHEMA_V8];
+// Экономика фишек покера (poker-table.js, CONTRACT.md §I.10): бесплатной подпитки больше нет — раз в сутки
+// (полночь по Ташкенту) игрок забирает бонус, который растёт с серией дней подряд; рейтинг по фишкам (индекс по chips).
+export const SCHEMA_V9 = `
+ALTER TABLE poker_players ADD COLUMN bonus_day TEXT;                       -- последний забранный бонус, 'YYYY-MM-DD' (Ташкент)
+ALTER TABLE poker_players ADD COLUMN streak INTEGER NOT NULL DEFAULT 0;    -- дней подряд с бонусом (на bonus_day)
+ALTER TABLE poker_players ADD COLUMN best_streak INTEGER NOT NULL DEFAULT 0;
+CREATE INDEX IF NOT EXISTS idx_pp_chips ON poker_players (chips DESC);
+`;
+
+const MIGRATIONS = [SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6, SCHEMA_V7, SCHEMA_V8, SCHEMA_V9];
 
 /** Открыть (и при необходимости создать) social.db и довести схему до последней версии. */
 export function openSocialDb(dir = config.dataDir) {

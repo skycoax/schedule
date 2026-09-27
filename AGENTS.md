@@ -83,12 +83,15 @@ server/src/social/
   limits.js      ведёрки частоты (в памяти) и дневные пределы (по базе)
   jobs.js        уборка: входы, баны, фото-сироты, сессии, сроки хранения, копия базы
   db.js          social.db и схема (PRAGMA user_version)
-  game.js        «Покер»: маршруты /api/social/games (стол, сесть, встать, ход, реакция, поток) — один общий стол Para
+  game.js        «Покер»: маршруты /api/social/games (стол, сесть, встать, ход, реакция, поток, позвать друга) — один общий стол Para
   poker-table.js стол в памяти: места, раздача, таймеры (ход, бот, улицы, паузы), присутствие, view каждому зрителю,
                  sit/stand/act/react/kick; стек и счёт людей — в poker_players
   poker-logic.js карты без стола: колода (crypto), evaluate7, compare, handName, sidePots, формула Чена
   poker-bot.js   «Бот Para»: decide() — Чен префлоп, Монте-Карло постфлоп
   game-stream.js поток событий стола (SSE): реестр соединений (гостям тоже), table каждому своё view, ping, bye
+  live.js        живые обновления: поток SSE /api/social/live на вошедшего (чужие посты, ответы, «нравится», удаления,
+                 заявки в друзья, моменты, приглашения в покер, число людей за столом); кому что видно — решают хуки
+                 в posts/users/moderation/instants/game, всё — после COMMIT (контракт — CONTRACT.md §J)
 server/test/social-smoke.mjs   дымовой тест всех маршрутов
 server/test/social-seed.mjs    наполнение для разработки (alice, bob, mia до 18, boss — модератор)
 server/test/poker-logic.test.mjs  карты, банки, Чен, бот всегда ходит по правилам (node --test)

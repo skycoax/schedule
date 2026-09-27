@@ -3002,7 +3002,8 @@ Server files: `poker-logic.js` (pure rules: deck with `crypto.randomInt`, `evalu
 `sit/stand/act/react/kick`, `setOnline`, `humans`, `touchPlayer`, `startTable`), `game.js` (routes; gives the table
 user-card and block providers), `game-stream.js` (SSE registry; imports only `http.js`, `limits.js` and config — the table
 registers its view builder and presence hook through `setStreamHooks`). `users.js`, `posts.js`, `moderation.js` import
-`poker-table.js` (`humans`, `kick`); `poker-table.js` never imports them.
+`poker-table.js` (`humans`, `kick`, `inviteOf`); `poker-table.js` never imports them (only `game-stream.js` and `live.js`,
+§J: the `players` event and the in-memory poker invites).
 
 ### I.1 Rules (`poker-table.js`)
 
@@ -3115,8 +3116,8 @@ Order in each handler: guards → fields → bucket → table (so `400` field er
 | 5 | `POST …/react` | SPNM | gameReact; ≤ 30 per hand per seat → `429` | `{r}` → `{}`; unknown `r` → `400 r`; not seated → `409 status` «Ты не за столом` |
 | 6 | `GET …/stream` | none (guests ok; signed in: N) | gameStream by `u:<id>`, guests by `ipKey` | SSE (§I.6) |
 
-`GET /api/auth/me`: `user.game = { players: <people at the table now, leaving included> } | null` (game off);
-`config.game: 'on' | 'off'`.
+`GET /api/auth/me`: `user.game = { players: <people at the table now, leaving included>, invite: <§J.5> } | null`
+(game off); `config.game: 'on' | 'off'`. Routes #7–#8 (friend invites) — §J.5.
 
 ### I.5 Types (`web/src/social/types.ts`, mirrored exactly by the server)
 
@@ -3215,6 +3216,123 @@ IP). Reactions ≤ 30 per hand per seat (in memory). `gameGuess`, `gameNew`, `ga
 seven, Russian names, `sidePots` with three all-ins and a folder, Chen, `raiseAmount`, 1000 random bot decisions — always
 legal) and the «Покер» section of `social-smoke.mjs` (server with `POKER_FAST=1 GAME_PING_MS=1000 GAME_STREAM_MAX_MS=5000`;
 one shared table — the section first waits for it to empty), plus its readonly and off cases.
+
+---
+
+## J. Живые обновления (live updates) and poker invites
+
+The app already keeps its screens consistent on one device through the local event bus (`web/src/social/events.ts`). The
+server adds **other people's** events over one SSE stream per signed-in person, and the app turns them into the same local
+events (`web/src/social/live.ts`). The stream is a hint, not a source of truth: no `id:`, no replay — after every
+(re)connect the app gets `hello` and re-reads its screens and `/api/auth/me`.
+
+Server file: `live.js` — the stream, the registry and delivery. Like `game-stream.js` it imports only `http.js`, `limits.js`
+and config, so every module can publish without import cycles. Who may receive what is decided by the hooks (§J.3–§J.4),
+never by `live.js`.
+
+### J.1 Stream `GET /api/social/live`
+
+Registered with the other routes when `SOCIAL_MODE ≠ off` (`off` → catch-all `404 not_found`); works in `readonly`.
+Before hijack (normal JSON errors): `guard('S')` — guests `401 auth`; restricted (banned) accounts may connect, they read;
+`limit('live', 'u:'+id)` `[10, 30 s]`; ≥ 500 connections → `503 server` «Сервер занят — попробуй чуть позже». Then exactly
+as §I.6 (the code is a copy; `game-stream.js` is unchanged): capture `set-cookie`, `hijack()`, `writeHead(200,
+{content-type: text/event-stream; charset=utf-8, cache-control: no-store, x-accel-buffering: no, x-robots-tag: noindex,
+connection: keep-alive, set-cookie?})`, keep-alive / no-delay / no socket timeout, `retry: 3000\n\n`, then `hello {now}`.
+Registry `Set<Conn>` + `Map<userId, Set<Conn>>`; ≤ 3 per person (the 4th sends the oldest `bye replaced`); `?c=` tab id
+(`^[A-Za-z0-9_-]{8,24}$`: a new connection of the same person with the same `c` silently destroys the older one);
+`writableLength > 65536` → destroy; cleanup on the response `close`; `ping {now}` every `gamePingMs` (20 s); `bye max_age`
+after `gameStreamMaxMs` (15 min).
+
+### J.2 Events (`event: <name>\ndata: <json>\n\n`)
+
+| Event | Payload | To whom |
+|---|---|---|
+| `hello` | `{now}` | right after connecting (the app re-reads screens and Me) |
+| `ping` | `{now}` | every connection, every `gamePingMs` |
+| `bye` | `{reason: 'max_age' \| 'replaced' \| 'session'}` | lifetime; 4th connection; logout (`all: true` → every stream of the person, else this session's) and account deletion. Then `end()`. A ban does **not** close it (the person gets `me`) |
+| `post` | `{post: Post}` | a new root post — every live person who may see it (§J.3), the author's other devices (sessions) included (`mine: true`; the app drops duplicates by id), but **not the streams of the session that created it**: it knows the post from the HTTP response, and an echo could overtake that response and be counted twice |
+| `reply` | `{reply: Post}` | a new reply — the same rule (no echo to the creating session); its root must be visible too |
+| `likes` | `{id, likes}` | the like count of a post or reply changed — every live person who may see it (§J.3). Coalesced per post: at most one per 700 ms — the first at once, the rest as one event with the latest count at the end of the window |
+| `gone` | `{id, rootId}` | deleted by its author or a moderator (`rootId: null` for a root post) — every live person except the streams of the deleting session (the app already removed it locally; an echo would decrement the reply counter twice); hidden by a moderator or by reports — every live person **except moderators and the author** (they still see it; moderators get `me`) |
+| `relation` | `{user: UserCard, relation: 'incoming' \| 'outgoing' \| 'friends' \| 'none'}` | the recipient's relation to `user` changed because of `user`'s action (§J.4); `user` — the actor's card, `userCardOf(…, false)` |
+| `me` | `{}` | «re-read `/api/auth/me`»: request / friend counters, the mod queue, ban and unban, profile reset, badge |
+| `instants` | `{}` | a moment the recipient can see appeared, or one they could see was deleted or hidden |
+| `invite` | `{from: UserCard, at}` | a friend invites to poker (§J.5); `at` — server epoch ms (the same value as `me.game.invite.at`) |
+| `players` | `{n}` | the number of people at the poker table (`Me.game.players`) changed — every live person; at most once a second, the latest value |
+
+Never sent: other people's private data, email, anything the recipient could not see through the ordinary routes, and
+nothing about blocks.
+
+### J.3 Who gets `post`, `reply`, `likes`
+
+`audienceOf` in `posts.js` mirrors `rowVisible` + `threadOpen` for all live viewers at once (the author's status and blocks
+are read once per event): the author and moderators always; others only if the row is neither deleted nor hidden, its author
+is `active` and there is no block in either direction; for a reply the root must pass the same test (a tombstone root keeps
+the thread open, V5). No `U` filter (the app shows only its university in the feed). The `Post` is built by `postOut` for
+that viewer (`viewerOf` of their users row), so `mine`, `canDelete`, `author`, `liked`, `reported`, `replyTo.username` are
+theirs. The event is built in the same tick as its COMMIT, so nobody has liked or reported the new row yet; viewers whose
+remaining inputs are equal (each moderator apart; the author; the author of the replied-to post; people blocked with that
+author; everyone else) share one object.
+
+### J.4 Hooks (after COMMIT; never inside `tx()`; never throw to the caller — failures are logged as warnings)
+
+- `posts.js`: create a post → `post`; create a reply → `reply` (both with `exceptSid: req.sid`); a like / unlike that
+  changed the count → `likes` (coalesced; sent to the liker's streams too — it is an absolute count); `DELETE /posts/:id`
+  by the author or a moderator → `gone` (`exceptSid: req.sid`; a moderator's delete also → `me` to live moderators);
+  `deleteAccount` → `liveClose(id, 'session')` next to `closeStreams`.
+- `moderation.js`: every new report → `me` to live moderators; a report that auto-hides a post → `gone` (hidden rule); one
+  that auto-hides a moment → `instants` to those who could see it; admin `hide` of a visible post → `gone` (hidden rule);
+  admin `delete` → `gone` (post, `exceptSid: req.sid`) or `instants` (moment); `unhide` / `dismiss` → nothing (the app catches up on its next
+  refresh); `ban` / `unban` / `reset` / `badge` → `me` to that person; after every admin action → `me` to live moderators.
+  A ban closes the poker streams (`bye ban`) but not the live stream.
+- `users.js` — A acts, B receives, only when a row actually changed, and nothing at all if A and B have a block in either
+  direction or A is not active / has no profile:
+  - A requests B → B: `relation {user: A, relation: 'incoming'}` + `me`;
+  - A requests B while B already requested A (= accept) → B: `relation {A, 'friends'}` + `me`;
+  - A accepts B's request → B: `relation {A, 'friends'}` + `me`;
+  - A declines B's request → B: `relation {A, 'none'}` (no `me`: B's counters do not change);
+  - A cancels own request to B → B: `relation {A, 'none'}` + `me`;
+  - A unfriends B → B: `relation {A, 'none'}` + `me`;
+  - block and unblock → **nothing** to the other person (a block is never disclosed).
+- `instants.js` / `instant-access.js` (`liveInstant`): create; delete by the author; delete by a moderator (either route) →
+  `instants` to every live person for whom `canSeeInstant` is true (with the row as it was before deletion or hiding),
+  except the author; moderators are included. A moderator's delete via `DELETE /instants/:id` also → `me` to live moderators.
+- `auth.js` logout → `liveCloseSid(req.sid)`; `{all: true}` → `liveClose(id, 'session')` (next to the poker streams).
+- `poker-table.js`: every `bump()` → if `humans()` differs from the last `players` sent → `players {n}` (throttled to 1 s).
+
+`live.js` exports: `liveRoutes(inst, ctx)`; `liveTo(userIds, event, data, {exceptSid}?)` — `data` is an object or
+`(uid) => object | null` (built once per person, `null` skips that person), `exceptSid` skips the streams of that session,
+never throws; `liveAll(event, data, {exceptSid}?)`; `liveUsers()`; `isLiveUser(id)`;
+`liveClose(id, reason)`; `liveCloseSid(sid)`; `liveThrottle(key, ms, fn)` — the coalescer behind `likes` and `players`
+(no window → `fn` now; otherwise the latest `fn` at the end of the window).
+
+### J.5 Poker invites (`game.js` routes, `poker-table.js` store)
+
+| # | Route | Guards | Bucket | Body → response |
+|---|---|---|---|---|
+| 7 | `POST /api/social/games/invite` | SPNM | `gameInvite [10, 1 min]` by `u:<id>` | `{to}` → `{}`. `to` not an integer id → `400 invalid` field `to`; not a friend (accepted), no profile, not active, a block in either direction, missing, or yourself → `403 blocked` «Нельзя позвать этого человека» (the reason is not disclosed); the same friend again within 60 s (in memory, checked before the bucket) → `429 rate` «Уже позвали — подожди минуту», `retryAfter` = seconds to the end of that minute |
+| 8 | `POST /api/social/games/invite/dismiss` | S | — | `{}` → `{}`: drop my incoming invite («не сейчас») |
+
+The invite lives only in memory: `Map<toId, {fromId, at}>` in `poker-table.js`, a new one replaces the old, 10 minutes (a
+restart forgets it). It is sent as `invite {from: userCardOf(from), at}` to the recipient's live streams. Sitting down (`sit`,
+also when already seated) drops the sitter's incoming invite. `GET /api/auth/me`: `user.game = { players, invite: { from:
+UserCard, at } | null } | null` — `invite` only while it has not expired, the inviter is active, there is no block in either
+direction and they are still friends. `readonly` → invite `403 readonly`, dismiss works; `SOCIAL_GAME=off` or
+`SOCIAL_MODE=off` → no routes (`404 not_found`), `me.game = null`.
+
+### J.6 Tests
+
+The «Живые обновления» section of `social-smoke.mjs` (run A, after «Покер»; the same `GAME_PING_MS=1000
+GAME_STREAM_MAX_MS=5000`, so each step opens fresh streams): guest 401; SSE headers, `retry: 3000`, `hello`, `ping`; a post →
+`post` (equal to the viewer's feed item, `mine: false`; the author's other session `mine: true`; no echo to the creating
+session) and nothing to a blocked person; a reply → `reply` (equal to the thread item, no echo); a like → `likes`; coalescing
+(3 changes → at most 2 events, the last with the final count); deletes → `gone` (no echo to the deleting session); the friend
+flows (`incoming` / `friends` / `none`, `me` except on decline); a moment for
+friends → `instants` (not to the blocked person or the author); invites (400 / 403 / 200 / 429, `me.game.invite`, dismiss,
+sitting drops it); `players` on sit and stand; a report → moderator `me`; a moderator's hide → `gone` except to the moderator
+and the author; ban and unban → `me`, the stream stays open; `max_age`, `replaced`, `c=`; logout → `bye session` only for that
+session. Readonly: the stream opens, invite → `403 readonly`, dismiss → 200. Off: `/api/social/live` and the invite routes →
+404. `SMOKE_LIVE_SHOW=1` prints one real event of each kind.
 
 ---
 

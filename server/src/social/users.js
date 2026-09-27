@@ -13,7 +13,7 @@ import { cleanText, tooLong, isProfane, maskProfanity, fold, graphemes } from '.
 import { mediaUrl, thumbUrl, unlinkMedia, MEDIA_ID_RE } from './media.js';
 import { audit } from './moderation.js';
 import { postsOut, deleteAccount, viewerOf } from './posts.js';
-import { humans as pokerHumans, inviteOf as pokerInviteOf } from './poker-table.js';
+import { humans as pokerHumans, inviteOf as pokerInviteOf, bonusWaiting as pokerBonusWaiting } from './poker-table.js';
 import { areFriends } from './instant-access.js';
 import { liveTo } from './live.js';
 
@@ -221,8 +221,10 @@ export function meOf(ctx, u) {
     counts: { friends: friendCount(db, u.id), posts },
     usernameNextChange: usernameNextChange(u),
     createdAt: u.created_at,
-    // «Покер»: сколько людей сейчас за столом и приглашение друга (или null); игра выключена — null.
-    game: gameMode() === 'off' ? null : { players: pokerHumans(), invite: gameInviteOf(ctx, u.id) },
+    // «Покер»: сколько людей сейчас за столом, приглашение друга (или null) и ждёт ли ежедневный бонус (стол не
+    // находил — false); игра выключена — null.
+    game: gameMode() === 'off' ? null
+      : { players: pokerHumans(), invite: gameInviteOf(ctx, u.id), bonus: pokerBonusWaiting(u.id) },
   };
 }
 

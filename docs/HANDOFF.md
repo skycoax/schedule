@@ -37,6 +37,12 @@
   Стол живёт в памяти: выкладка (перезапуск службы) обрывает текущую раздачу — лучше выкладывать, когда стол пуст
   (`curl -s https://para.skycoax.uz/api/social/games` → `seats` все `null`). Поток SSE через nginx на проде ещё не проверен
   вживую: ping каждые 20 с дольше 2 минут и `bye max_age` через 15 минут; если поток не идёт, клиент опрашивает стол.
+- **Готово локально, ещё не выложено: живые обновления и приглашения в покер** (сервер — `server/src/social/live.js`
+  и хуки в posts/users/moderation/instants/game/poker-table; контракт — CONTRACT.md §J): один поток SSE
+  `GET /api/social/live` на вошедшего — чужие посты и ответы, «нравится», удаления, заявки в друзья, моменты,
+  приглашение друга в покер (`POST /api/social/games/invite`, живёт 10 минут только в памяти, `me.game.invite`) и число
+  людей за столом приходят сразу. После выкладки проверить поток через nginx, как у покера (ping 20 с, `bye max_age`
+  через 15 минут); выключатели — те же `SOCIAL_MODE` (в off маршрута нет) и `SOCIAL_GAME` (приглашения).
 - Контракт соцчасти: `docs/social/CONTRACT.md`. Код: `server/src/social/`, `web/src/social/`, `web/src/shell/`, `web/src/ui/`.
 
 ## Google Cloud (готово)
