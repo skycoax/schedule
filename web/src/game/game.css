@@ -174,7 +174,9 @@ html.has-game .nudge{display:none}
 .pk-btn--fold{flex:.8}
 .pk-btn--go{flex:1.4}
 .pk-btn--x{flex:0 0 52px;font-size:18px}
-.pk-btn--sit{width:100%;max-width:360px;margin:0 auto}
+/* В столбике (низ стола, загрузка) кнопка не тянется и не сжимается по высоте: flex:1 выше — только для ряда кнопок хода. */
+.pk-btn--sit{flex:none;width:100%;max-width:420px;height:54px;margin:0 auto}
+.pk-load .pk-btn{flex:none;width:auto;min-width:180px;padding:0 24px}
 .pk-raise{display:flex;flex-direction:column;gap:10px;padding:10px 12px;border-radius:16px;background:rgba(255,255,255,.06);
   animation:pk-up 240ms ease-out both}
 .pk-raise__pre{display:flex;gap:6px}
