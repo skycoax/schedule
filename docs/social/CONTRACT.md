@@ -3336,6 +3336,49 @@ session. Readonly: the stream opens, invite → `403 readonly`, dismiss → 200.
 
 ---
 
+## K. Уведомления, когда Para закрыта (Web Push, schema V10)
+
+`server/src/social/push.js` (library `web-push` builds the encrypted aes128gcm body and the VAPID header; the request goes
+out with `fetch`). Client — `web/src/lib/push.ts`, service worker `web/public/sw.js` (`push`, `notificationclick`),
+switch «Когда Para закрыта» in «Профиль» → «Уведомления», one-time `PushPrompt`. Off by default; `SOCIAL_PUSH=off` — nothing is
+sent, subscribing → 503. VAPID keys are created on the first start in `<DATA_DIR>/push-vapid.json` (secret; lose it — every
+device re-subscribes on its next launch). Subject — the https origin of Para.
+
+### K.1 Routes (all `SOCIAL_MODE`s: schedule changes do not depend on «Обсуждения»; CSRF as §B.1; bucket `push` 20/min)
+- `GET /api/social/push/key` → `{ key }` — VAPID public key (base64url, 65 bytes). Guests too. 503 `unavailable` when off.
+- `POST /api/social/push` `{ endpoint, p256dh, auth, group, kinds }` → `{}`. Upsert by `endpoint`. Only https push services
+  (`*.googleapis.com`, `*.mozilla.com`, `*.push.apple.com`, `*.notify.windows.com`, `*.yandex.net|ru`, no port; outside
+  production also `http://127.0.0.1:<port>/`), else 400 `invalid` field `endpoint`; `p256dh` — 65 bytes starting 0x04, `auth` —
+  16 bytes (400 with that field). `uni` — the request's tenant; `hub` — asked on the Para address; `session_id` — this cookie's
+  session (null for guests); `group` — a group key (≤ 300 chars, null — no schedule pushes); `kinds` ⊆
+  `sched, game, friends, replies` (the device's switches, `lib/notify.ts`). Over 200 000 rows total → 503.
+- `POST /api/social/push/remove` `{ endpoint }` → `{}` — forget the device (works when off too).
+
+### K.2 Table `push_subs` (V10)
+`endpoint` UNIQUE, `p256dh`, `auth`, `hub`, `uni`, `grp`, `session_id` → `sessions(id) ON DELETE SET NULL` (logout, expiry,
+«выйти везде» and account deletion stop personal pushes by themselves), `kinds`, `created_at`, `updated_at`, `fails`.
+Delivery: 2xx → `fails = 0`; 404/410 → row deleted; anything else (network, 429, 5xx, 400/403/413 — the last three logged
+with the service host and status, never the endpoint) → `fails + 1`, 10 in a row → deleted. 16 sends at a time, queue ≤ 50 000.
+
+### K.3 What is sent (payload `{ t, b, u, g }` — title, body, in-app link, tag; `u` carries `uni=` on Para-address devices)
+| Kind | When | To | Text | Link | TTL / Topic / dedupe |
+|---|---|---|---|---|---|
+| `friends` | request (`incoming`) or its acceptance (`friends`), exactly where §J.4 sends `relation` | the other person | «Заявка в друзья» / «Новый друг»: «<имя> хочет добавить тебя в друзья» / «<имя> теперь в друзьях» | `user=<username>` | 1 day / `f<id>` / same pair and kind once per 10 min |
+| `replies` | a new reply | author of the post and of the reply answered (`replyTo`), not the replier, only if `audienceOf` lets them see it | «Новый ответ»: «<имя>: <текст с маскировкой мата, ≤120>» (only a photo — «Фото») | `post=<rootId>` (uni of the post) | 1 day / `r<rootId>` / once per 30 s per person and thread |
+| `game` | poker invite (§J.5) | the friend | «Покер»: «<имя> зовёт тебя за стол» | `game=1` | 600 s, `Urgency: high` / `game` |
+| `sched` | a poll saved a snapshot with pair changes (`poller.js` → `setChangesHook`) | devices of that tenant whose `grp` is a changed group (names → keys by the new snapshot) | «Изменения в расписании»: «Вт, 2-я пара: <новое>» (removed — «<старое> — отменена»), + «И ещё N изменений» | `tab=schedule` | 1 day / `sched` |
+Personal kinds are skipped while the person has a live stream (§J — the app is open and visible on some device). The service
+worker skips showing `friends/replies/game` when a focused visible window exists (not on Apple: Safari requires a notification
+for every push); `sched` is always shown.
+
+### K.4 Tests
+`social-smoke.mjs` run A, section «Уведомления» (a fake push service on 127.0.0.1, the body decrypted per RFC 8291): key;
+CSRF, foreign/internal/port endpoints, key lengths; guest subscribe and remove; friend request (headers, VAPID `k=` equals the
+key, payload, uni in the link), repeat within 10 min — nothing, acceptance → «Новый друг»; reply while the author's live stream is
+open — nothing, after it closes — «Новый ответ»; reply to a reply → the replied author, the post author at most once per 30 s;
+invite → `Urgency: high`, TTL 600; a 410 device is forgotten; `kinds` without `replies` → nothing, back on → sent; after logout →
+nothing. `server/test/push.test.mjs` — schedule texts (`pairChangesByGroup`, `schedText`, plurals).
+
 ## Open questions (owner decisions; the defaults above apply until answered)
 
 - **Q1.** Minimum age and Play target audience.

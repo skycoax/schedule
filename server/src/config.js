@@ -81,6 +81,8 @@ export const social = {
   // «Покер» (game.js, poker-table.js): on — стол работает; off — маршрутов игры нет (общий 404), пасхалка в приложении
   // молчит. SOCIAL_MODE=off выключает и игру.
   game: ['on', 'off'].includes(env.SOCIAL_GAME) ? env.SOCIAL_GAME : 'on',
+  // Уведомления, когда Para закрыта (push.js): off — ничего не отправляется, подписаться нельзя.
+  push: ['on', 'off'].includes(env.SOCIAL_PUSH) ? env.SOCIAL_PUSH : 'on',
   // Только для разработки и дымового теста: быстрые таймеры стола (POKER_FAST=1), как часто ping в потоке игры
   // и сколько живёт одно соединение.
   pokerFast: !prod && env.POKER_FAST === '1',

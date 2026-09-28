@@ -16,6 +16,8 @@ import { useLayer } from '../../ui/layers';
 import { ListRow, ListSection } from '../../ui/List';
 import { Switch } from '../../ui/Switch';
 import { setNotify, useNotify } from '../../lib/notify';
+import { disablePush, enablePush, usePushState } from '../../lib/push';
+import { toast } from '../../ui/Toast';
 import { socialApi } from '../api';
 import { hiddenUsers } from '../local';
 import { LINKS } from '../rules';
@@ -179,7 +181,7 @@ export function SettingsList(p: {
         </ListSection>
       )}
 
-      <NotifySection signed={!!me && !!social} />
+      <NotifySection signed={!!me && !!social} onInstall={installUrl ? () => setInstallOpen(true) : undefined} />
 
       {hiddenCount > 0 && (
         <ListSection header="Скрытые авторы">
@@ -226,14 +228,39 @@ export function SettingsList(p: {
   );
 }
 
-/** «Уведомления»: что показывать на этом телефоне. Для чужих событий нужен вход — без него только пары. */
-function NotifySection({ signed }: { signed: boolean }): JSX.Element {
+/**
+ * «Уведомления»: «Когда Para закрыта» — push на этот телефон (lib/push.ts); переключатели ниже — о чём сообщать,
+ * и в приложении, и push. Для чужих событий нужен вход — без него только пары.
+ */
+function NotifySection({ signed, onInstall }: { signed: boolean; onInstall?: () => void }): JSX.Element {
   const sched = useNotify('sched');
   const game = useNotify('game');
   const friends = useNotify('friends');
   const replies = useNotify('replies');
+  const push = usePushState();
+  const [busy, setBusy] = useState(false);
+  const flip = (v: boolean) => {
+    if (busy) return;
+    if (!v) { void disablePush(); return; }
+    setBusy(true);
+    // Разрешение спрашивается прямо из нажатия (enablePush — без await до запроса).
+    void enablePush().then((okay) => {
+      if (!okay && Notification.permission !== 'denied') toast('Не получилось включить — попробуй ещё раз', { kind: 'error' });
+    }).finally(() => setBusy(false));
+  };
+  const footer = push === 'install' ? 'Уведомления, когда Para закрыта, на iPhone приходят только в приложение с экрана «Домой».'
+    : push === 'denied' ? 'Уведомления запрещены в настройках телефона или браузера — разреши их там для этого сайта.'
+      : push === 'no' ? 'Этот браузер не умеет присылать уведомления, когда Para закрыта. Переключатели ниже — о том, что показывать в приложении.'
+        : 'Переключатели ниже — о чём сообщать: и в приложении, и уведомлением, когда Para закрыта.';
   return (
-    <ListSection header="Уведомления" footer="Пока приложение открыто. Выключенное просто не показывается.">
+    <ListSection header="Уведомления" footer={footer}>
+      {push === 'install' ? (
+        <ListRow label="Когда Para закрыта" icon={{ name: 'bell', color: 'var(--c4)' }} value="С экрана «Домой»" onClick={onInstall} />
+      ) : push !== 'no' && (
+        <CtlRow label="Когда Para закрыта" icon={{ name: 'bell', color: 'var(--c4)' }} sw>
+          <Switch label="Уведомления, когда Para закрыта" checked={push === 'on'} disabled={busy || push === 'denied'} onChange={flip} />
+        </CtlRow>
+      )}
       <CtlRow label="Изменения пар" icon={{ name: 'calendar', color: 'var(--c1)' }} sw>
         <Switch label="Уведомлять об изменениях пар" checked={sched} onChange={(v) => setNotify('sched', v)} />
       </CtlRow>

@@ -13,6 +13,7 @@ import { usersByIds, userCardOf, blockedEither, CARD_COLS } from './users.js';
 import { areFriends } from './instant-access.js';
 import { streamHandler } from './game-stream.js';
 import { liveTo } from './live.js';
+import { pushInvite } from './push.js';
 import * as pokerTable from './poker-table.js';
 
 const { REACTIONS, ACTIONS } = pokerTable;
@@ -118,7 +119,10 @@ export function gameRoutes(inst, ctx) {
     sent.set(pair, now);
     pokerTable.putInvite(to, me.id, now);
     const from = usersByIds(db, [me.id]).get(me.id);
-    if (from) liveTo([to], 'invite', { from: userCardOf(ctx, from, false), at: now });
+    if (from) {
+      liveTo([to], 'invite', { from: userCardOf(ctx, from, false), at: now });
+      pushInvite(to, from);   // приложение закрыто — push
+    }
     return ok({});
   });
 

@@ -22,7 +22,7 @@
 //     по одному настоящему событию каждого вида.
 import http from 'node:http';
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
+import { createDecipheriv, createECDH, createHash, hkdfSync, randomBytes } from 'node:crypto';
 import { makeJpeg, SCENES } from './social-seed.mjs';
 
 const BASE = new URL(process.argv[2] || 'http://127.0.0.1:8792');
@@ -1316,7 +1316,185 @@ async function runMain() {
 
   await runGame(st, boss, guest, limitsOn);
   await runLive(boss, guest);
+  await runPush(guest);
   if (!limitsOn) console.log('     внимание: прогон A должен идти с включёнными пределами (без SOCIAL_RATE_LIMITS=off)');
+}
+
+// ═══════════════ Уведомления, когда Para закрыта (CONTRACT.md §K) ═══════════════
+// Поддельная служба push на 127.0.0.1 (вне production сервер шлёт и туда): принимает запросы, отвечает 201,
+// на /gone/… — 410. Устройство — своя пара ключей P-256 и секрет; содержимое расшифровываем по RFC 8291.
+
+async function pushService() {
+  const got = [];
+  const srv = http.createServer((req, res) => {
+    const chunks = [];
+    req.on('data', (c) => chunks.push(c));
+    req.on('end', () => {
+      got.push({ path: req.url, headers: req.headers, body: Buffer.concat(chunks) });
+      res.writeHead(req.url.startsWith('/gone/') ? 410 : 201).end();
+    });
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const port = srv.address().port;
+  const count = (path) => got.filter((g) => g.path === path).length;
+  return {
+    url: (path) => `http://127.0.0.1:${port}${path}`,
+    count,
+    /** Дождаться n-го (с 1) запроса на path. */
+    async wait(path, n, ms = 5000) {
+      const t = Date.now();
+      while (count(path) < n) {
+        if (Date.now() - t > ms) throw new Error(`push: не дождались ${n}-го уведомления на ${path} (есть ${count(path)})`);
+        await sleep(40);
+      }
+      return got.filter((g) => g.path === path)[n - 1];
+    },
+    close: () => srv.close(),
+  };
+}
+
+function pushDevice(svc, path) {
+  const ecdh = createECDH('prime256v1');
+  ecdh.generateKeys();
+  const pub = ecdh.getPublicKey();
+  const auth = randomBytes(16);
+  return { ecdh, pub, auth, path, sub: { endpoint: svc.url(path), p256dh: pub.toString('base64url'), auth: auth.toString('base64url') } };
+}
+
+/** Расшифровать тело aes128gcm (RFC 8188 + RFC 8291) ключами устройства dev. */
+function openPush(body, dev) {
+  const salt = body.subarray(0, 16);
+  const idlen = body[20];
+  const asPub = body.subarray(21, 21 + idlen);
+  const rec = body.subarray(21 + idlen);
+  const secret = dev.ecdh.computeSecret(asPub);
+  const ikm = Buffer.from(hkdfSync('sha256', secret, dev.auth, Buffer.concat([Buffer.from('WebPush: info\0'), dev.pub, asPub]), 32));
+  const cek = Buffer.from(hkdfSync('sha256', ikm, salt, Buffer.from('Content-Encoding: aes128gcm\0'), 16));
+  const nonce = Buffer.from(hkdfSync('sha256', ikm, salt, Buffer.from('Content-Encoding: nonce\0'), 12));
+  const d = createDecipheriv('aes-128-gcm', cek, nonce);
+  d.setAuthTag(rec.subarray(rec.length - 16));
+  const plain = Buffer.concat([d.update(rec.subarray(0, rec.length - 16)), d.final()]);
+  let end = plain.length - 1;
+  while (end >= 0 && plain[end] === 0) end--;
+  assert.equal(plain[end], 2, 'push: разделитель последней записи');
+  return JSON.parse(plain.subarray(0, end).toString('utf8'));
+}
+
+const ALL_KINDS = ['sched', 'game', 'friends', 'replies'];
+const pushSub = (jar, dev, extra = {}) =>
+  call(jar, 'POST', '/api/social/push', { json: { ...dev.sub, group: null, kinds: ALL_KINDS, ...extra }, headers: W });
+
+async function runPush(guest) {
+  const svc = await pushService();
+  let r;
+  try {
+    // 1. Ключ VAPID — гостю тоже: точка P-256 без сжатия (65 байт, 0x04).
+    const key = expect(await call(guest, 'GET', '/api/social/push/key'), 200, 'push: ключ').key;
+    const kb = Buffer.from(key, 'base64url');
+    assert.ok(kb.length === 65 && kb[0] === 4, 'push: ключ VAPID — 65 байт с 0x04');
+    ok('уведомления: GET /push/key — открытый ключ VAPID (гостю тоже)');
+
+    // 2. Проверки подписки: CSRF, только службы push, ключи устройства ровно нужной длины.
+    const g = pushDevice(svc, '/guest');
+    r = await call(guest, 'POST', '/api/social/push', { json: g.sub });
+    expect(r, 403, 'push без X-Para', 'csrf');
+    bad(await pushSub(guest, { sub: { ...g.sub, endpoint: 'https://evil.example/push' } }), 'push: чужой адрес', undefined, 'endpoint');
+    bad(await pushSub(guest, { sub: { ...g.sub, endpoint: 'http://10.0.0.1:8080/push' } }), 'push: внутренний адрес', undefined, 'endpoint');
+    bad(await pushSub(guest, { sub: { ...g.sub, endpoint: 'https://fcm.googleapis.com:8443/x' } }), 'push: порт', undefined, 'endpoint');
+    bad(await pushSub(guest, { sub: { ...g.sub, p256dh: g.sub.p256dh.slice(4) } }), 'push: короткий p256dh', undefined, 'p256dh');
+    bad(await pushSub(guest, { sub: { ...g.sub, auth: randomBytes(12).toString('base64url') } }), 'push: auth не 16 байт', undefined, 'auth');
+    expect(await pushSub(guest, g, { group: 'любая группа', kinds: ['sched', 'nonsense'] }), 200, 'push: гость подписался на пары');
+    expect(await call(guest, 'POST', '/api/social/push/remove', { json: { endpoint: g.sub.endpoint }, headers: W }), 200, 'push: отписка');
+    ok('уведомления: подписка — CSRF, только службы push (не чужой и не внутренний адрес, без порта), ключи 65/16 байт; гостю — пары; отписка');
+
+    // 3. Заявка в друзья — второму на все его устройства; второй раз за 10 минут — нет; принятие — «Новый друг».
+    const A = await user('pa', `Азиза ${RUN}`);
+    const B = await user('pb', `Бобур ${RUN}`);
+    const C = await user('pc', `Камола ${RUN}`);
+    const D = await user('pd', `Дамир ${RUN}`);
+    const dA = pushDevice(svc, '/a');
+    const dB = pushDevice(svc, '/b');
+    const dB2 = pushDevice(svc, '/gone/b2');
+    expect(await pushSub(A.jar, dA), 200, 'push: устройство A');
+    expect(await pushSub(B.jar, dB), 200, 'push: устройство B');
+    expect(await pushSub(B.jar, dB2), 200, 'push: второе устройство B (служба ответит 410)');
+    const fr = (u, id, path = '', method = 'POST') => call(u.jar, method, `/api/social/friends/${id}${path}`, { json: {}, headers: W });
+    expect(await fr(B, A.me.id), 200, 'заявка B→A');
+    let m = await svc.wait('/a', 1);
+    assert.equal(m.headers['content-encoding'], 'aes128gcm');
+    assert.equal(m.headers.ttl, '86400');
+    assert.equal(m.headers.topic, 'f' + B.me.id);
+    assert.match(m.headers.authorization || '', new RegExp('^vapid t=[\\w-]+\\.[\\w-]+\\.[\\w-]+, k=' + key + '$'));
+    let n = openPush(m.body, dA);
+    assert.deepEqual(n, { t: 'Заявка в друзья', b: `Бобур ${RUN} хочет добавить тебя в друзья`,
+      u: `/?uni=${UNI}&user=${B.me.username}`, g: 'friend-' + B.me.id }, 'push: заявка');
+    expect(await fr(B, A.me.id, '', 'DELETE'), 200, 'B отменил заявку');
+    expect(await fr(B, A.me.id), 200, 'заявка B→A снова');
+    await sleep(500);
+    assert.equal(svc.count('/a'), 1, 'push: повторная заявка за 10 минут — без уведомления');
+    expect(await fr(A, B.me.id, '/accept'), 200, 'A принимает');
+    m = await svc.wait('/b', 1);
+    n = openPush(m.body, dB);
+    assert.equal(n.t, 'Новый друг');
+    assert.equal(n.b, `Азиза ${RUN} теперь в друзьях`);
+    await svc.wait('/gone/b2', 1);
+    ok('уведомления: заявка → «Заявка в друзья» (aes128gcm, TTL сутки, Topic, VAPID с ключом сервера, ссылка с uni на профиль); повтор за 10 мин — нет; принятие → «Новый друг»');
+
+    // 4. Ответы: приложение открыто (живой поток) — не шлём; закрыто — «Новый ответ» с текстом и ссылкой на ветку.
+    const p1 = await post(A, `Пост для уведомлений ${RUN}`);
+    const [sA] = await lives(A);
+    await reply(B, p1.id, 'Ответ, пока приложение открыто');
+    await sleep(500);
+    assert.equal(svc.count('/a'), 1, 'push: пока приложение открыто — без уведомления');
+    sA.close();
+    await sleep(300);
+    await reply(C, p1.id, 'Ответ, когда приложение закрыто');
+    m = await svc.wait('/a', 2);
+    n = openPush(m.body, dA);
+    assert.deepEqual(n, { t: 'Новый ответ', b: `Камола ${RUN}: Ответ, когда приложение закрыто`,
+      u: `/?uni=${UNI}&post=${p1.id}`, g: 'reply-' + p1.id }, 'push: ответ');
+    // Ответ на ответ A в чужой ветке — A (автору ответа) и B (автору публикации).
+    const bp = await post(B, `Ветка B ${RUN}`);
+    const nb = svc.count('/b');
+    const ra = await reply(A, bp.id, 'Ответ A в ветке B');
+    m = await svc.wait('/b', nb + 1);
+    assert.equal(openPush(m.body, dB).u, `/?uni=${UNI}&post=${bp.id}`);
+    await reply(D, bp.id, 'Ответ на ответ A', { replyTo: ra.id });
+    m = await svc.wait('/a', 3);
+    assert.equal(openPush(m.body, dA).b, `Дамир ${RUN}: Ответ на ответ A`);
+    await sleep(300);
+    assert.equal(svc.count('/b'), nb + 1, 'push: второй ответ в той же ветке за 30 с — без уведомления');
+    ok('уведомления: ответ — пока приложение открыто, нет; закрыто — «Новый ответ» (имя: текст, ссылка на ветку); ответ на ответ — автору ответа; автору публикации — не чаще раза в 30 с на ветку');
+
+    // 5. Приглашение в покер — срочное, живёт 10 минут. Служба ответила 410 — подписку забыли (больше туда не шлём).
+    expect(await call(A.jar, 'POST', '/api/social/games/invite', { json: { to: B.me.id }, headers: W }), 200, 'A зовёт B в покер');
+    m = await svc.wait('/b', svc.count('/b') + 1);
+    assert.equal(m.headers.urgency, 'high');
+    assert.equal(m.headers.ttl, '600');
+    assert.deepEqual(openPush(m.body, dB), { t: 'Покер', b: `Азиза ${RUN} зовёт тебя за стол`, u: `/?uni=${UNI}&game=1`, g: 'game' });
+    await sleep(300);
+    assert.equal(svc.count('/gone/b2'), 1, 'push: после 410 подписка забыта');
+    ok('уведомления: приглашение в покер — Urgency high, TTL 10 мин, ссылка на стол; после 410 устройство больше не получает');
+
+    // 6. Переключатели: без «Ответов» — не шлём; включил снова — шлём. Выход — личное больше не приходит.
+    const p2 = await post(A, `Второй пост ${RUN}`);
+    const p3 = await post(A, `Третий пост ${RUN}`);
+    expect(await pushSub(A.jar, dA, { kinds: ['sched', 'game', 'friends'] }), 200, 'push: A выключил ответы');
+    const na = svc.count('/a');
+    await reply(D, p2.id, 'Ответ при выключенных ответах');
+    await sleep(500);
+    assert.equal(svc.count('/a'), na, 'push: выключенное не приходит');
+    expect(await pushSub(A.jar, dA), 200, 'push: A включил всё');
+    await reply(C, p2.id, 'Ответ при включённых ответах');
+    await svc.wait('/a', na + 1);
+    expect(await call(A.jar, 'POST', '/api/auth/logout', { json: {}, headers: W }), 200, 'A вышел');
+    await reply(D, p3.id, 'Ответ после выхода');
+    await sleep(500);
+    assert.equal(svc.count('/a'), na + 1, 'push: после выхода личное не приходит');
+    ok('уведомления: переключатели на сервере (выключил «Ответы» — не приходит, включил — приходит); после выхода с устройства — не приходит');
+  } finally {
+    svc.close();
+  }
 }
 
 // ═══════════════ «Покер»: один стол Para (CONTRACT.md §I) ═══════════════

@@ -16,6 +16,7 @@ import { postsOut, deleteAccount, viewerOf } from './posts.js';
 import { humans as pokerHumans, inviteOf as pokerInviteOf, bonusWaiting as pokerBonusWaiting } from './poker-table.js';
 import { areFriends } from './instant-access.js';
 import { liveTo } from './live.js';
+import { pushFriend } from './push.js';
 
 // ─── Имя пользователя (§C.3, §B.4) ───
 
@@ -267,6 +268,7 @@ function liveRelation(ctx, actorId, toId, relation, withMe = true) {
     if (!a || !a.username || a.status !== 'active') return;
     liveTo([toId], 'relation', { user: userCardOf(ctx, a, false), relation });
     if (withMe) liveTo([toId], 'me', {});
+    if (relation === 'incoming' || relation === 'friends') pushFriend(toId, a, relation);   // приложение закрыто — push
   } catch (err) {
     ctx.log.warn({ msg: err && err.message }, 'живые обновления: друзья');
   }

@@ -8,7 +8,7 @@ export type IconName =
   | 'back' | 'chevronRight' | 'chevronDown' | 'ellipsis' | 'heart' | 'heartFill' | 'reply' | 'share' | 'photo'
   | 'send' | 'close' | 'search' | 'check' | 'globe' | 'lock' | 'flag' | 'hand' | 'trash' | 'people' | 'shield'
   | 'plus' | 'link' | 'telegram' | 'instagram' | 'wifiOff' | 'warning' | 'plane' | 'menu' | 'comment' | 'contrast'
-  | 'camera' | 'flash' | 'flashOff' | 'flip' | 'grid';
+  | 'camera' | 'flash' | 'flashOff' | 'flip' | 'grid' | 'bell';
 
 interface Def { s?: string; f?: string; a?: string; e?: 1 }
 
@@ -48,6 +48,7 @@ const ICONS: Record<IconName, Def> = {
   check: { s: 'M4.5 12.5l5 5 10-11' },
   globe: { s: 'M3.25 12a8.75 8.75 0 1 0 17.5 0a8.75 8.75 0 1 0 -17.5 0M3.25 12h17.5M12 3.25c2.4 2.4 3.6 5.3 3.6 8.75S14.4 18.35 12 20.75C9.6 18.35 8.4 15.45 8.4 12S9.6 5.65 12 3.25Z' },
   lock: { s: 'M7.25 10.25h9.5a2.5 2.5 0 0 1 2.5 2.5v5.5a2.5 2.5 0 0 1 -2.5 2.5h-9.5a2.5 2.5 0 0 1 -2.5 -2.5v-5.5a2.5 2.5 0 0 1 2.5 -2.5ZM8 10.25V7.5a4 4 0 0 1 8 0v2.75' },
+  bell: { s: 'M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15L6 16.5ZM10 20.5a2.2 2.2 0 0 0 4 0' },
   flag: { s: 'M5.5 20.5v-16M5.5 4.75c2.2-1.2 4.3-.9 6.5 0s4.3 1.2 6.5 0v8.5c-2.2 1.2-4.3.9-6.5 0s-4.3-1.2-6.5 0' },
   hand: { s: 'M8 12.5V6.25a1.5 1.5 0 0 1 3 0v5M11 11V4.75a1.5 1.5 0 0 1 3 0V11M14 11V6.25a1.5 1.5 0 0 1 3 0V14c0 3.9-2.5 6.75-6 6.75-2.2 0-3.6-.9-4.9-2.8l-2.3-3.5a1.5 1.5 0 0 1 2.45-1.7L8 14.5' },
   trash: { s: 'M4.5 6.5h15M9.5 6.5V5A1.5 1.5 0 0 1 11 3.5h2A1.5 1.5 0 0 1 14.5 5v1.5M6.5 6.5l.8 12a2 2 0 0 0 2 1.9h5.4a2 2 0 0 0 2-1.9l.8-12M10 10.5v6M14 10.5v6' },

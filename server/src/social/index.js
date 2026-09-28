@@ -23,6 +23,8 @@ import { adminRoutes } from './moderation.js';
 import { startJobs } from './jobs.js';
 import { gameRoutes } from './game.js';
 import { liveRoutes } from './live.js';
+import { initPush, pushRoutes, pushSchedule } from './push.js';
+import { setChangesHook } from '../poller.js';
 
 export const SOCIAL_PATH = /^\/api\/(auth|social|media)(\/|$)/;
 
@@ -59,6 +61,8 @@ export async function registerSocial(app, { hub, tenants }) {
   const log = app.log.child({ part: 'social' });
   const ctx = { db, hub, tenants, origin: social.origin || 'https://' + hub.hosts[0], log };
   configureHttp(ctx);
+  initPush(ctx);
+  setChangesHook(pushSchedule);                  // изменения пар — push тем, кто следит за группой
 
   // 2) Строка при старте — без значений настроек.
   log.info({ mode: social.mode, google: googleConfigured() ? 'настроен' : 'не настроен',
@@ -85,6 +89,7 @@ export async function registerSocial(app, { hub, tenants }) {
 
     authRoutes(inst, ctx);
     accountRoutes(inst, ctx);                        // DELETE /api/social/me — во всех режимах
+    pushRoutes(inst);                                // уведомления: изменения пар от обсуждений не зависят
     if (social.mode !== 'off') {
       postRoutes(inst, ctx);
       instantRoutes(inst, ctx);

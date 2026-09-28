@@ -8,6 +8,7 @@ import { brand } from '../brand';
 import { SseStream } from '../lib/sse';
 import { toast } from '../ui/Toast';
 import { notifyOn } from '../lib/notify';
+import { pushSync } from '../lib/push';
 import { emit, useSocialEvents } from './events';
 import { useSession } from './session';
 import type { GameInvite, Post, Relation, UserCard } from './types';
@@ -112,6 +113,9 @@ export function useLive(): void {
   })));
 
   const on = s.status === 'signed' && s.mode !== 'off' && s.online;
+  // Уведомления, когда Para закрыта: при запуске и при входе/выходе сервер узнаёт сессию этого устройства.
+  const uid = s.status === 'signed' ? s.me?.id ?? 0 : 0;
+  useEffect(() => { pushSync(); }, [uid]);
   useEffect(() => { stream.enable(on); }, [stream, on]);
   useEffect(() => () => { stream.enable(false); clearTimeout(meT.current); }, [stream]);
 

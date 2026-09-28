@@ -100,3 +100,43 @@ async function save(key, res) {
   const cache = await caches.open(CACHE);
   await cache.put(key, new Response(body, { status: res.status, statusText: res.statusText, headers }));
 }
+
+// ─── Уведомления, когда Para закрыта (Web Push; сервер — server/src/social/push.js) ───
+// В уведомлении: t — заголовок, b — текст, u — куда вести (адрес внутри приложения), g — метка (новое того же рода
+// заменяет старое). Приложение открыто и перед глазами — заявки, ответы и приглашения там уже видно, их не показываем
+// (изменения пар — показываем всегда: открытый экран их сам не перечитает); Safari (и приложение с экрана «Домой»
+// на iPhone) требует показывать каждое, иначе забирает подписку.
+const UA = self.navigator.userAgent || '';
+const APPLE = /iPhone|iPad|iPod/.test(UA) || (/Safari\//.test(UA) && !/Chrome|Chromium|CriOS|Edg|Firefox|FxiOS|OPR/.test(UA));
+
+self.addEventListener('push', (event) => {
+  let d = {};
+  try { d = event.data ? event.data.json() : {}; } catch { d = {}; }
+  event.waitUntil((async () => {
+    if (!APPLE && d.g !== 'sched') {
+      const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      if (wins.some((w) => w.focused && w.visibilityState === 'visible')) return;
+    }
+    await self.registration.showNotification(String(d.t || 'Para'), {
+      body: String(d.b || ''),
+      tag: d.g ? String(d.g) : undefined,
+      renotify: !!d.g,
+      icon: '/brand/icon-192.png',
+      data: { u: typeof d.u === 'string' && d.u.startsWith('/') ? d.u : '/' },
+    });
+  })());
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = new URL((event.notification.data && event.notification.data.u) || '/', self.location.origin).href;
+  event.waitUntil((async () => {
+    const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const w = wins.find((c) => new URL(c.url).origin === self.location.origin);
+    if (w) {
+      try { await w.focus(); } catch { /* не дали — откроем ниже */ }
+      try { if (await w.navigate(url)) return; } catch { /* не наша вкладка — откроем новую */ }
+    }
+    await self.clients.openWindow(url);
+  })());
+});

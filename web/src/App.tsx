@@ -35,6 +35,8 @@ import { StatsBlock } from './components/StatsBlock';
 import { OfflineNote } from './components/OfflineNote';
 import { brand } from './brand';
 import { isStandalone } from './hooks/useInstall';
+import { pushAskable, pushSync } from './lib/push';
+import { PushPrompt } from './components/PushPrompt';
 import { trackVisit } from './lib/track';
 import { hideBoot } from './lib/boot';
 
@@ -81,7 +83,7 @@ function readRole(): Role | null {
 export default function App() {
   const { mode, set } = useTheme();
   const [role, setRoleState] = useState<Role | null>(readRole);
-  const setRole = useCallback((r: Role) => { store('role', r); setRoleState(r); }, []);
+  const setRole = useCallback((r: Role) => { store('role', r); setRoleState(r); pushSync(); }, []);
   const theme = useMemo(() => ({ mode, set }), [mode, set]);
 
   const renderSchedule = useCallback((slot: ScheduleSlotProps) => (role === 'teacher'
@@ -110,6 +112,7 @@ function StudentApp({ active, command, onContext, theme, setRole }: ScheduleSlot
   const [reviewsOpen, setReviewsOpen] = useState(false);
   const [promptOpen, setPromptOpen] = useState(false);
   const [changesOpen, setChangesOpen] = useState(false);
+  const [pushOpen, setPushOpen] = useState(false);
   // Игра «Код» открыта: окна расписания (отзыв, «на главный экран») поверх неё не показываем — ждут её закрытия.
   const gameOpen = useGameRequest().status !== 'closed';
   const gameOpenRef = useRef(gameOpen);
@@ -255,8 +258,17 @@ function StudentApp({ active, command, onContext, theme, setRole }: ScheduleSlot
   const overlayOpenRef = useRef(false);
   useEffect(() => {
     overlayOpenRef.current = !active || consent || picker.open || installOpen || docOpen || statsOpen
-      || reviewsOpen || promptOpen || changesOpen || gameOpen || openLayerCount(['tab']) > 0;
+      || reviewsOpen || promptOpen || changesOpen || gameOpen || pushOpen || openLayerCount(['tab']) > 0;
   });
+
+  // Предложить уведомления (один раз, PushPrompt): при запуске с уже выбранной группой — через пару секунд,
+  // если поверх расписания ничего не открыто. Первый запуск — после выбора группы (pickGroup).
+  useEffect(() => {
+    if (!hasSched || !agreed || !sel || !pushAskable()) return;
+    const t = window.setTimeout(() => { if (!overlayOpenRef.current && pushAskable()) setPushOpen(true); }, 3000);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasSched, agreed]);
 
   // Приглашение оценить — триггер 1: пара только что закончилась (самый живой момент спросить).
   useEffect(() => {
@@ -348,7 +360,7 @@ function StudentApp({ active, command, onContext, theme, setRole }: ScheduleSlot
 
   const pickGroup = (key: string) => {
     const wasFirst = picker.first;
-    setSel(key); store('group', key);
+    setSel(key); store('group', key); pushSync();
     // Пары новой группы сервер отдаёт отдельным запросом.
     getSchedule(key).then((d) => { t0.current = Date.now(); setSched(d); }).catch(() => {});
     // Первый выбор группы и есть момент первого захода (повторно trackVisit ничего не шлёт).
@@ -364,6 +376,9 @@ function StudentApp({ active, command, onContext, theme, setRole }: ScheduleSlot
         if (gameOpenRef.current) setInstallLater(true);
         else setInstallOpen(true);
       }, 500);
+    } else if (wasFirst && pushAskable()) {
+      // Приложение уже на экране «Домой» — сразу предложим уведомления об изменениях этой группы.
+      setTimeout(() => { if (activeRef.current && !gameOpenRef.current && pushAskable()) setPushOpen(true); }, 600);
     }
   };
   const closeInstall = () => { store('homeShown', '1'); setInstallOpen(false); };
@@ -469,6 +484,7 @@ function StudentApp({ active, command, onContext, theme, setRole }: ScheduleSlot
         onFail={() => setStatsOpen(false)} />
       <ReviewsModal open={reviewsOpen} initialRating={rateInit} onClose={closeReviews} />
       <ReviewPrompt open={promptOpen && !gameOpen} onClose={closePrompt} />
+      <PushPrompt open={pushOpen && !gameOpen} onClose={() => setPushOpen(false)} />
       {uniMenu.element}
     </>
   );

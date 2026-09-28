@@ -352,7 +352,29 @@ ALTER TABLE poker_players ADD COLUMN best_streak INTEGER NOT NULL DEFAULT 0;
 CREATE INDEX IF NOT EXISTS idx_pp_chips ON poker_players (chips DESC);
 `;
 
-const MIGRATIONS = [SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6, SCHEMA_V7, SCHEMA_V8, SCHEMA_V9];
+// Уведомления, когда Para закрыта (push.js, CONTRACT.md §K): подписка — одно устройство. Сессия — чтобы личное
+// (заявки, ответы, приглашения) приходило, только пока на устройстве выполнен вход: выход, истечение и удаление
+// аккаунта обнуляют её сами (ON DELETE SET NULL).
+export const SCHEMA_V10 = `
+CREATE TABLE IF NOT EXISTS push_subs (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  endpoint    TEXT    NOT NULL UNIQUE,                     -- адрес службы push (Google, Apple, Mozilla, Microsoft)
+  p256dh      TEXT    NOT NULL,                            -- ключ шифрования устройства (base64url)
+  auth        TEXT    NOT NULL,                            -- секрет устройства (base64url)
+  hub         INTEGER NOT NULL DEFAULT 0,                  -- подписались на адресе Para (1) или вуза (0) — для ссылки
+  uni         TEXT,                                        -- вуз устройства
+  grp         TEXT,                                        -- ключ группы для изменений пар; NULL — не следить
+  session_id  INTEGER REFERENCES sessions(id) ON DELETE SET NULL,
+  kinds       TEXT    NOT NULL DEFAULT '',                 -- что присылать: 'sched,game,friends,replies'
+  created_at  TEXT    NOT NULL,
+  updated_at  TEXT    NOT NULL,
+  fails       INTEGER NOT NULL DEFAULT 0                   -- неудачные отправки подряд
+);
+CREATE INDEX IF NOT EXISTS idx_push_grp     ON push_subs (uni, grp);
+CREATE INDEX IF NOT EXISTS idx_push_session ON push_subs (session_id);
+`;
+
+const MIGRATIONS = [SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6, SCHEMA_V7, SCHEMA_V8, SCHEMA_V9, SCHEMA_V10];
 
 /** Открыть (и при необходимости создать) social.db и довести схему до последней версии. */
 export function openSocialDb(dir = config.dataDir) {

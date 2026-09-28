@@ -15,6 +15,7 @@ import { audit, resolveReports, liveAdmins } from './moderation.js';
 import { closeStreams } from './game-stream.js';
 import { kick as pokerKick } from './poker-table.js';
 import { liveTo, liveAll, liveUsers, liveClose, liveThrottle } from './live.js';
+import { pushReply } from './push.js';
 
 export const CATEGORY_IDS = ['study', 'schedule', 'events', 'company', 'lost', 'other'];
 
@@ -169,6 +170,32 @@ const livePostRow = (db, id) => db.prepare('SELECT * FROM posts WHERE id = ?').g
  * поэтому зрителям с одинаковыми mine/canDelete (автор, модератор) и именем адресата ответа (он сам, блокировка с ним)
  * — один объект.
  */
+/**
+ * Уведомление, когда Para закрыта (push.js): о новом ответе id — автору публикации и автору ответа, на который
+ * ответили (кроме самого отвечающего), если ответ им виден (audienceOf). После COMMIT; не бросает.
+ */
+function pushReplyTo(ctx, id) {
+  try {
+    const db = ctx.db;
+    const row = livePostRow(db, id);
+    if (!row || !row.root_id) return;
+    const root = livePostRow(db, row.root_id);
+    const parent = row.parent_id ? livePostRow(db, row.parent_id) : null;
+    const to = [...new Set([root && root.author_id, parent && parent.author_id])].filter((uid) => uid && uid !== row.author_id);
+    if (!to.length) return;
+    const visible = audienceOf(db, row, root);
+    const users = usersByIds(db, [...to, row.author_id]);
+    const author = users.get(row.author_id);
+    if (!author) return;
+    for (const uid of to) {
+      const u = users.get(uid);
+      if (u && visible(viewerOf(u))) pushReply(uid, author, row);
+    }
+  } catch (err) {
+    ctx.log.warn({ msg: err && err.message }, 'уведомления: ответ');
+  }
+}
+
 export function livePost(ctx, id, exceptSid = null) {
   try {
     const db = ctx.db;
@@ -519,6 +546,7 @@ export function postRoutes(inst, ctx) {
       return pid;
     });
     livePost(ctx, id, req.sid);
+    pushReplyTo(ctx, id);
     reply.code(201);
     return ok(postOut(ctx, v, getPost.get(id)));
   });

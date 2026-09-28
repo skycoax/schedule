@@ -16,6 +16,10 @@ function saveWeekMap(db, fresh) {
   metaSet(db, 'week_map', JSON.stringify(Object.fromEntries(keep.map((k) => [k, map[k]]))));
 }
 
+let onChanges = null;
+/** Кому сказать об изменениях пар (social/push.js): fn(t, changes, sched) — после сохранения снимка с правками. */
+export function setChangesHook(fn) { onChanges = fn; }
+
 export async function pollOnce(t, log) {
   if (t.cache.polling) return { skipped: true };
   t.cache.polling = true;
@@ -30,6 +34,7 @@ export async function pollOnce(t, log) {
         log.debug({ groups: sched.groups.length }, 'сверка без изменений');
       }
     }
+    if (res.changed && res.changes.length && onChanges) onChanges(t, res.changes, sched);
     return { ok: true, groups: sched.groups.length, changed: res.changed, changes: res.changes.length };
   } catch (err) {
     if (log) log.error({ err: String(err) }, 'сверка не удалась');

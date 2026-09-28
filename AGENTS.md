@@ -92,9 +92,12 @@ server/src/social/
   live.js        живые обновления: поток SSE /api/social/live на вошедшего (чужие посты, ответы, «нравится», удаления,
                  заявки в друзья, моменты, приглашения в покер, число людей за столом); кому что видно — решают хуки
                  в posts/users/moderation/instants/game, всё — после COMMIT (контракт — CONTRACT.md §J)
+  push.js        уведомления, когда Para закрыта (Web Push): подписки устройств (push_subs, V10), ключи VAPID
+                 в <DATA_DIR>/push-vapid.json (создаются сами; секрет), заявки/ответы/покер/изменения пар (§K)
 server/test/social-smoke.mjs   дымовой тест всех маршрутов
 server/test/social-seed.mjs    наполнение для разработки (alice, bob, mia до 18, boss — модератор)
 server/test/poker-logic.test.mjs  карты, банки, Чен, бот всегда ходит по правилам (node --test)
+server/test/push.test.mjs         тексты уведомлений об изменениях пар (node --test)
 web/src/game/                  «Покер» в приложении: вход по 5 касаниям часов (entry.ts), стол, поток
 ```
 
@@ -112,6 +115,7 @@ web/src/game/                  «Покер» в приложении: вход 
 | `SOCIAL_SALT` | `IP_SALT` | соль отпечатков банов (длинная случайная строка) |
 | `SOCIAL_MODE` | `on` | `on` \| `readonly` \| `off` — аварийный выключатель |
 | `SOCIAL_GAME` | `on` | `on` \| `off` — «Покер» (общий стол); off — маршрутов игры нет, пасхалка в приложении молчит |
+| `SOCIAL_PUSH` | `on` | `on` \| `off` — уведомления, когда Para закрыта; off — ничего не отправляется, подписка → 503 |
 | `SOCIAL_MIN_AGE` | `16` | возраст для аккаунта (13–18); тексты политики — то же число |
 | `SOCIAL_REPORT_THRESHOLD` | `3` | сколько учитываемых жалоб скрывают пост |
 | `SOCIAL_REPORTER_MIN_AGE_H` | `24` | жалобы аккаунтов моложе — не учитываются для автоскрытия |
@@ -121,8 +125,9 @@ web/src/game/                  «Покер» в приложении: вход 
 Аварийный выключатель: `SOCIAL_MODE=readonly` (писать нельзя; жалобы, блокировки, удаление своего и аккаунта,
 выход работают) или `off` (обсуждений нет; вход ради удаления, выход и удаление аккаунта работают), затем
 `sudo systemctl restart schedule-api`. Только покер: `SOCIAL_GAME=off` (стола нет). Стол живёт в памяти: перезапуск
-службы обрывает текущую раздачу (фишки в банке теряются) — выкладывать лучше при пустом столе. Схема — social.db V8
-(`poker_players`: стек и счёт); контракт — `docs/social/CONTRACT.md` §I.
+службы обрывает текущую раздачу (фишки в банке теряются) — выкладывать лучше при пустом столе. Схема — social.db V10
+(V8 `poker_players`: стек и счёт; V9 — бонус дня и серия; V10 `push_subs` — уведомления); контракт — `docs/social/CONTRACT.md`
+§I (покер) и §K (уведомления). Только уведомления: `SOCIAL_PUSH=off`.
 
 Правила обсуждений меняются по существу (`web/src/social/rules.ts`, `server/hub/rules.html`) — **вместе с ними
 поднять `social.rulesVersion` в `server/src/config.js`**: все примут правила заново.
@@ -139,6 +144,7 @@ cd server && NODE_ENV=development DEV_LOGIN=1 DEV_HUB=1 PARA_ORIGIN=http://be.lo
 node server/test/social-smoke.mjs http://127.0.0.1:8792 kfu     # «Всё прошло: N проверок.»
 node server/test/social-seed.mjs  http://127.0.0.1:8792 kfu     # наполнение для интерфейса (можно повторять)
 node --test server/test/poker-logic.test.mjs                     # карты, банки и бот покера (сервер не нужен)
+node --test server/test/push.test.mjs                            # тексты уведомлений об изменениях пар
 ```
 
 Другие прогоны теста: `SMOKE_NEW_ACCOUNT=1` (сервер с `SOCIAL_NEW_ACCOUNT_H=24`, ≈ 6 минут), `SMOKE_MODE=readonly`
