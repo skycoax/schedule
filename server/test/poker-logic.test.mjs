@@ -154,7 +154,7 @@ test('бот: 1000 случайных положений — всегда доп
   assert.ok(raises > 20, 'бот иногда повышает: ' + raises);
 });
 
-test('бот: AA префлоп повышает, 72o без ставки — check, со ставкой — fold; сила флеша высокая', () => {
+test('бот: AA префлоп повышает, 72o без ставки — check, против олл-ина — fold; JTs платит 5 ББ; сила флеша высокая', () => {
   const base = { board: [], pot: 30, toCall: 10, minRaise: 40, maxRaise: 1000, chips: 990, opponents: 1, phase: 'preflop', bb: 20, currentBet: 20 };
   const never = () => 0.99;   // без блефов
   assert.equal(decide({ ...base, cards: ['As', 'Ad'], rand: never }).action, 'raise');
@@ -162,11 +162,44 @@ test('бот: AA префлоп повышает, 72o без ставки — ch
   assert.equal(decide({ ...base, cards: ['7s', '2d'], rand: never }).action, 'fold');
   assert.equal(decide({ ...base, cards: ['7s', '2d'], toCall: 0, rand: never }).action, 'check');
   assert.equal(decide({ ...base, cards: ['Js', 'Ts'], rand: never }).action, 'call');
-  assert.equal(decide({ ...base, cards: ['Js', 'Ts'], toCall: 100, currentBet: 110, rand: never }).action, 'fold');
+  assert.equal(decide({ ...base, cards: ['Js', 'Ts'], toCall: 100, currentBet: 110, rand: never }).action, 'call');   // азарт
+  assert.equal(decide({ ...base, cards: ['7s', '2d'], toCall: 980, currentBet: 1000, minRaise: 1980, maxRaise: 1000, chips: 980, rand: never }).action, 'fold');
   const st = strength(['As', 'Ks'], ['Qs', 'Js', '2s'], 1, mulberry32(3));
   assert.ok(st > 0.9, 'флеш от туза: ' + st);
   const weak = strength(['7s', '2d'], ['Ah', 'Kh', 'Qc'], 2, mulberry32(4));
   assert.ok(weak < 0.3, 'мусор против двух: ' + weak);
+});
+
+// Характер бота — азартный (§I.7): доли действий на 400 случайных раздачах один на один.
+const dealt = (rand) => {
+  const d = FULL_DECK.slice();
+  for (let j = d.length - 1; j > 0; j--) { const k = Math.floor(rand() * (j + 1)); [d[j], d[k]] = [d[k], d[j]]; }
+  return d;
+};
+function share(seed, make, pred, n = 400) {
+  const rand = mulberry32(seed);
+  let hit = 0;
+  for (let i = 0; i < n; i++) if (pred(decide({ ...make(dealt(rand)), opponents: 1, bb: 20, rand }))) hit++;
+  return hit / n;
+}
+const isBet = (d) => d.action === 'raise' || d.action === 'allin';
+
+test('бот азартный: префлоп на повышение до 3 ББ сбрасывает реже 40 %, против олл-ина — чаще 70 %', () => {
+  const vsRaise = share(21, (d) => ({ cards: d.slice(0, 2), board: [], pot: 80, toCall: 40, minRaise: 100, maxRaise: 1000,
+    chips: 980, phase: 'preflop', currentBet: 60 }), (x) => x.action === 'fold');
+  assert.ok(vsRaise < 0.4, 'сбросы на 3 ББ: ' + vsRaise);
+  const vsShove = share(22, (d) => ({ cards: d.slice(0, 2), board: [], pot: 1020, toCall: 980, minRaise: 1980, maxRaise: 1000,
+    chips: 980, phase: 'preflop', currentBet: 1000 }), (x) => x.action === 'fold');
+  assert.ok(vsShove > 0.7, 'сбросы на олл-ин: ' + vsShove);
+});
+
+test('бот азартный: на флопе без ставки ставит чаще 35 %, на ставку в полбанка сбрасывает реже 40 %', () => {
+  const opens = share(23, (d) => ({ cards: d.slice(0, 2), board: d.slice(2, 5), pot: 120, toCall: 0, minRaise: 20, maxRaise: 940,
+    chips: 940, phase: 'flop', currentBet: 0 }), isBet);
+  assert.ok(opens > 0.35, 'ставит сам: ' + opens);
+  const folds = share(24, (d) => ({ cards: d.slice(0, 2), board: d.slice(2, 5), pot: 180, toCall: 60, minRaise: 120, maxRaise: 940,
+    chips: 940, phase: 'flop', currentBet: 60 }), (x) => x.action === 'fold');
+  assert.ok(folds < 0.4, 'сбросы на полбанка: ' + folds);
 });
 
 // ─── Ежедневный бонус (§I.10): сутки по Ташкенту (UTC+5), серия дней ───

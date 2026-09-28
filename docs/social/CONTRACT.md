@@ -3196,14 +3196,24 @@ Polling instead of the stream: `GET /api/social/games` every 2 s (counts as pres
 ### I.7 Bot (`poker-bot.js`)
 
 `decide({ cards, board, pot (with current bets), toCall, minRaise (raise-to), maxRaise (bet + chips), chips, opponents
-(un-folded others), phase, rand, bb, currentBet })` → `{ action, amount? }`. Preflop, Chen score (`chen`: A 10, K 8, Q 7,
-J 6, else rank/2; pair ×2 (min 5); suited +2; gap 1/2/3/4+ → −1/−2/−4/−5; gap ≤ 1 and both below Q → +1; halves rounded
-up — AA 20, AKs 12, 72o −1): ≥ 10 → raise to 3 BB (or 2.5 × currentBet); 6–9 → call if `toCall ≤ 3 BB`, else fold (check
-is always free); < 6 → check/fold; 8 % bluff raise. Postflop: `strength` = share of 160 Monte-Carlo deals (random opponent
-hand, board completed) that we beat (tie = ½), raised to the power `opponents`: ≥ 0.8 → bet/raise ≈ 0.7 pot (at least the
-minimum); 0.55–0.8 → call, or when checked to — bet 0.5 pot with p = 0.5; 0.3–0.55 → call if `toCall ≤ 0.25 pot`, else
-fold; < 0.3 → check/fold; 7 % bluff. Never folds when `toCall = 0`. Amounts are multiples of 10 where `[min, max]` allows
-(`raiseAmount`); a raise that is impossible becomes an all-in (strong hand) or a call/check.
+(un-folded others), phase, rand, bb, currentBet })` → `{ action, amount? }`. Character — «азартный» (owner, 28.09: the bot
+must not fold every weak hand): plays almost any two cards heads-up, bets and bluffs, calls «to see», sometimes shoves; folds
+mostly junk against big bets. Heads-up (`opponents = 1`) is looser; against 2–3 opponents the call/bluff chances are halved.
+Preflop, Chen score (`chen`: A 10, K 8, Q 7, J 6, else rank/2; pair ×2 (min 5); suited +2; gap 1/2/3/4+ → −1/−2/−4/−5;
+gap ≤ 1 and both below Q → +1; halves rounded up — AA 20, AKs 12, 72o −1) and x = toCall in BB: ≥ 12 → raise to 3 BB
+(or 2.5 × currentBet), 12 % just call; nothing to call → raise with ≥ 8 (p 0.6) or any hand (p 0.25 HU / 0.12), else check;
+≥ 9 → raise (p 0.7 HU / 0.5); x ≤ 1 → raise any hand (p 0.22 / 0.1), 1 < x ≤ 4 → re-raise any (p 0.08 / 0.03); call when
+Chen ≥ need (HU 0 / 3 / 6 / 9, multiway 1 / 5 / 8 / 11 for x ≤ 1 / ≤ 4 / ≤ 10 / more), within 4 below it — call with «азарт»
+p (0.7 / 0.45 / 0.25 / 0.12, halved multiway), else p/3; otherwise fold. Postflop: `strength` = share of 160 Monte-Carlo
+deals (random opponent hand, board completed) that we beat (tie = ½), raised to the power `opponents`; price = toCall /
+(pot + toCall); size = 45–95 % of the pot: ≥ 0.85 → all-in when stack ≤ 1.5 pot (p 0.35), else bet/raise size + 20 % (p 0.8)
+or just check/call; ≥ 0.62 → checked to: bet (p 0.7), facing a bet: raise (p 0.3) or call; ≥ 0.42 → checked to: bet 0.8 size
+(p 0.45); facing a bet: call when price ≤ strength, else call p 0.45 or fold; weaker → checked to: bluff (p 0.38 HU / 0.18,
+×0.8 on the river); facing a bet: bluff-raise HU p 0.07, call p 0.55 / 0.35 / 0.2 / 0.08 for price ≤ 0.2 / 0.34 / 0.45 / more
+(halved multiway), else fold. Never folds when `toCall = 0`. Amounts are multiples of 10 where `[min, max]` allows
+(`raiseAmount`); a raise that is impossible becomes an all-in or a call/check. Tests: 1000 random spots are legal; heads-up
+the bot folds < 40 % to a 3 BB raise and > 70 % of hands to an all-in, bets > 35 % when checked to on the flop and folds < 40 %
+to a half-pot bet.
 
 ### I.8 Limits (`limits.js`)
 
