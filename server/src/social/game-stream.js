@@ -174,6 +174,25 @@ export function sendReact(fromUserId, payload) {
   for (const c of [...conns]) if (!fromUserId || c.userId !== fromUserId) send(c, 'react', payload);
 }
 
+/**
+ * Сообщение чата стола (§I.11): build(userId|null) → строка чата этому зрителю или null (не показывать: блокировка);
+ * строится по разу на человека. Всем открытым потокам, и самому автору (приложение уберёт дубль по id). Не бросает.
+ */
+export function sendChat(build) {
+  try {
+    const cache = new Map();
+    for (const c of [...conns]) {
+      if (c.closed) continue;
+      const k = c.userId || 0;
+      if (!cache.has(k)) cache.set(k, build(c.userId || null));
+      const item = cache.get(k);
+      if (item) send(c, 'chat', { item });
+    }
+  } catch (err) {
+    if (log) log.warn({ msg: err && err.message }, 'покер: сообщение чата не отправлено');
+  }
+}
+
 /** Закрыть все потоки человека (выход со всех устройств, удаление аккаунта — 'session'; бан — 'ban'). */
 export function closeStreams(userId, reason) {
   for (const c of [...byUser.get(userId) || []]) bye(c, reason);

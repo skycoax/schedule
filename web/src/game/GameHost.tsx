@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { JSX, KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { brand } from '../brand';
-import { store } from '../lib/store';
+import { ls, store } from '../lib/store';
 import { useHideTabBar } from '../ui/bar';
 import { useLayer } from '../ui/layers';
 import { chooseAction, confirmDialog } from '../ui/ActionSheet';
@@ -17,7 +17,7 @@ import { isApiError } from '../social/api';
 import { useSocialActions } from '../social/actions';
 import { currentReturnTo, useSession } from '../social/session';
 import { ixMotion, setIxOrigin } from '../social/instants/motion';
-import type { GameReaction, PokerAction, PokerSeat, PokerView } from '../social/types';
+import type { PokerAction, PokerChatItem, PokerSeat, PokerSticker, PokerView } from '../social/types';
 import { gameClosing } from './entry';
 import type { GameReq } from './entry';
 import { gameApi, streamUrl } from './api';
@@ -29,7 +29,9 @@ import { InviteSheet } from './InviteSheet';
 import { BonusCard, untilReset } from './BonusCard';
 import { TopSheet } from './TopSheet';
 import { chips as fmtChips } from './logic';
-import { ReactRow, Table } from './Table';
+import { Table } from './Table';
+import { BURST_MS, ChatButtons, ChatLayer, ChatPanel } from './Chat';
+import type { Burst } from './Chat';
 import type { Float } from './Table';
 import { buzz } from './fx';
 import '../social/instants/instants.css';
@@ -108,15 +110,60 @@ function GameRoot({ onClose, sit: sitOnOpen }: { onClose: () => void; sit: boole
   }, [apply, off]);
   useEffect(() => { void load(); }, [load]);
 
+  // ─── Чат стола и стикеры (Chat.tsx) ───
+  const [chat, setChat] = useState<PokerChatItem[]>([]);
+  const known = useRef(new Set<number>());
+  const [chatOpen, setChatOpen] = useState(false);
+  const chatOpenRef = useRef(false);
+  chatOpenRef.current = chatOpen;
+  const [tray, setTray] = useState(false);
+  const [unread, setUnread] = useState(0);
+  const [chatOff, setChatOff] = useState(() => ls('pk_chat') === 'off');
+  const chatOffRef = useRef(chatOff);
+  chatOffRef.current = chatOff;
+  const [bursts, setBursts] = useState<Burst[]>([]);
+  const burstK = useRef(0);
+  const addBurst = useCallback((item: PokerChatItem) => {
+    const k = ++burstK.current;
+    setBursts((b) => [...b.slice(-5), { k, item }]);
+    timers.current.push(window.setTimeout(() => setBursts((b) => b.filter((x) => x.k !== k)), item.sticker ? BURST_MS.sticker : BURST_MS.text));
+  }, []);
+  const addItems = useCallback((items: PokerChatItem[], replace: boolean) => {
+    if (replace) known.current = new Set(items.map((x) => x.id));
+    else for (const x of items) known.current.add(x.id);
+    setChat((cur) => {
+      const byId = new Map((replace ? [] : cur).map((x) => [x.id, x]));
+      for (const x of items) byId.set(x.id, x);
+      return [...byId.values()].sort((a, b) => a.id - b.id).slice(-60);
+    });
+  }, []);
+  const loadChat = useCallback(async () => {
+    if (!sRef.current.online) return;
+    try { addItems(await gameApi.chat(), true); } catch { /* чат подождёт следующего раза */ }
+  }, [addItems]);
+  useEffect(() => { if (!off) void loadChat(); }, [loadChat, off]);
+  const myIdRef = useRef<number | null>(null);
+  myIdRef.current = signedMe ? signedMe.id : null;
+  /** Строка из потока: новая — в список; чужая — пузырь или стикер у места и «непрочитано», если чат закрыт. */
+  const onChatItem = (item: PokerChatItem) => {
+    if (known.current.has(item.id)) return;
+    addItems([item], false);
+    const mine = !!item.user && item.user.id === myIdRef.current;
+    if (mine || chatOffRef.current) return;       // свой стикер уже показан при отправке
+    addBurst(item);
+    if (!chatOpenRef.current) setUnread((n) => Math.min(99, n + 1));
+  };
+
   // ─── Поток ───
   const [floats, setFloats] = useState<Record<number, Float>>({});
   const floatK = useRef(0);
   const streamOn = !off && s.online && !closing;
   const stream = useGameStream(streamUrl(brand.id), streamOn, {
-    resync: () => { void load(true); },
+    resync: () => { void load(true); void loadChat(); },
     poll: () => load(true),
     table: apply,
     react: (seat, r) => setFloats((f) => ({ ...f, [seat]: { r, k: ++floatK.current } })),
+    chat: (item) => onChatItem(item),
     ended: () => { void sRef.current.refresh(); },
   });
   const streamRef = useRef(stream);
@@ -175,24 +222,75 @@ function GameRoot({ onClose, sit: sitOnOpen }: { onClose: () => void; sit: boole
     if (!view?.hand) return;
     void run(() => gameApi.act(view.hand!.id, action, amount));
   };
-  const [reactOpen, setReactOpen] = useState(false);
-  const react = async (r: GameReaction) => {
-    setReactOpen(false);
-    // Свою реакцию сервер обратно не шлёт — показываем сразу у себя.
+  // Писать в чат могут сидящие (и ждущие раздачи); остальным — почему нельзя.
+  const canWrite = access === 'ok' && !!me && me.state !== 'none';
+  const chatNote = access === 'guest' ? 'Войди и присоединись к игре, чтобы писать'
+    : access === 'banned' ? 'Пока действует ограничение, писать нельзя'
+      : access === 'readonly' ? 'Сейчас писать нельзя'
+        : access === 'offline' ? 'Нет интернета' : 'Присоединись к игре, чтобы писать';
+  const openChat = (withTray: boolean) => {
+    setTray(withTray && canWrite);
+    setChatOpen(true);
+    setUnread(0);
+  };
+  const closeChat = () => { setChatOpen(false); setTray(false); };
+  const [chatBusy, setChatBusy] = useState(false);
+  const sendText = async (text: string): Promise<boolean> => {
+    if (chatBusy) return false;
+    setChatBusy(true);
+    try {
+      addItems([await gameApi.say({ text })], false);
+      return true;
+    } catch (e) {
+      if (!handledBySession(e)) toast(errText(e), { kind: 'error' });
+      return false;
+    } finally {
+      setChatBusy(false);
+    }
+  };
+  const sendSticker = async (id: PokerSticker) => {
+    // Стикер — сразу на столе (панель уходит, чтобы его было видно), не дожидаясь ответа сервера.
+    closeChat();
     const seat = viewRef.current?.me?.seat;
-    if (seat !== null && seat !== undefined) setFloats((f) => ({ ...f, [seat]: { r, k: ++floatK.current } }));
-    try { await gameApi.react(r); } catch (e) { if (!handledBySession(e)) toast(errText(e), { kind: 'error' }); }
+    if (seat !== null && seat !== undefined) addBurst({ id: 0, at: Date.now(), seat, bot: false, user: null, text: null, sticker: id });
+    try {
+      addItems([await gameApi.say({ sticker: id })], false);
+    } catch (e) {
+      if (!handledBySession(e)) toast(errText(e), { kind: 'error' });
+    }
+  };
+  // Твой ход — чат уступает место кнопкам хода; открыл его во время хода — сам закроется за 5 с до конца.
+  const turnDeadline = myTurn && view?.hand?.turn ? view.hand.turn.deadline : 0;
+  const closeForTurn = useCallback(() => {
+    setChatOpen(false);
+    setTray(false);
+    const el = document.activeElement as HTMLElement | null;
+    if (el && el.closest('.pk-chat')) el.blur();
+  }, []);
+  useEffect(() => { if (myTurn) closeForTurn(); }, [myTurn, closeForTurn]);
+  useEffect(() => {
+    if (!chatOpen || !turnDeadline) return;
+    const t = window.setTimeout(closeForTurn, Math.max(0, turnDeadline - now() - 5000));
+    return () => clearTimeout(t);
+  }, [chatOpen, turnDeadline, now, closeForTurn]);
+  const toggleChatOff = () => {
+    const next = !chatOff;
+    ls('pk_chat', next ? 'off' : 'on');
+    setChatOff(next);
+    if (next) { closeChat(); setBursts([]); setUnread(0); }
   };
 
   const seatMenu = async (seat: PokerSeat) => {
     const u = seat.user;
     if (!u) return;
-    const pick = await chooseAction({
-      title: u.name + ' · @' + u.username,
-      actions: [{ id: 'report', label: 'Пожаловаться' }, { id: 'block', label: 'Заблокировать @' + u.username, role: 'destructive' }],
-    });
+    const list: { id: string; label: string; role?: 'destructive' }[] = [
+      { id: 'report', label: 'Пожаловаться' }, { id: 'block', label: 'Заблокировать @' + u.username, role: 'destructive' },
+    ];
+    if (signedMe?.isAdmin) list.push({ id: 'chips', label: 'Фишки…' });
+    const pick = await chooseAction({ title: u.name + ' · @' + u.username, actions: list });
     if (pick === 'report') await actions.report({ type: 'user', id: u.id }, { username: u.username, kind: 'user' });
-    else if (pick === 'block') { if (await actions.block(u)) void load(true); }
+    else if (pick === 'block') { if (await actions.block(u)) { void load(true); void loadChat(); } }
+    else if (pick === 'chips') await actions.chips(u);
   };
 
   // Приняли приглашение друга («Играть» на плашке) — садимся, как только стол загрузился.
@@ -255,12 +353,14 @@ function GameRoot({ onClose, sit: sitOnOpen }: { onClose: () => void; sit: boole
     // Рейтинг — только когда сервер уже знает про экономику фишек (в me есть bonus).
     if (me?.bonus && (access === 'ok' || access === 'banned' || access === 'readonly')) list.push({ id: 'top', label: 'Рейтинг' });
     list.push({ id: 'how', label: 'Как играть' });
+    list.push({ id: 'chat', label: chatOff ? 'Показать чат' : 'Скрыть чат' });
     if (seated) list.push({ id: 'stand', label: me!.state === 'leaving' ? 'Выйдешь после раздачи' : 'Выйти из игры', role: 'destructive' });
     const pick = await chooseAction({ actions: list });
     if (pick === 'invite') invite();
     else if (pick === 'bonus') setBonusOpen(true);
     else if (pick === 'top') setTopOpen(true);
     else if (pick === 'how') setHowOpen(true);
+    else if (pick === 'chat') toggleChatOff();
     else if (pick === 'stand') void stand();
   };
 
@@ -285,7 +385,6 @@ function GameRoot({ onClose, sit: sitOnOpen }: { onClose: () => void; sit: boole
         || !!view.seats[me.seat ?? -1]?.folded || !(view.hand.turn && view.hand.turn.seat === me.seat));
       bottom = (
         <div className="pk-status">
-          {reactOpen && <ReactRow onPick={(r) => void react(r)} />}
           {text && <span>{text}</span>}
           {alone && <button type="button" className="pk-pill" onClick={invite}>Позвать друзей</button>}
         </div>
@@ -346,7 +445,13 @@ function GameRoot({ onClose, sit: sitOnOpen }: { onClose: () => void; sit: boole
             </div>
             {view ? (
               <Table view={view} now={now} floats={floats}
-                onSeatMenu={(x) => void seatMenu(x)} onMyAvatar={() => setReactOpen((o) => !o)}>
+                onSeatMenu={(x) => void seatMenu(x)} onMyAvatar={() => { if (canWrite && !chatOff) openChat(true); }}
+                overlay={chatOff ? null : (
+                  <>
+                    <ChatLayer bursts={bursts} />
+                    <ChatButtons unread={unread} onChat={() => openChat(false)} onStickers={() => openChat(true)} />
+                  </>
+                )}>
                 {bottom}
               </Table>
             ) : (
@@ -355,6 +460,12 @@ function GameRoot({ onClose, sit: sitOnOpen }: { onClose: () => void; sit: boole
                   : loadErr ? <><p>{loadErr}</p><button type="button" className="pk-btn pk-btn--main" onClick={() => void load()}>Повторить</button></>
                     : <p className="pk-load__dots"><i /><i /><i /></p>}
               </div>
+            )}
+            {view && !chatOff && (
+              <ChatPanel open={chatOpen} tray={tray} items={chat} myId={signedMe ? signedMe.id : null}
+                turn={turnDeadline ? { deadline: turnDeadline, now } : null}
+                canWrite={canWrite} note={chatNote} busy={chatBusy}
+                onClose={closeChat} onTray={setTray} onSend={sendText} onSticker={(id) => void sendSticker(id)} />
             )}
             {stream.status === 'reconnecting' && !closing && <div className="gx-status" role="status">Переподключаемся…</div>}
             {stream.status === 'replaced' && !closing && (

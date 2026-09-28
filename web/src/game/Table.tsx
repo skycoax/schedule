@@ -36,6 +36,7 @@ export function Table(p: {
   view: PokerView; now: () => number; floats: Record<number, Float>;
   onSeatMenu: (s: PokerSeat) => void; onMyAvatar: () => void;
   children?: ReactNode;      // строка действий / статуса под своими картами
+  overlay?: ReactNode;       // поверх стола: пузыри и стикеры чата, кнопки чата (Chat.tsx)
 }): JSX.Element {
   const v = p.view;
   const me = v.me;
@@ -186,6 +187,7 @@ export function Table(p: {
         {myS && <MeRow s={myS} hand={hand} now={p.now} float={p.floats[myS.seat] || null} onTap={p.onMyAvatar} />}
         {p.children}
       </div>
+      {p.overlay}
     </div>
   );
 }
@@ -199,7 +201,7 @@ function MeRow(p: { s: PokerSeat; hand: PokerView['hand']; now: () => number; fl
   const status = s.reserved ? 'в игре со следующей раздачи' : s.leaving ? 'выйдешь после раздачи' : s.allIn && s.inHand && !s.folded ? 'олл-ин' : '';
   return (
     <div className={'pk-me' + (isTurn ? ' is-turn' : '')} data-seat={s.seat} style={{ '--seat': s.seat } as CSSProperties}>
-      <button type="button" className="pk-me__av" aria-label="Реакция" onClick={p.onTap}>
+      <button type="button" className="pk-me__av" aria-label="Стикеры" onClick={p.onTap}>
         {isTurn && hand?.turn && <TimerRing deadline={hand.turn.deadline} now={p.now} size={48} />}
         {s.bot ? <BotOrb size={40} /> : <Avatar user={s.user} size={40} />}
         {s.dealer && <span className="pk-seat__d" aria-label="Дилер">D</span>}

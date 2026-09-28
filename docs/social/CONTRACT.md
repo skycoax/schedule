@@ -3215,6 +3215,36 @@ or just check/call; ≥ 0.62 → checked to: bet (p 0.7), facing a bet: raise (p
 the bot folds < 40 % to a 3 BB raise and > 70 % of hands to an all-in, bets > 35 % when checked to on the flop and folds < 40 %
 to a half-pot bet.
 
+### I.11 Table chat and stickers (`game.js` #11–#12, `poker-table.js`)
+
+- `POST /api/social/games/chat` `{ text }` or `{ sticker }` (guard SPNM; bucket `gameChat [8, 3 s]`) → `{ item }`. Only someone
+  at the table (seated, waiting for the next hand or leaving) — else 409 conflict «Писать в чат могут те, кто за столом».
+  `text` — one line after `cleanText`, 1…120 graphemes (400 «Напиши сообщение» / «Не длиннее 120 символов»), no links
+  (400 «Ссылки в чате стола нельзя»); `sticker` ∈ `gg allin fire lol cry cool think shock angry love clap crown money bluff
+  skull lucky` (400 field `sticker`).
+- `GET /api/social/games/chat` (guests too; bucket `read`) → `{ items }`: the last ≤ 50 items of the last 2 hours.
+- Item: `{ id, at (server ms), seat, bot, user (UserCard — guests get the card without uni; null for the bot), text (profanity
+  masked on output) | null, sticker | null }`. Stream event `chat { item }` to every game stream including the author's (the
+  app dedups by id). A viewer in a block relation with the author never gets the author's items (history or stream). Memory
+  only (no DB); `kick` (ban, account deletion) drops the person's items. Old `react` (6 emoji) still works for old clients.
+- Bot Para: at a hand result, 45 % — a sticker (big win: cool/crown/money/fire/gg; took it without showdown: bluff/cool/
+  lucky; lost big at showdown: cry/skull/shock/angry); on a human sticker, 22 % — an answer; at most one per 8 s, 0.9–1.3 s later.
+- App (`web/src/game/Chat.tsx`, `stickers.tsx`, `stickers.css`): buttons at the lower right of the felt (stickers, chat with
+  unread count), tap on your own photo → stickers; other people's text — a bubble beside their seat for 4.2 s, stickers —
+  big over the seat for 2.6 s (own sticker — right of your cards, shown at once); the panel closes when your turn starts and
+  5 s before its end (while open during your turn the header says «Твой ход · N с»); «•••» → «Скрыть чат» (localStorage
+  `pk_chat`).
+
+### I.12 Chips from a moderator
+
+`POST /api/social/admin/action` `{ action: 'chips', target: { type: 'user', id }, amount }` (guard SA; `amount` — integer,
+≠ 0, |amount| ≤ 1 000 000, else 400 field `amount`; poker routes off → 400 «Покер сейчас выключен — фишки не начислить»)
+→ `{ chips }` — the new bankroll. `poker-table.js grantChips`: the DB row (created if the person never opened the table, from
+1 000) at once; seated outside a hand — the stack at once; inside a hand — after it (`settleBonus`, like a bonus); never
+below 0. Audit `user.chips` `{ amount, chips }`; live `chips { amount, chips }` + `me` to the person; push kind `game`
+(«Тебе начислили N фишек» / «Модератор снял N фишек»). Admin users list: `chips` (null — never opened the table). App:
+«Фишки…» in the user menu (profile), in the admin users list and in the seat menu at the table (moderators only).
+
 ### I.8 Limits (`limits.js`)
 
 `gameSit [6, 1 min]` (sit and stand), `gameAct [8, 2 s]`, `gameReact [5, 3 s]`, `gameStream [10, 30 s]` (per user; guests per

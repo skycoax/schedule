@@ -12,6 +12,10 @@ import { openReportSheet, useSession } from './session';
 import type { Session } from './session';
 import type { AdminActionBody, Post, ReportResult, ReportTarget, ResetField, UserCard, UserProfile } from './types';
 
+/** Быстрые суммы фишек для модератора. */
+const CHIP_STEPS = [500, 1000, 5000, 10000];
+const fmtN = (n: number): string => n.toLocaleString('ru-RU').replace(/\u00a0/g, ' ');
+
 /** Ссылка на ветку: вуз поста и id публикации (для ответа — его публикации). */
 export function postLink(p: Post): string {
   return location.origin + '/?uni=' + encodeURIComponent(p.uni) + '&post=' + (p.rootId ?? p.id);
@@ -86,6 +90,8 @@ export function useSocialActions(): {
   share(url: string, title?: string): Promise<void>;
   postMenu(post: Post, returnTo?: string): Promise<PostMenuResult>;
   userMenu(user: UserProfile): Promise<UserMenuResult>;
+  /** Модератор: фишки покера человеку; → новый счёт или null. */
+  chips(user: { id: number; username: string | null; name: string }): Promise<number | null>;
 } {
   const session = useSession();
   // Меню ждут ответов пользователя — читаем самую свежую сессию, а не ту, что была при создании.
@@ -180,6 +186,45 @@ export function useSocialActions(): {
       emit({ type: 'moderated', target: body.target, action: body.action });
       if (done) toast(done);
       return true;
+    };
+
+    /**
+     * Модератор: начислить или снять фишки покера (CONTRACT.md §I.12) — быстрые суммы, своя сумма или «Снять…».
+     * → новый счёт человека или null (отменили, ошибка).
+     */
+    const chips = async (user: { id: number; username: string | null; name: string }): Promise<number | null> => {
+      const who = user.username ? '@' + user.username : user.name;
+      const pick = await chooseAction({
+        title: 'Фишки — ' + who,
+        actions: [
+          ...CHIP_STEPS.map((n) => ({ id: String(n), label: '+' + fmtN(n) })),
+          { id: 'custom', label: 'Другая сумма…' },
+          { id: 'take', label: 'Снять…', role: 'destructive' as const },
+          { id: 'cancel', label: 'Отмена', role: 'cancel' as const },
+        ],
+      });
+      if (!pick || pick === 'cancel') return null;
+      let amount = Number(pick);
+      if (pick === 'custom' || pick === 'take') {
+        const t = await promptText({
+          title: pick === 'take' ? 'Сколько снять' : 'Сколько начислить', placeholder: 'Например: 2000',
+          confirm: pick === 'take' ? 'Снять' : 'Начислить', required: true, maxLength: 9,
+        });
+        if (t === null) return null;
+        const n = Number(t.replace(/[\s\u00a0]/g, ''));
+        if (!Number.isInteger(n) || n <= 0 || n > 1_000_000) { toast('Нужно целое число от 1 до 1 000 000', { kind: 'error' }); return null; }
+        amount = pick === 'take' ? -n : n;
+      }
+      if (!Number.isInteger(amount) || !amount) return null;
+      try {
+        const total = await socialApi.adminChips(user.id, amount);
+        toast((amount > 0 ? 'Начислено +' : 'Снято −') + fmtN(Math.abs(amount)) + ' · теперь ' + fmtN(total));
+        emit({ type: 'moderated', target: { type: 'user', id: user.id }, action: 'chips' });
+        return total;
+      } catch (e) {
+        fail(e);
+        return null;
+      }
     };
 
     /** «Ограничить…»: срок, затем причина. */
@@ -310,6 +355,7 @@ export function useSocialActions(): {
         actions.push({ id: 'mod-reset', label: 'Сбросить профиль…' });
         actions.push({ id: 'mod-badge', label: user.badge ? 'Изменить значок…' : 'Выдать значок…' });
       }
+      if (me?.isAdmin) actions.push({ id: 'mod-chips', label: 'Фишки…' });   // и себе
 
       const pick = await chooseAction({ actions });
       const target: ReportTarget = { type: 'user', id: user.id };
@@ -344,11 +390,13 @@ export function useSocialActions(): {
           if (badge === undefined || badge === (user.badge || null)) return null;
           return (await moderate({ action: 'badge', target, badge }, badge ? 'Значок выдан' : 'Значок убран')) ? 'moderated' : null;
         }
+        case 'mod-chips':
+          return (await chips(user)) !== null ? 'moderated' : null;
         default:
           return null;
       }
     };
 
-    return { report, block, unblock, hideLocally, copyLink, share, postMenu, userMenu };
+    return { report, block, unblock, hideLocally, copyLink, share, postMenu, userMenu, chips };
   }, []);
 }

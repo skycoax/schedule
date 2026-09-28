@@ -160,7 +160,7 @@ export interface MePatch {
 export interface ReportBody { target: 'post' | 'user' | 'instant'; id: number; reason: ReportReason; note?: string }
 
 export type ReportTarget = { type: 'post'; id: number } | { type: 'user'; id: number } | { type: 'instant'; id: number };
-export type AdminAction = 'dismiss' | 'hide' | 'unhide' | 'delete' | 'ban' | 'unban' | 'reset' | 'badge';
+export type AdminAction = 'dismiss' | 'hide' | 'unhide' | 'delete' | 'ban' | 'unban' | 'reset' | 'badge' | 'chips';
 export type ResetField = 'avatar' | 'bio' | 'links' | 'name';
 export interface AdminActionBody {
   action: AdminAction;
@@ -170,6 +170,7 @@ export interface AdminActionBody {
   hidePosts?: boolean;
   fields?: ResetField[];
   badge?: UserBadge | null;
+  amount?: number;              // chips: сколько фишек начислить (< 0 — снять)
 }
 /** Снимок цели на момент первой жалобы. */
 export interface ReportSnapshot {
@@ -244,6 +245,7 @@ export interface AdminUser {
   signup: { host: string; device: string };
   rulesAt: string | null; lastLoginAt: string | null; loginCount: number; lastSeen: string | null;
   sessions: number; devices: string[];
+  chips?: number | null;        // фишки покера; null — стол не открывал
 }
 export interface AdminUsersStats { total: number; today: number; week: number; active: number; noProfile: number; banned: number }
 export interface AdminUsersPage { items: AdminUser[]; next: string | null; stats: AdminUsersStats | null }
@@ -255,6 +257,14 @@ export interface AuditItem {
 // ─── Покер (/api/social/games, CONTRACT.md §I): один общий стол на всю Para, техасский холдем на игровые фишки ───
 
 export type GameReaction = 'wave' | 'like' | 'wow' | 'lol' | 'fire' | 'deal';
+/** Стикеры чата стола (server/src/social/poker-table.js STICKERS, фронт — game/stickers.tsx). */
+export type PokerSticker = 'gg' | 'allin' | 'fire' | 'lol' | 'cry' | 'cool' | 'think' | 'shock' | 'angry' | 'love' | 'clap'
+  | 'crown' | 'money' | 'bluff' | 'skull' | 'lucky';
+/** Строка чата стола: сообщение или стикер; bot — от Para; at — время сервера (мс). */
+export interface PokerChatItem {
+  id: number; at: number; seat: number; bot: boolean; user: UserCard | null;
+  text: string | null; sticker: PokerSticker | null;
+}
 /** Друг зовёт в покер (at — когда позвал: время сервера, ms или ISO). */
 export interface GameInvite { from: UserCard; at: number | string }
 /** Карта: ранг A K Q J T 9 8 7 6 5 4 3 2 и масть s h d c — 'As', 'Td'; чужая закрытая — '?'. */

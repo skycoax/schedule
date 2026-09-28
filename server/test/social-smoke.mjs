@@ -1317,6 +1317,7 @@ async function runMain() {
   await runGame(st, boss, guest, limitsOn);
   await runLive(boss, guest);
   await runPush(guest);
+  await runChat(boss, guest);
   if (!limitsOn) console.log('     внимание: прогон A должен идти с включёнными пределами (без SOCIAL_RATE_LIMITS=off)');
 }
 
@@ -1494,6 +1495,101 @@ async function runPush(guest) {
     ok('уведомления: переключатели на сервере (выключил «Ответы» — не приходит, включил — приходит); после выхода с устройства — не приходит');
   } finally {
     svc.close();
+  }
+}
+
+// ═══════════════ Чат стола и стикеры, фишки от модератора (CONTRACT.md §I.11, §I.12) ═══════════════
+
+async function runChat(boss, guest) {
+  const X = await gamer('ca', `Чат А ${RUN}`);
+  const Y = await gamer('cb', `Чат Б ${RUN}`);
+  const say = (u, json) => gcall(u, 'POST', '/chat', { json });
+
+  // 1. Не за столом — 409; гость — 401; поля.
+  expect(await say(X, { text: 'Привет' }), 409, 'чат не за столом', 'conflict', 'Писать в чат могут те, кто за столом');
+  expect(await say(null, { text: 'Привет' }), 401, 'чат гостю', 'auth');
+  expect(await paced(() => gcall(X, 'POST', '/sit')), 200, 'X садится');
+  const stopX = keep(X);
+  X.auto = passive;
+  try {
+    bad(await say(X, { sticker: 'nope' }), 'чат: неизвестный стикер', undefined, 'sticker');
+    bad(await say(X, { text: '   ' }), 'чат: пусто', 'Напиши сообщение', 'text');
+    bad(await say(X, { text: 'смотри https://example.com' }), 'чат: ссылка', 'Ссылки в чате стола нельзя', 'text');
+    bad(await say(X, { text: 'я'.repeat(121) }), 'чат: длинно', 'Не длиннее 120 символов', 'text');
+    ok('чат стола: не за столом — 409, гостю — 401; стикер из списка, текст без ссылок, до 120 символов');
+
+    // 2. Сообщение и стикер: ответ — строка автору; гостю в поток — chat с тем же id; история — всем.
+    const g = await stream(null);
+    await g.wait('hello');
+    const m1 = expect(await say(X, { text: `  Привет,   стол ${RUN}  ` }), 200, 'чат: текст').item;
+    assert.equal(m1.text, `Привет, стол ${RUN}`);
+    assert.equal(m1.sticker, null);
+    assert.equal(m1.bot, false);
+    assert.equal(m1.user.id, X.me.id);
+    assert.ok(Number.isInteger(m1.seat) && Number.isInteger(m1.id) && Number.isInteger(m1.at));
+    const e1 = await g.wait('chat', (d) => d.item && d.item.id === m1.id);
+    assert.equal(e1.item.text, m1.text);
+    assert.equal(e1.item.user.uni, null, 'гостю — карточка без «мой вуз»');
+    const m2 = expect(await say(X, { sticker: 'fire' }), 200, 'чат: стикер').item;
+    assert.equal(m2.sticker, 'fire');
+    assert.equal(m2.text, null);
+    await g.wait('chat', (d) => d.item && d.item.id === m2.id);
+    g.close();
+    const hist = expect(await call(guest, 'GET', G + '/chat', { headers: { 'X-Para': '1' } }), 200, 'история чата гостю').items;
+    assert.ok(hist.some((x) => x.id === m1.id) && hist.some((x) => x.id === m2.id), 'в истории оба');
+    ok('чат стола: текст (очищен) и стикер — ответ автору, событие chat всем потокам (гостю — без «мой вуз»), история');
+
+    // 3. Блокировка: тот, кто заблокировал автора, его сообщений не видит (ни в истории, ни в потоке).
+    expect(await call(Y.jar, 'PUT', `/api/social/blocks/${X.me.id}`, { json: {}, headers: W }), 200, 'Y блокирует X');
+    const yHist = expect(await gcall(Y, 'GET', '/chat'), 200, 'история Y').items;
+    assert.ok(!yHist.some((x) => x.user && x.user.id === X.me.id), 'Y не видит X');
+    const sy = await stream(Y);
+    await sy.wait('hello');
+    const m3 = expect(await say(X, { text: 'Это Y не увидит' }), 200, 'чат: ещё').item;
+    await none(sy, 'chat', (d) => d.item && d.item.id === m3.id, 400, 'заблокированному');
+    sy.close();
+    expect(await call(Y.jar, 'DELETE', `/api/social/blocks/${X.me.id}`, { json: {}, headers: W }), 200, 'Y разблокирует X');
+    ok('чат стола: заблокировавший автора не видит его сообщений — ни в истории, ни в потоке');
+
+    // 4. Предел: 8 подряд, дальше — 429 с retryAfter.
+    let limited = null;
+    for (let i = 0; i < 10 && !limited; i++) {
+      const r = await say(X, { sticker: 'gg' });
+      if (r.status === 429) limited = r;
+      else expect(r, 200, 'чат: подряд');
+    }
+    assert.ok(limited, 'чат: предел частоты');
+    assert.ok(Number(limited.json.retryAfter) >= 1, 'retryAfter');
+    ok('чат стола: предел частоты — 429 с retryAfter');
+
+    // 5. Фишки от модератора: только модератору; сумма — целое ≠ 0 до 1 000 000; человеку — chips в поток живых
+    //    обновлений; меньше нуля не бывает; в списке пользователей — фишки.
+    const chipsOf = (u, amount) => call(u.jar, 'POST', '/api/social/admin/action',
+      { json: { action: 'chips', target: { type: 'user', id: Y.me.id }, amount }, headers: W });
+    expect(await chipsOf(X, 500), 403, 'фишки не модератором', 'forbidden');
+    bad(await chipsOf(boss, 0), 'фишки: 0', undefined, 'amount');
+    bad(await chipsOf(boss, 1.5), 'фишки: дробь', undefined, 'amount');
+    bad(await chipsOf(boss, 1_000_001), 'фишки: много', undefined, 'amount');
+    const [ly] = await lives(Y);
+    const c1 = expect(await chipsOf(boss, 1500), 200, 'фишки +1500').chips;
+    assert.equal(c1, 2500, 'стола не открывал: 1000 + 1500');
+    const ev = await ly.wait('chips');
+    assert.deepEqual(ev, { amount: 1500, chips: 2500 });
+    const c2 = expect(await chipsOf(boss, -1_000_000), 200, 'фишки −1 000 000').chips;
+    assert.equal(c2, 0, 'меньше нуля не бывает');
+    ly.close();
+    const row = expect(await call(boss.jar, 'GET', `/api/social/admin/users?q=${encodeURIComponent('@' + Y.me.username)}`), 200, 'админка').items[0];
+    assert.equal(row.chips, 0, 'в списке пользователей — фишки');
+    // За столом (X сидит): стек меняется — сразу или после раздачи.
+    const before = (await tableOf(X)).me.chips;
+    const cx = expect(await call(boss.jar, 'POST', '/api/social/admin/action',
+      { json: { action: 'chips', target: { type: 'user', id: X.me.id }, amount: 700 }, headers: W }), 200, 'фишки сидящему').chips;
+    assert.ok(cx >= 700, 'банкролл вырос: ' + cx);
+    await until(X, (v) => v.me && v.me.chips >= before + 700 - 200, { what: 'стек сидящего вырос' });
+    ok('фишки от модератора: 403 не модератору, сумма 1…1 000 000 (±), живое событие chips, пол — 0, в админке, сидящему — в стек');
+  } finally {
+    stopX();
+    await paced(() => gcall(X, 'POST', '/stand'));
   }
 }
 

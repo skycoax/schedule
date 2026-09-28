@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { SseStream } from '../lib/sse';
 import type { SseStatus } from '../lib/sse';
-import type { GameReaction, PokerView } from '../social/types';
+import type { GameReaction, PokerChatItem, PokerView } from '../social/types';
 
 export type StreamStatus = SseStatus;
 
@@ -12,6 +12,7 @@ export interface StreamHandlers {
   resync(): void;
   table(v: PokerView): void;
   react(seat: number, r: GameReaction): void;
+  chat(item: PokerChatItem): void;
   ended(reason: 'session' | 'ban'): void;
   poll(): Promise<boolean>;
 }
@@ -32,6 +33,10 @@ export function useGameStream(url: string, enabled: boolean, handlers: StreamHan
         if (v && typeof v === 'object') { s.clock((v as PokerView).now); h.current.table(v as PokerView); }
       },
       react: (d) => { if (typeof d.seat === 'number' && typeof d.r === 'string') h.current.react(d.seat, d.r as GameReaction); },
+      chat: (d) => {
+        const it = d.item as PokerChatItem | undefined;
+        if (it && typeof it.id === 'number' && typeof it.seat === 'number') h.current.chat(it);
+      },
     },
   }), { pollMs: 2000 }));
   const [status, setStatus] = useState<StreamStatus>(s.status);

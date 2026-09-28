@@ -394,6 +394,13 @@ export const socialApi = {
     await call<null>('POST', '/api/social/admin/action', { body: b });
   },
 
+  /** Модератор начисляет (amount > 0) или снимает фишки покера; → новый счёт человека. */
+  async adminChips(userId: number, amount: number): Promise<number> {
+    return (await call<{ chips: number }>('POST', '/api/social/admin/action', {
+      body: { action: 'chips', target: { type: 'user', id: userId }, amount },
+    })).chips;
+  },
+
   adminStats(signal?: AbortSignal): Promise<AdminStats> {
     return call<AdminStats>('GET', '/api/social/admin/stats', { signal });
   },

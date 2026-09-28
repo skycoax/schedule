@@ -1,0 +1,169 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   Стикеры чата стола (stickers.tsx). Размер — --stk; частицы — в долях --stk (переменные --x, --y, --d… у каждой).
+   Порядок: свечение, частицы (поверх), сам эмодзи или надпись. Сначала «выпрыгивает» (пружина), потом живёт своим
+   ритмом 1,5–2 с. Только transform и opacity.
+   ───────────────────────────────────────────────────────────────────────── */
+
+.stk{position:relative;display:inline-grid;place-items:center;flex:none;width:var(--stk);height:var(--stk);--glow:rgba(255,255,255,.16);
+  -webkit-user-select:none;user-select:none}
+.stk > *{grid-area:1/1}
+.stk__g{position:relative;z-index:1;display:block;font-size:calc(var(--stk)*.7);line-height:1;transform-origin:50% 62%;
+  font-family:'Apple Color Emoji','Segoe UI Emoji','Noto Color Emoji',sans-serif;
+  filter:drop-shadow(0 calc(var(--stk)*.045) calc(var(--stk)*.08) rgba(0,0,0,.45))}
+.stk__glow{width:92%;height:92%;border-radius:50%;opacity:0;
+  background:radial-gradient(circle,var(--glow) 0%,transparent 66%)}
+.stk.is-play .stk__glow{animation:stk-glow 1.9s ease-out both}
+.stk__fx{position:relative;z-index:2;width:0;height:0;align-self:center;justify-self:center}
+.stk-p{position:absolute;left:0;top:0;display:block;font-style:normal;opacity:0;pointer-events:none;will-change:transform,opacity}
+
+/* Надписи: GG и ОЛЛ-ИН. */
+.stk__txt{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;font-weight:900;line-height:.9;
+  letter-spacing:-.03em;font-size:calc(var(--stk)*.46);
+  background:linear-gradient(180deg,#fff7cf 0%,#ffd60a 46%,#ff9f0a 100%);-webkit-background-clip:text;background-clip:text;color:transparent;
+  filter:drop-shadow(0 calc(var(--stk)*.028) 0 rgba(122,56,0,.7)) drop-shadow(0 calc(var(--stk)*.06) calc(var(--stk)*.1) rgba(0,0,0,.5))}
+.stk--allin .stk__txt{font-size:calc(var(--stk)*.21);font-style:italic;letter-spacing:0;
+  background-image:linear-gradient(180deg,#fff 0%,#ffb340 42%,#ff375f 100%)}
+.stk__chips{position:relative;display:block;width:calc(var(--stk)*.36);height:calc(var(--stk)*.3);margin-bottom:calc(var(--stk)*.05)}
+.stk__chips b{position:absolute;left:0;right:0;height:calc(var(--stk)*.12);border-radius:50%;
+  background:radial-gradient(ellipse at 50% 50%,#ff375f 0 32%,#fff 33% 41%,#ff375f 42% 100%);
+  box-shadow:0 calc(var(--stk)*.022) 0 #9d0024,inset 0 0 0 1.5px rgba(255,255,255,.85)}
+.stk__chips b:nth-child(1){bottom:0}
+.stk__chips b:nth-child(2){bottom:calc(var(--stk)*.075)}
+.stk__chips b:nth-child(3){bottom:calc(var(--stk)*.15)}
+
+/* ─── Движение самого стикера ─── */
+.stk.is-play .stk__g{animation:stk-pop 560ms cubic-bezier(.34,1.56,.64,1) both}
+.stk--fire.is-play .stk__g{animation:stk-pop 560ms cubic-bezier(.34,1.56,.64,1) both,stk-flicker 380ms ease-in-out 560ms 5 alternate}
+.stk--lol.is-play .stk__g{animation:stk-pop 560ms cubic-bezier(.34,1.56,.64,1) both,stk-rock 260ms ease-in-out 560ms 7 alternate}
+.stk--cry.is-play .stk__g{animation:stk-pop 560ms cubic-bezier(.34,1.56,.64,1) both,stk-sob 340ms ease-in-out 560ms 6 alternate}
+.stk--cool.is-play .stk__g{animation:stk-drop 760ms cubic-bezier(.3,1.45,.5,1) both,stk-nod 700ms ease-in-out 1300ms 1}
+.stk--think.is-play .stk__g{animation:stk-pop 560ms cubic-bezier(.34,1.56,.64,1) both,stk-tilt 800ms ease-in-out 560ms 2 alternate}
+.stk--shock.is-play .stk__g{animation:stk-zoom 480ms cubic-bezier(.34,1.56,.64,1) both,stk-shake 80ms linear 480ms 12 alternate}
+.stk--angry.is-play .stk__g{animation:stk-pop 560ms cubic-bezier(.34,1.56,.64,1) both,stk-shake 100ms linear 560ms 10 alternate}
+.stk--love.is-play .stk__g{animation:stk-pop 560ms cubic-bezier(.34,1.56,.64,1) both,stk-beat 720ms ease-in-out 560ms 2}
+.stk--clap.is-play .stk__g{animation:stk-pop 480ms cubic-bezier(.34,1.56,.64,1) both,stk-clap 190ms ease-in-out 500ms 8 alternate}
+.stk--crown.is-play .stk__g{animation:stk-fall 820ms cubic-bezier(.3,1.5,.5,1) both,stk-hover 900ms ease-in-out 820ms 2 alternate}
+.stk--money.is-play .stk__g{animation:stk-pop 560ms cubic-bezier(.34,1.56,.64,1) both,stk-jiggle 240ms ease-in-out 560ms 6 alternate}
+.stk--bluff.is-play .stk__g{animation:stk-pop 560ms cubic-bezier(.34,1.56,.64,1) both,stk-sly 1300ms ease-in-out 560ms 1}
+.stk--skull.is-play .stk__g{animation:stk-pop 520ms cubic-bezier(.34,1.56,.64,1) both,stk-rattle 70ms linear 540ms 14 alternate}
+.stk--lucky.is-play .stk__g{animation:stk-spinin 950ms cubic-bezier(.2,.9,.3,1.15) both,stk-hover 800ms ease-in-out 950ms 2 alternate}
+.stk--gg.is-play .stk__txt{animation:stk-stamp 540ms cubic-bezier(.34,1.56,.64,1) both,stk-pulse 520ms ease-in-out 700ms 3 alternate}
+.stk--allin.is-play .stk__txt{animation:stk-slam 480ms cubic-bezier(.2,1.35,.4,1) both,stk-pulse 420ms ease-in-out 800ms 3 alternate}
+.stk--allin.is-play .stk__chips b{animation:stk-chipin 420ms cubic-bezier(.34,1.56,.64,1) 260ms both}
+.stk--allin.is-play .stk__chips b:nth-child(2){animation-delay:340ms}
+.stk--allin.is-play .stk__chips b:nth-child(3){animation-delay:420ms}
+
+.stk--fire{--glow:rgba(255,159,10,.42)}
+.stk--angry{--glow:rgba(255,69,58,.45)}
+.stk--love{--glow:rgba(255,55,95,.4)}
+.stk--gg,.stk--crown,.stk--money{--glow:rgba(255,214,10,.36)}
+.stk--allin{--glow:rgba(255,55,95,.36)}
+.stk--cry,.stk--lol{--glow:rgba(100,210,255,.32)}
+.stk--lucky{--glow:rgba(48,209,88,.36)}
+.stk--cool{--glow:rgba(100,210,255,.28)}
+
+@keyframes stk-glow{0%{opacity:0;transform:scale(.4)}30%{opacity:1;transform:scale(1.05)}100%{opacity:0;transform:scale(1.2)}}
+@keyframes stk-pop{0%{opacity:0;transform:scale(.2) rotate(-14deg)}55%{opacity:1}100%{opacity:1;transform:none}}
+@keyframes stk-zoom{0%{opacity:0;transform:scale(.3)}60%{opacity:1;transform:scale(1.22)}100%{opacity:1;transform:scale(1.08)}}
+@keyframes stk-flicker{0%{transform:scale(1,1) skewX(0)}50%{transform:scale(.95,1.09) skewX(-4deg)}100%{transform:scale(1.04,.96) skewX(3deg)}}
+@keyframes stk-rock{from{transform:rotate(-13deg) translateY(0)}to{transform:rotate(13deg) translateY(-4%)}}
+@keyframes stk-sob{from{transform:translateY(0) scale(1)}to{transform:translateY(5%) scale(1.04,.94)}}
+@keyframes stk-drop{0%{opacity:0;transform:translateY(-75%) rotate(-32deg) scale(.6)}55%{opacity:1}100%{opacity:1;transform:none}}
+@keyframes stk-nod{0%,100%{transform:none}40%{transform:rotate(-7deg) translateY(2%)}70%{transform:rotate(3deg)}}
+@keyframes stk-tilt{from{transform:rotate(-11deg) translateX(0)}to{transform:rotate(6deg) translateX(-4%)}}
+@keyframes stk-shake{from{translate:-4% 0}to{translate:4% 0}}
+@keyframes stk-beat{0%,100%{transform:scale(1)}14%{transform:scale(1.22)}28%{transform:scale(.98)}42%{transform:scale(1.14)}70%{transform:scale(1)}}
+@keyframes stk-clap{from{transform:scale(1) rotate(0)}to{transform:scale(.82) rotate(-9deg)}}
+@keyframes stk-fall{0%{opacity:0;transform:translateY(-95%) rotate(-24deg)}55%{opacity:1;transform:translateY(5%) rotate(5deg)}78%{transform:translateY(-3%) rotate(-2deg)}100%{opacity:1;transform:none}}
+@keyframes stk-hover{from{transform:translateY(0)}to{transform:translateY(-5%) rotate(2deg)}}
+@keyframes stk-jiggle{from{transform:rotate(-9deg) scale(1)}to{transform:rotate(9deg) scale(1.06)}}
+@keyframes stk-sly{0%,100%{transform:none}30%,70%{transform:rotate(-12deg) translateX(-5%) scale(1.06)}}
+@keyframes stk-rattle{from{transform:rotate(-9deg)}to{transform:rotate(9deg)}}
+@keyframes stk-spinin{0%{opacity:0;transform:rotate(-560deg) scale(.1)}60%{opacity:1}100%{opacity:1;transform:none}}
+@keyframes stk-stamp{0%{opacity:0;transform:scale(2.4) rotate(-8deg)}60%{opacity:1}100%{opacity:1;transform:none}}
+@keyframes stk-slam{0%{opacity:0;transform:translateX(-70%) skewX(-22deg)}60%{opacity:1;transform:translateX(6%) skewX(8deg)}100%{opacity:1;transform:none}}
+@keyframes stk-pulse{from{transform:scale(1)}to{transform:scale(1.08)}}
+@keyframes stk-chipin{from{opacity:0;transform:translateY(-140%) scale(.8)}}
+
+/* ─── Частицы ─── */
+.stk-conf{width:calc(var(--stk)*var(--w));height:calc(var(--stk)*var(--w)*1.7);margin:calc(var(--stk)*var(--w)*-.85) 0 0 calc(var(--stk)*var(--w)*-.5);
+  border-radius:2px;background:var(--c);animation:stk-conf 1.5s cubic-bezier(.15,.7,.35,1) var(--d) both}
+@keyframes stk-conf{0%{opacity:0;transform:translate(0,0) rotate(0) scale(.4)}12%{opacity:1}
+  62%{opacity:1;transform:translate(calc(var(--x)*var(--stk)),calc(var(--y)*var(--stk))) rotate(var(--r)) scale(1)}
+  100%{opacity:0;transform:translate(calc(var(--x)*var(--stk)),calc((var(--y) + .38)*var(--stk))) rotate(calc(var(--r)*2)) scale(.9)}}
+
+.stk-line{top:calc(var(--y)*var(--stk));left:calc(var(--stk)*-.66);width:calc(var(--stk)*var(--l));height:calc(var(--stk)*.024);
+  border-radius:9px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.95));animation:stk-streak 620ms ease-out var(--d) 2 both}
+@keyframes stk-streak{0%{opacity:0;transform:translateX(-35%) scaleX(.3)}30%{opacity:.9}100%{opacity:0;transform:translateX(45%) scaleX(1)}}
+
+.stk-ember{width:calc(var(--stk)*var(--s));height:calc(var(--stk)*var(--s));margin:calc(var(--stk)*var(--s)*-.5);border-radius:50%;
+  background:var(--c);box-shadow:0 0 calc(var(--stk)*.06) var(--c);animation:stk-rise 1.05s ease-out var(--d) 2 both}
+@keyframes stk-rise{0%{opacity:0;transform:translate(0,calc(var(--stk)*.2)) scale(1)}20%{opacity:1}
+  100%{opacity:0;transform:translate(calc(var(--x)*var(--stk)),calc(var(--y)*var(--stk))) scale(.3)}}
+
+.stk-drop,.stk-tear{border-radius:50% 50% 50% 50%/62% 62% 38% 38%}
+.stk-drop{width:calc(var(--stk)*.075);height:calc(var(--stk)*.105);margin:calc(var(--stk)*-.05);
+  background:linear-gradient(#d7f3ff,#45b4ff);animation:stk-fly 720ms cubic-bezier(.2,.6,.4,1) var(--d) both}
+@keyframes stk-fly{0%{opacity:0;transform:translate(0,calc(var(--stk)*-.04)) rotate(var(--r)) scale(.4)}25%{opacity:1}
+  100%{opacity:0;transform:translate(calc(var(--x)*var(--stk)),calc((var(--y) + .28)*var(--stk))) rotate(var(--r)) scale(1)}}
+.stk-tear{width:calc(var(--stk)*.065);height:calc(var(--stk)*.095);margin:calc(var(--stk)*-.045);
+  background:linear-gradient(#e2f6ff,#34a3ff);animation:stk-tear 640ms ease-in var(--d) both}
+@keyframes stk-tear{0%{opacity:0;transform:translate(calc(var(--x)*var(--stk)),calc(var(--stk)*-.02)) scale(.5)}15%{opacity:1}
+  100%{opacity:0;transform:translate(calc((var(--x) + var(--sx))*var(--stk)),calc(var(--stk)*.56)) scale(1.05)}}
+
+.stk-shine{left:calc(var(--stk)*-.34);top:calc(var(--stk)*-.36);width:calc(var(--stk)*.68);height:calc(var(--stk)*.68);border-radius:50%;
+  overflow:hidden;opacity:1}
+.stk-shine::after{content:'';position:absolute;top:-25%;bottom:-25%;left:-45%;width:30%;transform:skewX(-20deg);
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.8),transparent);animation:stk-sweep 760ms ease-in-out 1000ms both}
+@keyframes stk-sweep{to{left:125%}}
+
+.stk-star{font-size:calc(var(--stk)*var(--s));line-height:1;color:#fff;
+  text-shadow:0 0 calc(var(--stk)*.05) #fff,0 0 calc(var(--stk)*.1) rgba(255,214,10,.9);
+  transform:translate(calc(var(--x)*var(--stk) - 50%),calc(var(--y)*var(--stk) - 50%));animation:stk-twinkle 640ms ease-in-out var(--d) both}
+.stk-star--tw{animation-iteration-count:2}
+@keyframes stk-twinkle{0%,100%{opacity:0;scale:.2;rotate:-30deg}50%{opacity:1;scale:1;rotate:0deg}}
+
+.stk-cloud{width:calc(var(--stk)*.4);height:calc(var(--stk)*.2);border-radius:calc(var(--stk)*.1);background:rgba(255,255,255,.94);
+  box-shadow:0 calc(var(--stk)*.02) calc(var(--stk)*.06) rgba(0,0,0,.3);
+  transform:translate(calc(var(--stk)*.14),calc(var(--stk)*-.6));animation:stk-cloud 360ms cubic-bezier(.34,1.56,.64,1) 420ms both}
+.stk-cloud::before,.stk-cloud::after{content:'';position:absolute;border-radius:50%;background:rgba(255,255,255,.94)}
+.stk-cloud::before{width:calc(var(--stk)*.07);height:calc(var(--stk)*.07);left:calc(var(--stk)*.02);bottom:calc(var(--stk)*-.07)}
+.stk-cloud::after{width:calc(var(--stk)*.04);height:calc(var(--stk)*.04);left:calc(var(--stk)*-.02);bottom:calc(var(--stk)*-.12)}
+@keyframes stk-cloud{0%{opacity:0;scale:.3}100%{opacity:1;scale:1}}
+.stk-dot{width:calc(var(--stk)*.055);height:calc(var(--stk)*.055);border-radius:50%;background:#2c2c2e;
+  transform:translate(calc(var(--stk)*(.21 + var(--i)*.1)),calc(var(--stk)*-.527));animation:stk-blink 480ms ease-in-out calc(760ms + var(--d)) 3 both}
+@keyframes stk-blink{0%,100%{opacity:.25}50%{opacity:1}}
+
+.stk-ray{width:calc(var(--stk)*.028);height:calc(var(--stk)*var(--l));margin-left:calc(var(--stk)*-.014);border-radius:9px;background:#fff;
+  transform-origin:50% 0;rotate:var(--a);animation:stk-ray 520ms ease-out var(--d) both}
+.stk-ray--clap{background:#ffd60a}
+@keyframes stk-ray{0%{opacity:0;transform:translateY(calc(var(--stk)*.3)) scaleY(.2)}40%{opacity:1}
+  100%{opacity:0;transform:translateY(calc(var(--stk)*.54)) scaleY(1)}}
+
+.stk-puff{width:calc(var(--stk)*var(--s));height:calc(var(--stk)*var(--s));margin:calc(var(--stk)*var(--s)*-.5);border-radius:50%;
+  background:radial-gradient(circle at 40% 40%,#fff,rgba(225,225,232,.8) 58%,rgba(210,210,220,0) 71%);animation:stk-puff 900ms ease-out var(--d) both}
+@keyframes stk-puff{0%{opacity:0;transform:translate(calc(var(--x)*var(--stk)),calc(var(--y)*var(--stk))) scale(.3)}25%{opacity:.95}
+  100%{opacity:0;transform:translate(calc((var(--x) + var(--dx))*var(--stk)),calc((var(--y) - .32)*var(--stk))) scale(1.45)}}
+
+.stk-heart,.stk-bill,.stk-echo{line-height:1;font-size:calc(var(--stk)*var(--s,.2));
+  font-family:'Apple Color Emoji','Segoe UI Emoji','Noto Color Emoji',sans-serif}
+.stk-heart{animation:stk-float 1.3s ease-out var(--d) both}
+@keyframes stk-float{0%{opacity:0;transform:translate(-50%,0) scale(.4)}20%{opacity:1}
+  100%{opacity:0;transform:translate(calc(var(--x)*var(--stk) - 50%),calc(var(--y)*var(--stk))) rotate(var(--r)) scale(1)}}
+.stk-bill{animation:stk-toss 1.25s cubic-bezier(.2,.7,.4,1) var(--d) both}
+@keyframes stk-toss{0%{opacity:0;transform:translate(-50%,-50%) scale(.3)}20%{opacity:1}
+  60%{opacity:1;transform:translate(calc(var(--x)*var(--stk) - 50%),calc(var(--y)*var(--stk))) rotate(var(--r)) scale(1)}
+  100%{opacity:0;transform:translate(calc(var(--x)*var(--stk)*1.2 - 50%),calc((var(--y) + .55)*var(--stk))) rotate(calc(var(--r)*2)) scale(.9)}}
+.stk-mark{font-size:calc(var(--stk)*.26);font-weight:800;line-height:1;color:#fff;text-shadow:0 2px 6px rgba(0,0,0,.45);
+  animation:stk-q 620ms cubic-bezier(.34,1.56,.64,1) var(--d) both}
+@keyframes stk-q{0%{opacity:0;transform:translate(calc(var(--x)*var(--stk)),calc(var(--y)*var(--stk) + 12%)) rotate(var(--r)) scale(.3)}
+  100%{opacity:1;transform:translate(calc(var(--x)*var(--stk)),calc(var(--y)*var(--stk))) rotate(var(--r)) scale(1)}}
+.stk-echo{--s:.7;filter:blur(1px);animation:stk-ghost 900ms ease-out var(--d) both}
+@keyframes stk-ghost{0%{opacity:.5;transform:translate(-50%,-50%) scale(1)}100%{opacity:0;transform:translate(-50%,-115%) scale(1.3)}}
+
+@media (prefers-reduced-motion:reduce){
+  .stk.is-play .stk__g,.stk.is-play .stk__txt{animation:stk-fade 260ms ease-out both}
+  .stk.is-play .stk__glow,.stk--allin.is-play .stk__chips b{animation:none}
+  .stk__fx{display:none}
+}
+@keyframes stk-fade{from{opacity:0}}

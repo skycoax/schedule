@@ -83,7 +83,7 @@ server/src/social/
   limits.js      ведёрки частоты (в памяти) и дневные пределы (по базе)
   jobs.js        уборка: входы, баны, фото-сироты, сессии, сроки хранения, копия базы
   db.js          social.db и схема (PRAGMA user_version)
-  game.js        «Покер»: маршруты /api/social/games (стол, сесть, встать, ход, реакция, поток, позвать друга) — один общий стол Para
+  game.js        «Покер»: маршруты /api/social/games (стол, сесть, встать, ход, реакция, чат и стикеры, поток, позвать друга) — один общий стол Para
   poker-table.js стол в памяти: места, раздача, таймеры (ход, бот, улицы, паузы), присутствие, view каждому зрителю,
                  sit/stand/act/react/kick; стек и счёт людей — в poker_players
   poker-logic.js карты без стола: колода (crypto), evaluate7, compare, handName, sidePots, формула Чена
@@ -98,7 +98,7 @@ server/test/social-smoke.mjs   дымовой тест всех маршруто
 server/test/social-seed.mjs    наполнение для разработки (alice, bob, mia до 18, boss — модератор)
 server/test/poker-logic.test.mjs  карты, банки, Чен, бот всегда ходит по правилам (node --test)
 server/test/push.test.mjs         тексты уведомлений об изменениях пар (node --test)
-web/src/game/                  «Покер» в приложении: вход по 5 касаниям часов (entry.ts), стол, поток
+web/src/game/                  «Покер» в приложении: вход по 5 касаниям часов (entry.ts), стол, поток, чат и стикеры (Chat.tsx, stickers.tsx)
 ```
 
 Данные: `data/social.db` (одна база на все вузы), `data/media/` (фото), `data/backup/` (копии базы за 7 дней).

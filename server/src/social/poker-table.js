@@ -9,14 +9,17 @@
 // сам и до ежедневного бонуса (claimBonus, сутки по Ташкенту) не сядет; бот — «дом» и доливается сам.
 // Живые обновления приложения (live.js, §J): число людей за столом — всем живым (players); приглашения друзей
 // в покер (маршруты — game.js) — здесь же, в памяти: сел за стол — приглашение снято.
+// Чат стола и стикеры (§I.11): последние 50 сообщений за 2 часа — только в памяти; бот Para отвечает стикерами.
+// Фишки от модератора (§I.12): grantChips — как бонус: в раздаче — в стек после неё.
 import { randomInt } from 'node:crypto';
 import { social } from '../config.js';
 import { tx, nowIso } from './db.js';
 import { SocialError } from './http.js';
+import { maskProfanity } from './text.js';
 import { rateError } from './limits.js';
 import { newDeck, evaluate7, handName, sidePots, bonusFor, tashkentDay, nextMidnight } from './poker-logic.js';
 import { decide } from './poker-bot.js';
-import { broadcast, sendReact, isLive, streamCount, setStreamHooks } from './game-stream.js';
+import { broadcast, sendReact, sendChat, isLive, streamCount, setStreamHooks } from './game-stream.js';
 import { liveAll, liveThrottle } from './live.js';
 
 export const SEATS = 4;
@@ -42,6 +45,7 @@ export const POKER_TEXT = {
   notSeated: 'Ты не за столом',
   broke: 'Фишки кончились — новые завтра',
   bonusTaken: 'Бонус на сегодня уже получен',
+  chatSeated: 'Писать в чат могут те, кто за столом',
 };
 
 const conflict = (message) => new SocialError(409, 'conflict', message, { field: 'status' });
@@ -458,6 +462,7 @@ function showdown() {
   };
   h.phase = 'showdown';
   setTimer('hand', T.DONE_SHOWDOWN, () => { endHand(); bump(); });
+  botMood();
 }
 
 function finishByFold(w) {
@@ -473,12 +478,13 @@ function finishByFold(w) {
   h.result = { showdown: false, winners: [{ seat: w.seat, amount, name: '', cards: [] }], reveal: [] };
   h.phase = 'done';
   setTimer('hand', T.DONE_FOLD, () => { endHand(); bump(); });
+  botMood();
 }
 
-/** Бонус, забранный во время раздачи, — в стек (в базе он уже есть: claimBonus). */
+/** Бонус (и фишки от модератора), пришедшие во время раздачи, — в стек (в базе они уже есть). Меньше нуля не бывает. */
 function settleBonus(s) {
   if (!s.bonus) return;
-  s.chips += s.bonus;
+  s.chips = Math.max(0, s.chips + s.bonus);
   s.bonus = 0;
 }
 
@@ -660,6 +666,7 @@ export function stand(userId) {
 export function kick(userId) {
   stats.delete(userId);
   kicked.delete(userId);
+  purgeChat(userId);
   const s = seatOf(userId);
   if (!s) return;
   try { leave(s); } catch (err) { log('error', { msg: err && err.message }, 'покер: kick'); }
@@ -675,6 +682,139 @@ export function react(userId, r) {
   touch(userId);
   sendReact(userId, { seat: s.seat, r });
 }
+
+// ─── Чат стола и стикеры (§I.11) ───
+// Пишут те, кто за столом (и ждёт раздачи); видят все, кто смотрит стол (как и сам стол), кроме тех, у кого с автором
+// блокировка. Последние CHAT_KEEP сообщений за CHAT_TTL — в памяти, в базу не пишутся; мат маскируется при выдаче.
+// Ограничение или удаление аккаунта (kick) убирает его сообщения. Бот Para «на азарте» отвечает стикерами: на итог
+// раздачи и изредка на чужой стикер — не чаще раза в BOT_CHAT_GAP.
+
+export const STICKERS = Object.freeze(['gg', 'allin', 'fire', 'lol', 'cry', 'cool', 'think', 'shock', 'angry', 'love', 'clap',
+  'crown', 'money', 'bluff', 'skull', 'lucky']);
+export const CHAT_MAX = 120;              // графем в сообщении
+const CHAT_KEEP = 50;
+const CHAT_TTL = 2 * 3600_000;
+const BOT_CHAT_GAP = 8000;
+const chat = [];                          // { id, at, seat, userId (null — бот), text, sticker }
+let chatSeq = 0;
+let botSaidAt = 0;
+
+const cardOf = (userId) => (userId && deps ? deps.cardsOf([userId]).get(userId) || null : null);
+/** Строка чата зрителю uid (null — гость); null — автора уже нет (аккаунт удалён). */
+function chatOut(m, uid, card) {
+  const user = m.userId ? (card ? (uid === null ? card.guest : card.full) : null) : null;
+  if (m.userId && !user) return null;
+  return { id: m.id, at: m.at, seat: m.seat, bot: !m.userId, user, text: m.text ? maskProfanity(m.text) : null, sticker: m.sticker };
+}
+/** Скрыть от зрителя uid: блокировка с автором (в любую сторону). blocks — пары 'a:b' (deps.blocksAmong). */
+const chatHidden = (m, uid, blocks) => !!(m.userId && uid && uid !== m.userId && blockedPair(blocks, uid, m.userId));
+
+function pushChat(o) {
+  const m = { id: ++chatSeq, at: now(), seat: o.seat, userId: o.userId || null, text: o.text || null, sticker: o.sticker || null };
+  chat.push(m);
+  while (chat.length > CHAT_KEEP) chat.shift();
+  const card = cardOf(m.userId);
+  sendChat((uid) => {
+    if (m.userId && uid && uid !== m.userId && deps && chatHidden(m, uid, deps.blocksAmong([uid, m.userId]))) return null;
+    return chatOut(m, uid, card);
+  });
+  return { m, card };
+}
+
+/** POST /api/social/games/chat: сообщение (text) или стикер (sticker) сидящего userId. → строка чата для него. */
+export function say(userId, { text = null, sticker = null }) {
+  const s = seatOf(userId);
+  if (!s) throw conflict(POKER_TEXT.chatSeated);
+  touch(userId);
+  const { m, card } = pushChat({ seat: s.seat, userId, text, sticker });
+  if (sticker) botAnswer(sticker);
+  return chatOut(m, userId, card);
+}
+
+/** GET /api/social/games/chat: последние сообщения за CHAT_TTL — зрителю uid (null — гость). */
+export function chatFor(uid) {
+  const since = now() - CHAT_TTL;
+  const list = chat.filter((m) => m.at >= since);
+  if (!list.length || !deps) return [];
+  const ids = [...new Set(list.map((m) => m.userId).filter(Boolean))];
+  const cards = ids.length ? deps.cardsOf(ids) : new Map();
+  const blocks = uid && ids.length ? deps.blocksAmong([uid, ...ids]) : new Set();
+  return list.filter((m) => !chatHidden(m, uid, blocks)).map((m) => chatOut(m, uid, cards.get(m.userId) || null)).filter(Boolean);
+}
+
+/** Убрать сообщения человека (ограничение, удаление аккаунта). */
+function purgeChat(userId) {
+  for (let i = chat.length - 1; i >= 0; i--) if (chat[i].userId === userId) chat.splice(i, 1);
+}
+
+const pick = (list) => list[randomInt(list.length)];
+/** Стикер бота через delay мс — если он всё ещё за столом, с ним кто-то есть и он давно молчал. */
+function botSticker(pool, delay) {
+  const t = now();
+  if (t - botSaidAt < BOT_CHAT_GAP) return;
+  botSaidAt = t;
+  const id = setTimeout(() => {
+    try {
+      const b = botSeat();
+      if (b && humanSeats().length) pushChat({ seat: b.seat, userId: null, sticker: pick(pool) });
+    } catch (err) {
+      log('warn', { msg: err && err.message }, 'покер: стикер бота');
+    }
+  }, delay);
+  id.unref();
+}
+/** Итог раздачи: бот выиграл крупно — хвастается, забрал без вскрытия — «блеф?», проиграл крупно на вскрытии — страдает. */
+function botMood() {
+  const b = botSeat();
+  const h = table.hand;
+  if (!b || !h || !h.result || !b.inHand || !humanSeats().length) return;
+  const w = h.result.winners.find((x) => x.seat === b.seat);
+  const big = (w ? w.amount : b.put) >= 8 * BLINDS.big;
+  let pool = null;
+  if (w && big) pool = ['cool', 'crown', 'money', 'fire', 'gg'];
+  else if (w && !h.result.showdown) pool = ['bluff', 'cool', 'lucky'];
+  else if (!w && !b.folded && h.result.showdown && big) pool = ['cry', 'skull', 'shock', 'angry'];
+  if (pool && randomInt(100) < 45) botSticker(pool, 900);
+}
+const BOT_REPLY = {
+  gg: ['gg', 'love', 'clap'], lol: ['lol', 'cool'], cry: ['lol', 'love', 'bluff'], angry: ['cool', 'lol', 'bluff'],
+  bluff: ['think', 'cool', 'bluff'], fire: ['fire', 'cool', 'shock'], crown: ['angry', 'think', 'clap'], allin: ['shock', 'think', 'fire'],
+};
+/** На чужой стикер бот изредка отвечает своим. */
+function botAnswer(sticker) {
+  if (botSeat() && randomInt(100) < 22) botSticker(BOT_REPLY[sticker] || ['cool', 'think', 'lol', 'clap'], 1300);
+}
+
+// ─── Фишки от модератора (§I.12) ───
+
+export const GRANT_MAX = 1_000_000;       // за одно действие, в обе стороны
+const CHIPS_CAP = 1_000_000_000;
+
+/**
+ * Модератор начисляет (amount > 0) или снимает (amount < 0) фишки человеку userId: банкролл в базе — сразу; за столом
+ * вне раздачи — и стек сразу; в раздаче — после неё (settleBonus, как бонус). Меньше нуля не бывает. → новый банкролл.
+ */
+export function grantChips(userId, amount) {
+  ensurePlayer(userId);
+  const s = seatOf(userId);
+  const inHand = !!(s && s.inHand && table.hand);
+  const chips = tx(ctx.db, () => {
+    const row = ctx.db.prepare('SELECT chips FROM poker_players WHERE user_id = ?').get(userId);
+    const next = Math.max(0, Math.min(CHIPS_CAP, (s && !inHand ? s.chips : Number(row.chips)) + amount));
+    ctx.db.prepare('UPDATE poker_players SET chips = ?, updated_at = ? WHERE user_id = ?').run(next, nowIso(), userId);
+    return next;
+  });
+  if (s) {
+    if (inHand) s.bonus += amount;
+    else s.chips = chips;
+  }
+  readStats(userId);
+  bump();
+  return chips;
+}
+
+/** Работает ли стол (маршруты игры подключены): без него фишки не начислить. */
+export const tableReady = () => !!ctx;
 
 // ─── Присутствие ───
 

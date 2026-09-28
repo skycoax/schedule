@@ -8,6 +8,7 @@ import { brand } from '../brand';
 import { SseStream } from '../lib/sse';
 import { toast } from '../ui/Toast';
 import { notifyOn } from '../lib/notify';
+import { plural } from '../lib/plural';
 import { pushSync } from '../lib/push';
 import { emit, useSocialEvents } from './events';
 import { useSession } from './session';
@@ -99,6 +100,12 @@ export function useLive(): void {
         refreshMe();
       },
       me: () => refreshMe(),
+      chips: (d) => {
+        if (typeof d.amount !== 'number' || !d.amount) return;
+        const n = Math.abs(d.amount);
+        const text = n.toLocaleString('ru-RU').replace(/\u00a0/g, ' ') + ' ' + plural(n, ['фишку', 'фишки', 'фишек']);
+        if (notifyOn('game')) toast(d.amount > 0 ? 'Тебе начислили ' + text : 'Модератор снял ' + text);
+      },
       instants: () => emit({ type: 'instants' }),
       invite: (d) => {
         const from = d.from as UserCard | undefined;

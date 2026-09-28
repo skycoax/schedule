@@ -1,7 +1,7 @@
 // Клиент API покера: /api/social/games/* (CONTRACT.md §I, формы — social/types.ts).
 // Транспорт общий с «Обсуждениями» (apiCall): uni=, X-Para у изменений, конверт {ok,data} и тексты ошибок.
 import { apiCall } from '../social/api';
-import type { GameReaction, PokerAction, PokerTop, PokerTopScope, PokerView } from '../social/types';
+import type { GameReaction, PokerAction, PokerChatItem, PokerSticker, PokerTop, PokerTopScope, PokerView } from '../social/types';
 
 const base = '/api/social/games';
 
@@ -21,6 +21,14 @@ export const gameApi = {
     const body: Record<string, unknown> = { hand, action };
     if (amount !== undefined) body.amount = amount;
     return (await apiCall<{ table: PokerView }>('POST', base + '/act', { body })).table;
+  },
+  /** Чат стола: последние сообщения (гостю тоже). */
+  async chat(signal?: AbortSignal): Promise<PokerChatItem[]> {
+    return (await apiCall<{ items: PokerChatItem[] }>('GET', base + '/chat', { signal })).items;
+  },
+  /** Сообщение или стикер в чат стола (только сидящим). */
+  async say(m: { text: string } | { sticker: PokerSticker }): Promise<PokerChatItem> {
+    return (await apiCall<{ item: PokerChatItem }>('POST', base + '/chat', { body: m })).item;
   },
   async react(r: GameReaction): Promise<void> {
     await apiCall<unknown>('POST', base + '/react', { body: { r } });

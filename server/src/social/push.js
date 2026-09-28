@@ -262,6 +262,17 @@ export function pushInvite(toId, from) {
   }), { ttl: 600, urgency: 'high', topic: 'game' });
 }
 
+/** Модератор начислил (amount > 0) или снял фишки покера — человеку toId (вид «Приглашения в игру»). */
+export function pushChips(toId, amount) {
+  const n = Math.abs(amount).toLocaleString('ru-RU').replace(/\u00a0/g, ' ');
+  pushUser(toId, 'game', (r) => ({
+    t: 'Покер',
+    b: (amount > 0 ? 'Тебе начислили ' : 'Модератор снял ') + n + ' ' + plural(Math.abs(amount), 'фишку', 'фишки', 'фишек'),
+    u: link(r, 'game=1'),
+    g: 'chips',
+  }), { ttl: DAY_S, topic: 'chips' });
+}
+
 // ─── Изменения пар ───
 
 const PAIR_TYPES = new Set(['added', 'removed', 'changed']);

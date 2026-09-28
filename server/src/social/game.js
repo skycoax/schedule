@@ -7,8 +7,10 @@
 // на 10 минут; хранятся только в памяти (poker-table.js).
 // Экономика фишек (§I.10): ежедневный бонус (#9, poker-table.js claimBonus) и рейтинг по фишкам (#10, здесь — запрос
 // к базе: видимость как у поиска и друзей).
+// Чат стола и стикеры (§I.11, #11–#12): пишут те, кто за столом; хранится в памяти стола (poker-table.js).
 import { ok, invalid, blocked, guard, bodyOf, intField, TEXT, marks } from './http.js';
 import { limit, keyOf, rateError } from './limits.js';
+import { cleanText, countLinks, tooLong } from './text.js';
 import { usersByIds, userCardOf, blockedEither, CARD_COLS } from './users.js';
 import { areFriends } from './instant-access.js';
 import { streamHandler } from './game-stream.js';
@@ -16,13 +18,19 @@ import { liveTo } from './live.js';
 import { pushInvite } from './push.js';
 import * as pokerTable from './poker-table.js';
 
-const { REACTIONS, ACTIONS } = pokerTable;
+const { REACTIONS, ACTIONS, STICKERS, CHAT_MAX } = pokerTable;
 
 const INVITE_TEXT = {
   no: 'Нельзя позвать этого человека',
   again: 'Уже позвали — подожди минуту',
 };
 const INVITE_AGAIN = 60_000;   // одному и тому же другу — не чаще раза в минуту
+
+const CHAT_TEXT = {
+  empty: 'Напиши сообщение',
+  long: `Не длиннее ${CHAT_MAX} символов`,
+  links: 'Ссылки в чате стола нельзя',
+};
 
 // ─── Рейтинг по фишкам (#10) ───
 const TOP_N = 20;
@@ -92,6 +100,32 @@ export function gameRoutes(inst, ctx) {
     limit('gameReact', 'u:' + me.id);
     pokerTable.react(me.id, b.r);
     return ok({});
+  });
+
+  // #11 — чат стола: { text } (одна строка, до CHAT_MAX, без ссылок) или { sticker } (один из STICKERS). Не за столом →
+  // 409 «Писать в чат могут те, кто за столом». Всем потокам — событие chat { item }; ответ — { item } (строка автору).
+  inst.post('/api/social/games/chat', async (req) => {
+    const me = guard(req, 'SPNM');
+    const b = bodyOf(req);
+    let text = null;
+    let sticker = null;
+    if (b.sticker !== undefined) {
+      if (!STICKERS.includes(b.sticker)) throw invalid(TEXT.invalid, 'sticker');
+      sticker = b.sticker;
+    } else {
+      text = typeof b.text === 'string' ? cleanText(b.text, { multiline: false }) : '';
+      if (!text) throw invalid(CHAT_TEXT.empty, 'text');
+      if (tooLong(text, CHAT_MAX)) throw invalid(CHAT_TEXT.long, 'text');
+      if (countLinks(text)) throw invalid(CHAT_TEXT.links, 'text');
+    }
+    limit('gameChat', 'u:' + me.id);
+    return ok({ item: pokerTable.say(me.id, { text, sticker }) });
+  });
+
+  // #12 — последние сообщения чата (за 2 часа, до 50): всем, даже гостям; без тех, с кем у зрителя блокировка.
+  inst.get('/api/social/games/chat', async (req) => {
+    limit('read', keyOf(req));
+    return ok({ items: pokerTable.chatFor(req.user ? req.user.id : null) });
   });
 
   // #6 — поток событий (SSE), game-stream.js: гостю тоже.

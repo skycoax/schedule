@@ -12,6 +12,7 @@ import { Icon } from '../../ui/icons';
 import { Spinner } from '../../ui/Spinner';
 import { socialApi } from '../api';
 import { useSession } from '../session';
+import { useSocialActions } from '../actions';
 import { toast } from '../../ui/Toast';
 import { errText } from '../chat/PostCard';
 import { banText } from '../format';
@@ -52,8 +53,9 @@ function Stats({ st }: { st: AdminUsersStats }): JSX.Element {
 }
 
 type OnBadge = (u: AdminUser, badge: UserBadge | null) => void;
+type OnChips = (u: AdminUser, chips: number) => void;
 
-function Row({ u, onOpen, onBadge }: { u: AdminUser; onOpen: (username: string) => void; onBadge: OnBadge }): JSX.Element {
+function Row({ u, onOpen, onBadge, onChips }: { u: AdminUser; onOpen: (username: string) => void; onBadge: OnBadge; onChips: OnChips }): JSX.Element {
   const [open, setOpen] = useState(false);
   const meta = [u.username ? '@' + u.username : 'профиль не заполнен', u.uniShort || ''].filter(Boolean).join(' · ');
   const counts = [
@@ -92,7 +94,7 @@ function Row({ u, onOpen, onBadge }: { u: AdminUser; onOpen: (username: string) 
       <button type="button" className="adm-row__btn" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
         {body}<Icon name="chevronDown" size={16} className="adm-row__chev" />
       </button>
-      {open && <Details u={u} onOpen={onOpen} onBadge={onBadge} />}
+      {open && <Details u={u} onOpen={onOpen} onBadge={onBadge} onChips={onChips} />}
     </li>
   );
 }
@@ -105,8 +107,21 @@ const whenOf = (iso: string | null) => (iso ? DATE_TIME.format(Date.parse(iso)) 
 const dayOf = (d: string | null) => (d ? DATE_Y.format(Date.parse(d + 'T12:00:00Z')) : '—');
 
 /** Подробности аккаунта (только модераторам): почта, данные Google, регистрация, входы и устройства. */
-function Details({ u, onOpen, onBadge }: { u: AdminUser; onOpen: (username: string) => void; onBadge: OnBadge }): JSX.Element {
+function Details({ u, onOpen, onBadge, onChips }: {
+  u: AdminUser; onOpen: (username: string) => void; onBadge: OnBadge; onChips: OnChips;
+}): JSX.Element {
   const [busy, setBusy] = useState(false);
+  const actions = useSocialActions();
+  const [chipsBusy, setChipsBusy] = useState(false);
+  const chips = async () => {
+    setChipsBusy(true);
+    try {
+      const total = await actions.chips(u);
+      if (total !== null) onChips(u, total);
+    } finally {
+      setChipsBusy(false);
+    }
+  };
   const badge = async () => {
     const b = await pickBadge({ name: u.name + (u.username ? ' · @' + u.username : ''), current: u.badge || null });
     if (b === undefined || b === (u.badge || null)) return;
@@ -123,6 +138,7 @@ function Details({ u, onOpen, onBadge }: { u: AdminUser; onOpen: (username: stri
   };
   const rows: [string, string][] = [
     ['Значок', badgeInfo(u.badge)?.label || '—'],
+    ['Фишки покера', u.chips === null || u.chips === undefined ? 'стол не открывал' : u.chips.toLocaleString('ru-RU')],
     ['Почта', u.email + (u.emailVerified ? '' : ' (не подтверждена)')],
     ['Имя в Google', u.google.name || '—'],
     ['Возраст', u.age === 'minor' ? '16–17 лет (отметил при входе)' : '16 и старше'],
@@ -150,6 +166,7 @@ function Details({ u, onOpen, onBadge }: { u: AdminUser; onOpen: (username: stri
       <div className="adm-det__acts">
         {u.username && <Button variant="tinted" size={32} onClick={() => onOpen(u.username!)}>Открыть профиль</Button>}
         <Button variant="tinted" size={32} busy={busy} onClick={() => void badge()}>{u.badge ? 'Изменить значок' : 'Выдать значок'}</Button>
+        <Button variant="tinted" size={32} busy={chipsBusy} onClick={() => void chips()}>Фишки…</Button>
         <a className="ui-btn ui-btn--plain ui-btn--32" href={'mailto:' + u.email}>Написать на почту</a>
       </div>
     </div>
@@ -171,6 +188,9 @@ export function AdminUsersView(p: {
   const onBadge: OnBadge = (u, badge) => {
     setList((l) => ({ ...l, items: l.items.map((x) => (x.id === u.id ? { ...x, badge } : x)) }));
     if (s.me && s.me.id === u.id) void s.refresh();
+  };
+  const onChips: OnChips = (u, chips) => {
+    setList((l) => ({ ...l, items: l.items.map((x) => (x.id === u.id ? { ...x, chips } : x)) }));
   };
 
   // Поиск — через 300 мс после последней буквы.
@@ -207,7 +227,7 @@ export function AdminUsersView(p: {
     body = (
       <>
         <ul className="adm-list">
-          {list.items.map((u) => <Row key={u.id} u={u} onOpen={p.onOpenUser} onBadge={onBadge} />)}
+          {list.items.map((u) => <Row key={u.id} u={u} onOpen={p.onOpenUser} onBadge={onBadge} onChips={onChips} />)}
         </ul>
         {list.next && (
           <div className="prof-more">
