@@ -37,18 +37,28 @@ function heroState(g: Group, nowMin: number, nowDay: string): Hero {
     if (nowMin < mm.a)
       return { kind: 'ok', live: false, a: mm.a, b: mm.b, target: mm.a, label: 'Следующая', title: info.subj, sub: meta(info, g, nowDay, i), cap: 'до начала · в ' + hhmm((g.times || [])[i], 0) };
   }
-  const ni = DAYS.indexOf(nowDay) + 1;
-  const nd = (DAYS[ni] === 'Вс' || !DAYS[ni]) ? 'Пн' : DAYS[ni];
-  const np = pairsOf(g, nd);
-  for (let j = 0; j < pairCount(g); j++) {
-    const info = parseCell(np[j]);
-    if (info) return {
-      kind: 'idle', label: 'На сегодня всё', title: info.subj,
-      sub: (nd === 'Пн' && nowDay !== 'Сб' ? 'В понедельник' : 'Завтра') + ' в ' + hhmm((g.times || [])[j], 0) + ' · ' + meta(info, g, nd, j),
-    };
+  // Ближайший день с парами — до недели вперёд (воскресенье пропускаем): у магистратуры и очно-заочного пары не каждый
+  // день. «Завтра» — только если это правда завтра (из субботы понедельник — «в понедельник»).
+  const hadToday = pairs.some((p) => !!parseCell(p));
+  const today = DAYS.indexOf(nowDay);
+  for (let step = 1; step <= 7; step++) {
+    const nd = DAYS[(today + step) % 7];
+    if (nd === 'Вс') continue;
+    const np = pairsOf(g, nd);
+    for (let j = 0; j < pairCount(g); j++) {
+      const info = parseCell(np[j]);
+      if (info) return {
+        kind: 'idle', label: hadToday ? 'На сегодня всё' : 'Сегодня пар нет', title: info.subj,
+        sub: (step === 1 ? 'Завтра' : DAY_IN[nd]) + ' в ' + hhmm((g.times || [])[j], 0) + ' · ' + meta(info, g, nd, j),
+      };
+    }
   }
   return { kind: 'idle', label: 'На сегодня всё', title: 'Пар больше нет', sub: '' };
 }
+
+const DAY_IN: Record<string, string> = {
+  'Пн': 'В понедельник', 'Вт': 'Во вторник', 'Ср': 'В среду', 'Чт': 'В четверг', 'Пт': 'В пятницу', 'Сб': 'В субботу',
+};
 
 /** Подсказка под часами (или под карточкой без часов): текст, пять точек по нажатиям, крестик. */
 function EggHint({ idle, count, onClose }: { idle: boolean; count: number; onClose: () => void }): JSX.Element {

@@ -17,6 +17,7 @@ server/                   Node 22 + Fastify + node:sqlite (флаг --experiment
   src/site.js             index.html с брендом вуза, /manifest.json, /brand/* картинки
   src/source.js           выбор источника расписания по tenant.source.type
   src/source-edupage.js   адаптер EduPage (публичное расписание *.edupage.org)
+  src/source-gsheet.js    открытые Google-таблицы напрямую (gviz CSV): source.id и source.extra у "sheets" (КФУ)
   src/store.js            снимки, сравнение (журнал правок)
   src/schedule.js         ответ /api/schedule (недели A/B, лёгкий режим ?group=)
   src/together.js         совместные пары (поток): у выбранной группы поле with — с кем
@@ -145,6 +146,7 @@ node server/test/social-smoke.mjs http://127.0.0.1:8792 kfu     # «Всё пр�
 node server/test/social-seed.mjs  http://127.0.0.1:8792 kfu     # наполнение для интерфейса (можно повторять)
 node --test server/test/poker-logic.test.mjs                     # карты, банки и бот покера (сервер не нужен)
 node --test server/test/push.test.mjs                            # тексты уведомлений об изменениях пар
+node --test server/test/source-gsheet.test.mjs server/test/source-fallback.test.mjs   # открытые Google-таблицы
 ```
 
 Другие прогоны теста: `SMOKE_NEW_ACCOUNT=1` (сервер с `SOCIAL_NEW_ACCOUNT_H=24`, ≈ 6 минут), `SMOKE_MODE=readonly`
@@ -312,7 +314,24 @@ curl -s https://kfu.skycoax.uz/api/universities   # новый вуз виден
 
 ## Если источник — Google-таблица
 
-Сервер не читает таблицы напрямую (они обычно закрыты). Нужен Apps Script, развёрнутый
+**Таблица открыта по ссылке** («всем, у кого есть ссылка», даже если скачивание запрещено) — сервер читает её сам,
+без Apps Script: `src/source-gsheet.js` (ячейки — `…/gviz/tq?tqx=out:csv&gid=…`, список листов — со страницы
+`…/htmlview`). Разметка — как у КФУ (строка группы в столбце A, под ней время пар, дальше дни). Сейчас так подключены
+все таблицы КФУ — в `tenants/kfu/tenant.json`:
+
+```json
+"source": { "type": "sheets", "url": "…/exec", "id": "<id основной таблицы>",
+  "extra": [{ "id": "<id из адреса таблицы>", "section": "Магистратура" }] }
+```
+
+`id` — основная таблица: разделы — имена её листов, результат совпадает с Apps Script до знака (сверено на всех
+73 группах), а Apps Script (`url`) — запасной путь, если прямое чтение не вышло (у КФУ он часто отвечает 404 или
+дольше 30 с). `extra` — ещё таблицы, их группы — после групп основной.
+`section` — раздел в выборе группы и начало ключа группы (`section :: название`): **не менять** после выкладки, иначе
+у студентов слетит выбранная группа. Таблица не ответила — её группы берутся из прошлой сверки. Проверка разбора:
+`node --test server/test/source-gsheet.test.mjs server/test/source-fallback.test.mjs`.
+
+**Таблица закрыта** — сервер напрямую её не прочитает. Нужен Apps Script, развёрнутый
 как веб-приложение от имени владельца таблицы, который на `GET <url>?fn=data` отвечает:
 
 ```json

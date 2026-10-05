@@ -62,6 +62,7 @@ app.get('/api/health', async (req) => ({
   ok: true,
   tenant: req.tenant ? req.tenant.id : null,
   lastPoll: req.tenant ? metaGet(req.tenant.db, 'last_poll') : null,
+  ...(req.tenant && req.tenant.cache.sources ? { sources: req.tenant.cache.sources } : {}),
   tenants: tenants.map((t) => ({ id: t.id, hosts: t.hosts, lastPoll: metaGet(t.db, 'last_poll') })),
   now: new Date().toISOString(),
 }));

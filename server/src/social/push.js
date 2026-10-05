@@ -295,7 +295,9 @@ export function pairChangesByGroup(changes) {
 /** Текст уведомления об изменениях одной группы: первая правка и «ещё N». */
 export function schedText(list) {
   const c = list[0];
-  const where = `${c.day}, ${c.pair}-я пара` + (c.week ? ` (${c.week})` : '');
+  // Время начала — однозначнее номера пары (у магистратуры номер в приложении и «1-я пара» в таблице могут разниться).
+  const start = (String(c.time || '').match(/^\d{1,2}:\d{2}/) || [''])[0];
+  const where = `${c.day}, ${c.pair}-я пара` + (start ? ` в ${start}` : '') + (c.week ? ` (${c.week})` : '');
   const what = c.type === 'removed' ? `${where}: ${clip(c.before, 70)} — отменена` : `${where}: ${clip(c.after, 90)}`;
   const n = list.length - 1;
   return {

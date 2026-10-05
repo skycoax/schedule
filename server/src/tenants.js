@@ -15,13 +15,34 @@ function check(id, cfg) {
   if (!/^[a-z0-9-]+$/.test(id)) fail('имя папки — только латиница в нижнем регистре, цифры и дефис');
   if (!Array.isArray(cfg.hosts) || !cfg.hosts.length) fail('нужен hosts: ["имя.skycoax.uz"]');
   const src = cfg.source || {};
+  if (src.type !== 'sheets' && (src.id !== undefined || src.extra !== undefined)) fail('source.id и source.extra — только у "type": "sheets"');
   if (src.type === 'edupage') {
     if (!src.host) fail('нужен source.host, например "tsue.edupage.org"');
     if (src.includeUnscheduledGroups !== undefined && typeof src.includeUnscheduledGroups !== 'boolean') {
       fail('source.includeUnscheduledGroups должен быть true или false');
     }
   }
-  else if (src.type === 'sheets') { if (!src.url) fail('нужен source.url — адрес Apps Script …/exec'); }
+  else if (src.type === 'sheets') {
+    if (!src.url) fail('нужен source.url — адрес Apps Script …/exec');
+    if (src.id !== undefined && (typeof src.id !== 'string' || !/^[A-Za-z0-9_-]{20,}$/.test(src.id))) {
+      fail('source.id — id основной Google-таблицы из её адреса (если она открыта по ссылке)');
+    }
+    if (src.extra !== undefined) {
+      if (!Array.isArray(src.extra)) fail('source.extra должен быть списком [{ "id": …, "section": … }]');
+      const sections = new Set();
+      const ids = new Set(src.id ? [src.id] : []);
+      src.extra.forEach((x, i) => {
+        if (!x || typeof x.id !== 'string' || !/^[A-Za-z0-9_-]{20,}$/.test(x.id)) fail(`source.extra[${i}].id — id Google-таблицы из её адреса`);
+        if (ids.has(x.id)) fail(`source.extra[${i}].id — эта таблица уже подключена`);
+        ids.add(x.id);
+        if (typeof x.section !== 'string' || !x.section.trim() || x.section !== x.section.trim() || x.section.includes('::')) {
+          fail(`source.extra[${i}].section — раздел в выборе группы, например "Магистратура" (без пробелов по краям и «::»)`);
+        }
+        if (sections.has(x.section)) fail(`source.extra: раздел "${x.section}" повторяется`);
+        sections.add(x.section);
+      });
+    }
+  }
   else fail('source.type должен быть "edupage" или "sheets"');
   for (const k of SITE_KEYS) if (!cfg.site || !cfg.site[k]) fail(`нет site.${k}`);
   for (const k of BRAND_KEYS) if (!cfg.brand || !cfg.brand[k]) fail(`нет brand.${k}`);

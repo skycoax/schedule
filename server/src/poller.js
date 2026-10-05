@@ -24,7 +24,7 @@ export async function pollOnce(t, log) {
   if (t.cache.polling) return { skipped: true };
   t.cache.polling = true;
   try {
-    const sched = await fetchSchedule(t);
+    const sched = await fetchSchedule(t, log);
     saveWeekMap(t.db, sched.weekMap);
     const res = saveSnapshot(t, sched);
     if (log) {
