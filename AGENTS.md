@@ -29,6 +29,7 @@ server/                   Node 22 + Fastify + node:sqlite (флаг --experiment
   tenants/_tools/brand-images.py  генератор картинок из логотипа
   tenants/README.md       короткая инструкция для человека
 deploy/deploy.sh          ЕДИНСТВЕННЫЙ актуальный способ выкладки
+promo/                    рекламный ролик (Remotion + three.js, озвучка и звук кодом); не выкладывается — promo/README.md
 ```
 
 Прод: VPS `ubuntu@46.8.195.171`, служба `schedule-api` (порт 8792), код в

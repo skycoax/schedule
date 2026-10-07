@@ -1,0 +1,5 @@
+node_modules/
+out/
+# кадры, звук и картинки собираются скриптами (tools/, capture/) — в репозиторий не кладём
+public/
+capture/prod-*.json
