@@ -2,7 +2,7 @@
   "hosts": ["para.skycoax.uz"],
   "redirectOldHosts": false,
   "playTest": "",
-  "earlyAccess": false,
+  "earlyAccess": true,
   "site": {
     "name": "Para",
     "title": "Para — расписание вузов",
