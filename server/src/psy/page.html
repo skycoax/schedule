@@ -1,0 +1,903 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<title>Психологический паспорт</title>
+<meta name="description" content="Короткий тест: темперамент, психогеометрия и профиль латеральности — с результатом сразу после прохождения.">
+<link rel="icon" href="/favicon.ico">
+<style>
+/* Стиль — по принципам Apple (Human Interface): системный шрифт, сгруппированные списки, полупрозрачная шапка,
+   системные цвета светлой и тёмной темы, отклик на нажатие сразу, переходы — по направлению движения. */
+:root {
+  --bg: #f2f2f7; --card: #ffffff; --card2: #f2f2f7;
+  --label: #000000; --label2: rgba(60,60,67,.6); --label3: rgba(60,60,67,.3);
+  --sep: rgba(60,60,67,.29); --fill: rgba(120,120,128,.12); --fill2: rgba(120,120,128,.2); --press: rgba(0,0,0,.06);
+  --tint: #007aff; --green: #34c759; --red: #ff3b30; --orange: #ff9500; --indigo: #5856d6; --teal: #30b0c7;
+  --nav: rgba(242,242,247,.72); --shadow: 0 1px 3px rgba(0,0,0,.04);
+  --t-sanguine: var(--orange); --t-choleric: var(--red); --t-phlegmatic: var(--green); --t-melancholic: var(--indigo);
+  --r: 12px; --r-lg: 16px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #000000; --card: #1c1c1e; --card2: #2c2c2e;
+    --label: #ffffff; --label2: rgba(235,235,245,.6); --label3: rgba(235,235,245,.3);
+    --sep: rgba(84,84,88,.65); --fill: rgba(118,118,128,.24); --fill2: rgba(118,118,128,.32); --press: rgba(255,255,255,.08);
+    --tint: #0a84ff; --green: #30d158; --red: #ff453a; --orange: #ff9f0a; --indigo: #5e5ce6; --teal: #40c8e0;
+    --nav: rgba(22,22,24,.72); --shadow: none;
+    color-scheme: dark;
+  }
+}
+@media (prefers-reduced-transparency: reduce) { :root { --nav: var(--bg); } .nav { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; } }
+@media (prefers-contrast: more) { :root { --label2: var(--label); --sep: var(--label3); } .group { outline: 1px solid var(--sep); } }
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; }
+html { background: var(--bg); }
+body {
+  background: var(--bg); color: var(--label); min-height: 100vh;
+  font: 17px/1.41 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  letter-spacing: -.008em; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; font-optical-sizing: auto;
+}
+button, input, select, textarea { font: inherit; color: inherit; letter-spacing: inherit; }
+button { touch-action: manipulation; }
+a { color: var(--tint); text-decoration: none; }
+
+/* Шапка: полупрозрачный материал, контент прокручивается под ней; линия — только когда контент под шапкой */
+.nav { position: sticky; top: 0; z-index: 5; background: var(--nav);
+  -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px);
+  padding-top: env(safe-area-inset-top); transition: box-shadow .2s; }
+.nav.scrolled { box-shadow: 0 .5px 0 var(--sep); }
+.nav-in { max-width: 720px; margin: 0 auto; height: 44px; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
+  padding: 0 max(8px, env(safe-area-inset-left)); }
+.nav-t { font-weight: 600; font-size: 17px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 56vw;
+  opacity: 0; transform: translateY(4px); transition: opacity .2s, transform .25s cubic-bezier(.2,.9,.25,1); }
+.nav.scrolled .nav-t, .nav.always .nav-t { opacity: 1; transform: none; }
+.nav-l { justify-self: start; } .nav-r { justify-self: end; }
+.navbtn { border: 0; background: none; color: var(--tint); font-size: 17px; padding: 10px 8px; display: inline-flex; align-items: center; gap: 2px;
+  cursor: pointer; border-radius: 10px; transition: opacity .2s; }
+.navbtn:active { opacity: .35; transition: none; }
+.navbtn svg { width: 12px; height: 20px; }
+.nav-p { height: 2px; max-width: 720px; margin: 0 auto; }
+.nav-p i { display: block; height: 100%; background: var(--tint); border-radius: 0 2px 2px 0; transition: width .45s cubic-bezier(.2,.9,.25,1); }
+
+main { max-width: 720px; margin: 0 auto; padding: 4px max(16px, env(safe-area-inset-left)) calc(48px + env(safe-area-inset-bottom)); }
+main.wide { max-width: 980px; }
+.large { font-size: 34px; line-height: 1.12; font-weight: 700; letter-spacing: -.022em; margin: 6px 4px 6px; }
+.kicker { font-size: 13px; font-weight: 600; letter-spacing: .02em; text-transform: uppercase; color: var(--label2); margin: 18px 4px 0; }
+.lead { font-size: 17px; color: var(--label2); margin: 0 4px 18px; }
+.title1 { font-size: 28px; line-height: 1.18; font-weight: 700; letter-spacing: -.02em; margin: 4px 4px 6px; }
+.headline { font-weight: 600; }
+.sub { font-size: 15px; color: var(--label2); }
+.foot { font-size: 13px; line-height: 1.38; color: var(--label2); padding: 8px 16px 0; margin: 0; letter-spacing: 0; }
+.err { color: var(--red); }
+
+/* Сгруппированный список (inset grouped) */
+.sh { font-size: 13px; color: var(--label2); text-transform: uppercase; letter-spacing: .02em; padding: 0 16px 7px; margin-top: 26px; }
+.sh.q { text-transform: none; letter-spacing: -.005em; font-size: 15px; color: var(--label); font-weight: 600; }
+.sh.q span { display: block; font-weight: 400; color: var(--label2); font-size: 13px; margin-top: 2px; }
+.group { background: var(--card); border-radius: var(--r); overflow: hidden; box-shadow: var(--shadow); }
+.row { position: relative; display: flex; align-items: center; gap: 12px; width: 100%; min-height: 44px; padding: 11px 16px;
+  background: none; border: 0; text-align: left; cursor: pointer; transition: background .25s; }
+.row:active { background: var(--press); transition: none; }
+.row + .row::before, .cell + .cell::before, .row + .cell::before, .cell + .row::before {
+  content: ""; position: absolute; top: 0; left: 16px; right: 0; border-top: .5px solid var(--sep); }
+.row.icon + .row.icon::before { left: 58px; }
+.row .main { flex: 1; min-width: 0; }
+.row .main small { display: block; color: var(--label2); font-size: 13px; line-height: 1.3; margin-top: 1px; }
+.row .val { color: var(--label2); text-align: right; flex: none; max-width: 55%; }
+.row .val select { border: 0; background: none; color: var(--tint); font-size: 17px; text-align: right; outline: none; cursor: pointer; }
+.row .chev { width: 8px; height: 13px; flex: none; color: var(--label3); }
+.row .check { width: 18px; height: 18px; flex: none; color: var(--tint); opacity: 0; transform: scale(.6); transition: opacity .15s, transform .3s cubic-bezier(.3,1.5,.5,1); }
+.row.on .check { opacity: 1; transform: none; }
+.row.on .main { color: var(--tint); }
+.row.static { cursor: default; } .row.static:active { background: none; }
+.ico { width: 30px; height: 30px; border-radius: 7px; display: grid; place-items: center; flex: none; color: #fff; }
+.ico svg { width: 18px; height: 18px; }
+.cell { position: relative; display: block; padding: 9px 16px 10px; }
+.cell .cap { display: block; font-size: 13px; color: var(--label2); margin-bottom: 1px; }
+.cell input, .cell textarea { display: block; width: 100%; border: 0; outline: none; background: none; padding: 2px 0; font-size: 17px; }
+.cell textarea { resize: none; min-height: 66px; line-height: 1.35; }
+.cell input::placeholder, .cell textarea::placeholder { color: var(--label3); }
+input[type=date] { min-height: 26px; -webkit-appearance: none; appearance: none; }
+.toggle { appearance: none; -webkit-appearance: none; width: 51px; height: 31px; border-radius: 16px; background: var(--fill2); position: relative; flex: none;
+  cursor: pointer; transition: background .25s; margin: 0; }
+.toggle::after { content: ""; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 50%; background: #fff;
+  box-shadow: 0 3px 8px rgba(0,0,0,.15), 0 1px 1px rgba(0,0,0,.16); transition: transform .3s cubic-bezier(.3,1.3,.5,1); }
+.toggle:checked { background: var(--green); }
+.toggle:checked::after { transform: translateX(20px); }
+
+/* Кнопки: отклик на нажатие сразу (pointer-down), без задержки */
+.btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 50px; padding: 0 20px; border: 0;
+  border-radius: 14px; background: var(--tint); color: #fff; font-size: 17px; font-weight: 600; cursor: pointer;
+  transition: transform .2s cubic-bezier(.2,.9,.25,1), opacity .2s; }
+.btn:active { transform: scale(.97); opacity: .85; transition: transform 100ms ease-out, opacity 100ms; }
+.btn.gray { background: var(--fill); color: var(--tint); }
+.btn.plain { background: none; color: var(--tint); font-weight: 400; min-height: 44px; }
+.btn.red { background: var(--fill); color: var(--red); }
+.btn.sm { width: auto; min-height: 30px; padding: 0 14px; border-radius: 15px; font-size: 15px; flex: none; }
+.stack { display: grid; gap: 10px; margin-top: 22px; }
+
+/* Главная */
+.appicon { width: 76px; height: 76px; border-radius: 18px; margin: 18px 4px 8px; display: grid; place-items: center;
+  background: linear-gradient(160deg, #5ac8fa 0%, #007aff 45%, #5856d6 100%);
+  box-shadow: 0 8px 22px rgba(0,122,255,.28), inset 0 1px 0 rgba(255,255,255,.35); }
+.appicon svg { width: 46px; height: 46px; }
+.facts { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 4px; }
+.fact { background: var(--fill); color: var(--label2); border-radius: 8px; padding: 4px 10px; font-size: 13px; font-weight: 500; }
+
+/* Тест */
+.figs { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 10px; margin-top: 20px; }
+.tile { position: relative; background: var(--card); border: 0; border-radius: var(--r-lg); padding: 16px 8px 12px; cursor: pointer; box-shadow: var(--shadow);
+  display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; font-size: 15px; font-weight: 500;
+  transition: transform .25s cubic-bezier(.2,.9,.25,1), box-shadow .2s; }
+.tile:active { transform: scale(.96); transition: transform 100ms ease-out; }
+.tile small { display: block; font-size: 12px; font-weight: 400; color: var(--label2); }
+.tile svg.fig { width: 58px; height: 58px; color: var(--label2); transition: color .2s; }
+.tile.on { box-shadow: 0 0 0 2.5px var(--tint); }
+.tile.on svg.fig { color: var(--tint); }
+.tile .badge { position: absolute; top: 8px; right: 8px; width: 22px; height: 22px; border-radius: 50%; background: var(--tint); color: #fff;
+  display: grid; place-items: center; opacity: 0; transform: scale(.4); transition: opacity .15s, transform .35s cubic-bezier(.3,1.5,.5,1); }
+.tile .badge svg { width: 12px; height: 12px; }
+.tile.on .badge { opacity: 1; transform: none; }
+.lr { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+.lr .tile { padding: 18px 8px; font-size: 17px; font-weight: 600; }
+.lr .tile.on { color: var(--tint); }
+.pic { background: #fff; border-radius: var(--r-lg); padding: 14px; display: grid; place-items: center; margin-top: 16px; box-shadow: var(--shadow); }
+.pic img { width: 100%; max-width: 300px; height: auto; display: block; }
+
+/* Результат */
+.res-head { text-align: center; padding: 8px 8px 0; }
+.res-head .kicker { margin: 10px 0 2px; color: var(--tint); }
+.res-name { font-size: 44px; line-height: 1.06; font-weight: 800; letter-spacing: -.03em; margin: 2px 0 4px; }
+.res-sub { font-size: 17px; color: var(--label2); }
+.card { background: var(--card); border-radius: var(--r-lg); padding: 16px; box-shadow: var(--shadow); }
+.card p { margin: 10px 0 0; }
+.radar { width: calc(100% + 16px); max-width: 520px; display: block; margin: 0 -8px; overflow: visible; }
+@media (min-width: 560px) { .radar { margin: 0 auto; width: 100%; } }
+.radar .poly { transform-origin: 50% 50%; transform-box: view-box; animation: grow .9s cubic-bezier(.2,.95,.25,1) both .1s; }
+@keyframes grow { from { transform: scale(.02); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.radar text { font: 600 17px -apple-system, BlinkMacSystemFont, system-ui, sans-serif; fill: var(--label2); letter-spacing: -.01em; }
+.radar text.v { font-size: 15px; font-weight: 700; fill: var(--tint); }
+.meter { flex: 1; height: 6px; border-radius: 3px; background: var(--fill); overflow: hidden; max-width: 110px; min-width: 50px; }
+.meter i { display: block; height: 100%; border-radius: 3px; transform-origin: left; animation: fill .8s cubic-bezier(.2,.9,.25,1) both .2s; }
+@keyframes fill { from { transform: scaleX(0); } }
+.num { font-variant-numeric: tabular-nums; min-width: 40px; text-align: right; color: var(--label2); font-size: 15px; flex: none; }
+.code { font: 700 20px/1 ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace; letter-spacing: .12em; color: var(--tint); flex: none; }
+.figbig { width: 44px; height: 44px; color: var(--tint); flex: none; }
+.lat { width: 30px; height: 30px; border-radius: 7px; display: grid; place-items: center; font-weight: 700; font-size: 15px; color: #fff; flex: none; }
+.disclaimer { text-align: center; font-size: 13px; color: var(--label2); margin: 26px 12px 0; }
+
+/* Список психолога */
+.searchbar { display: flex; align-items: center; gap: 6px; background: var(--fill); border-radius: 10px; padding: 0 10px; height: 38px; margin: 6px 0 0; }
+.searchbar svg { width: 16px; height: 16px; color: var(--label2); flex: none; }
+.searchbar input { flex: 1; border: 0; background: none; outline: none; font-size: 17px; height: 100%; min-width: 0; }
+.searchbar input::placeholder { color: var(--label2); }
+.chips { display: flex; gap: 8px; overflow-x: auto; padding: 12px 2px 2px; scrollbar-width: none; }
+.chips::-webkit-scrollbar { display: none; }
+.chipbtn { flex: none; border: 0; border-radius: 16px; padding: 6px 14px; background: var(--fill); font-size: 15px; cursor: pointer; white-space: nowrap; transition: background .2s, color .2s; }
+.chipbtn:active { opacity: .6; transition: none; }
+.chipbtn.on { background: var(--label); color: var(--bg); }
+.stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-top: 14px; }
+@media (max-width: 520px) { .stats { grid-template-columns: repeat(3, 1fr); } }
+.stat { background: var(--card); border-radius: var(--r); padding: 10px 12px; box-shadow: var(--shadow); }
+.stat b { display: block; font-size: 22px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.stat span { font-size: 12px; color: var(--label2); }
+.dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.pilltag { font-size: 13px; font-weight: 600; padding: 3px 9px; border-radius: 7px; white-space: nowrap; flex: none; }
+.kvv { display: block; white-space: pre-wrap; word-break: break-word; color: var(--label); font-size: 17px; margin-top: 2px; }
+.empty { text-align: center; padding: 40px 16px; color: var(--label2); }
+
+.spinner { width: 26px; height: 26px; margin: 80px auto; border-radius: 50%; border: 2.5px solid var(--fill2); border-top-color: var(--label2); animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.hud { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); z-index: 20; transform: translateX(-50%);
+  background: var(--nav); -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px);
+  color: var(--label); padding: 12px 18px; border-radius: 14px; font-size: 15px; font-weight: 500; box-shadow: 0 8px 30px rgba(0,0,0,.18);
+  max-width: calc(100% - 32px); animation: hud .4s cubic-bezier(.2,.9,.25,1) both; }
+@keyframes hud { from { opacity: 0; transform: translate(-50%, 12px) scale(.96); } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-delay: 0s !important; transition-duration: .01ms !important; }
+}
+@media print {
+  html, body { background: #fff; } .nav, .noprint { display: none !important; }
+  .card, .group, .stat { box-shadow: none; border: 1px solid #ddd; break-inside: avoid; }
+}
+</style>
+</head>
+<body>
+<header class="nav" id="nav">
+  <div class="nav-in"><div class="nav-l" id="navL"></div><div class="nav-t" id="navT"></div><div class="nav-r" id="navR"></div></div>
+  <div class="nav-p"><i id="navP" style="width:0"></i></div>
+</header>
+<main id="app"><div class="spinner"></div></main>
+<script>
+'use strict';
+(function () {
+  // ─── Общее ───
+  var app = document.getElementById('app');
+  var nav = document.getElementById('nav');
+  var params = new URLSearchParams(location.search);
+  var UNI = params.get('uni') || '';
+  var S = { me: null, draft: null, list: null, listQ: '', listGroup: '' };
+  var TEMPS = ['sanguine', 'choleric', 'phlegmatic', 'melancholic'];
+  var TEMP_NAME = { sanguine: 'Сангвиник', choleric: 'Холерик', phlegmatic: 'Флегматик', melancholic: 'Меланхолик' };
+  var FIG_NAME = { square: 'Квадрат', circle: 'Круг', rectangle: 'Прямоугольник', triangle: 'Треугольник', zigzag: 'Зигзаг' };
+  var REDUCED = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+  var tc = function (id) { return 'var(--t-' + id + ')'; };
+
+  // Значки (в духе SF Symbols)
+  var I = {
+    back: '<svg viewBox="0 0 12 20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2 2 10l8 8"/></svg>',
+    chev: '<svg class="chev" viewBox="0 0 8 13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m1.5 1.5 5 5-5 5"/></svg>',
+    check: '<svg class="check" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 7 13.5 15 4.5"/></svg>',
+    tick: '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5 4.8 9 10 3"/></svg>',
+    search: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="7" cy="7" r="5"/><path d="m11 11 3.5 3.5"/></svg>',
+    spark: '<svg viewBox="0 0 18 18" fill="currentColor"><path d="M9 1.5l1.9 4.6 4.6 1.9-4.6 1.9L9 14.5l-1.9-4.6L2.5 8l4.6-1.9z"/></svg>',
+    up: '<svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13 13 4M6 4h7v7"/></svg>',
+    bulb: '<svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 13h5M7.5 16h3M9 2a5 5 0 0 0-3 9c.6.5 1 1.2 1 2h4c0-.8.4-1.5 1-2a5 5 0 0 0-3-9z"/></svg>',
+    person: '<svg viewBox="0 0 18 18" fill="currentColor"><circle cx="9" cy="6" r="3.3"/><path d="M2.5 16c.6-3.4 3.3-5.3 6.5-5.3s5.9 1.9 6.5 5.3z"/></svg>',
+    lock: '<svg viewBox="0 0 18 18" fill="currentColor"><rect x="3.5" y="8" width="11" height="8.5" rx="2"/><path d="M6 8V6a3 3 0 0 1 6 0v2" fill="none" stroke="currentColor" stroke-width="1.9"/></svg>',
+    list: '<svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6.5 4.5h9M6.5 9h9M6.5 13.5h9"/><circle cx="2.8" cy="4.5" r=".6" fill="currentColor"/><circle cx="2.8" cy="9" r=".6" fill="currentColor"/><circle cx="2.8" cy="13.5" r=".6" fill="currentColor"/></svg>',
+    eye: '<svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M1.5 9S4.2 3.8 9 3.8 16.5 9 16.5 9 13.8 14.2 9 14.2 1.5 9 1.5 9z"/><circle cx="9" cy="9" r="2.4"/></svg>',
+    radar: '<svg viewBox="0 0 46 46" fill="none" stroke="#fff" stroke-linejoin="round"><path d="M23 5 39 14v18L23 41 7 32V14z" stroke-opacity=".45" stroke-width="1.6"/><path d="M23 14 31 18.5v9L23 32 15 27.5v-9z" stroke-opacity=".3" stroke-width="1.4"/><path d="M23 9 35 17 31 30 21 37 11 27 16 16z" fill="rgba(255,255,255,.28)" stroke-width="2.4"/></svg>',
+  };
+
+  function withUni(path) {
+    if (!UNI) return path;
+    return path + (path.indexOf('?') < 0 ? '?' : '&') + 'uni=' + encodeURIComponent(UNI);
+  }
+  function api(path, opts) {
+    opts = opts || {};
+    var init = { method: opts.method || 'GET', credentials: 'same-origin', headers: { 'X-Para': '1' } };
+    if (opts.body !== undefined) { init.headers['content-type'] = 'application/json'; init.body = JSON.stringify(opts.body); }
+    return fetch(withUni(path), init).then(function (r) {
+      return r.json().catch(function () { return { ok: false, error: 'Ошибка сервера' }; }).then(function (j) {
+        if (!j.ok) { var e = new Error(j.error || 'Ошибка'); e.code = j.code; e.status = r.status; throw e; }
+        return j.data;
+      });
+    }, function () { throw new Error('Нет связи с сервером — проверьте интернет'); });
+  }
+
+  // Элементы без innerHTML: всё, что пришло от людей, попадает в страницу только как текст.
+  function h(tag, attrs) {
+    var el = document.createElement(tag);
+    if (attrs) for (var k in attrs) {
+      var v = attrs[k];
+      if (v === null || v === undefined || v === false) continue;
+      if (k === 'class') el.className = v;
+      else if (k.slice(0, 2) === 'on') el.addEventListener(k.slice(2), v);
+      else if (k === 'html') el.innerHTML = v;            // только для своих SVG-строк
+      else el.setAttribute(k, v === true ? '' : v);
+    }
+    for (var i = 2; i < arguments.length; i++) add(el, arguments[i]);
+    return el;
+  }
+  function add(el, c) {
+    if (c === null || c === undefined || c === false) return;
+    if (Array.isArray(c)) { c.forEach(function (x) { add(el, x); }); return; }
+    el.appendChild(c.nodeType ? c : document.createTextNode(String(c)));
+  }
+  function svg(s) { var d = document.createElement('div'); d.innerHTML = s; return d.firstChild; }
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function hud(msg) {
+    var t = h('div', { class: 'hud', role: 'status' }, msg);
+    document.body.appendChild(t);
+    setTimeout(function () { t.remove(); }, 2600);
+  }
+  function go(hash) { if (location.hash === hash) route(); else location.hash = hash; }
+  function fmtDate(iso) {
+    var d = new Date(iso);
+    return isNaN(d) ? '' : d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+  function birthText(s) { var p = String(s).split('-'); return p.length === 3 ? p[2] + '.' + p[1] + '.' + p[0] : s; }
+  function plain(s) { return String(s).split(' · ')[0]; }
+
+  /**
+   * Экран: шапка (назад, маленький заголовок, действие, прогресс) и содержимое.
+   * dir: 1 — вперёд (въезжает справа), -1 — назад (слева), 0 — без сдвига. Путь туда и обратно один и тот же.
+   */
+  function screen(o) {
+    var L = document.getElementById('navL'), T = document.getElementById('navT'), R = document.getElementById('navR');
+    L.textContent = ''; R.textContent = '';
+    T.textContent = o.title || '';
+    nav.classList.toggle('always', !!o.alwaysTitle);
+    if (o.back) {
+      add(L, h('button', { class: 'navbtn', 'aria-label': 'Назад', onclick: typeof o.back === 'function' ? o.back : function () { go(o.back); } },
+        svg(I.back), h('span', null, o.backLabel || 'Назад')));
+    }
+    if (o.action) add(R, o.action);
+    document.getElementById('navP').style.width = o.progress == null ? '0' : Math.round(o.progress * 100) + '%';
+    app.className = o.wide ? 'wide' : '';
+    app.textContent = '';
+    add(app, o.body);
+    if (!o.keepScroll) window.scrollTo(0, 0);
+    onScroll();
+    var dir = o.dir || 0;
+    if (app.animate) {
+      app.animate(REDUCED || !dir
+        ? [{ opacity: 0 }, { opacity: 1 }]
+        : [{ transform: 'translateX(' + (dir * 28) + 'px)', opacity: 0 }, { transform: 'none', opacity: 1 }],
+      { duration: REDUCED ? 180 : dir ? 380 : 260, easing: 'cubic-bezier(.2,.9,.25,1)' });
+    }
+  }
+  function onScroll() { nav.classList.toggle('scrolled', window.scrollY > 24); }
+  window.addEventListener('scroll', onScroll, { passive: true });
+
+  function section(head, body, foot, cls) {
+    return [head ? h('div', { class: 'sh' + (cls ? ' ' + cls : '') }, head) : null, body, foot ? h('p', { class: 'foot' }, foot) : null];
+  }
+  function row(o) {
+    return h(o.onclick ? 'button' : 'div', { class: 'row' + (o.icon ? ' icon' : '') + (o.on ? ' on' : '') + (o.onclick ? '' : ' static'),
+      onclick: o.onclick || null, type: o.onclick ? 'button' : null },
+      o.icon ? h('span', { class: 'ico', style: 'background:' + o.color, html: o.icon }) : null,
+      o.lead || null,
+      h('span', { class: 'main' }, o.text, o.small ? h('small', null, o.small) : null),
+      o.val !== undefined ? h('span', { class: 'val' }, o.val) : null,
+      o.trail || null,
+      o.check ? svg(I.check) : null,
+      o.chev ? svg(I.chev) : null);
+  }
+
+  // ─── Черновик теста (только в этом браузере) ───
+  function draftKey() { return 'psy-draft:' + (S.me ? S.me.uni.id : '') + ':' + (S.me && S.me.user ? S.me.user.id : ''); }
+  function loadDraft() {
+    try { var d = JSON.parse(localStorage.getItem(draftKey()) || 'null'); if (d && d.v === 1) return d; } catch (e) { /* нет хранилища */ }
+    return null;
+  }
+  function saveDraft() { try { localStorage.setItem(draftKey(), JSON.stringify(S.draft)); } catch (e) { /* нет хранилища */ } }
+  function dropDraft() { try { localStorage.removeItem(draftKey()); } catch (e) { /* нет хранилища */ } }
+  function newDraft() {
+    var t = S.me.test, prev = S.me.mine ? S.me.mine.answers : null;
+    // Порядок вариантов в каждом вопросе перемешан, чтобы «первый вариант» ничего не значил.
+    var order = t.questions.map(function () {
+      var a = [0, 1, 2, 3];
+      for (var i = a.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)); var x = a[i]; a[i] = a[j]; a[j] = x; }
+      return a;
+    });
+    return {
+      v: 1, step: 0, order: order,
+      a: {
+        fio: prev ? prev.fio : '', group: prev ? prev.group : '', birth: prev ? prev.birth : '',
+        family: prev ? prev.family : null, upbringing: prev ? prev.upbringing : null, upbringingOther: prev ? prev.upbringingOther : '',
+        living: prev ? prev.living : null, livingOther: prev ? prev.livingOther : '',
+        freeTime: prev ? prev.freeTime : '', interests: prev ? prev.interests : '',
+        figure: null, lateral: {}, q: t.questions.map(function () { return null; }),
+      },
+    };
+  }
+
+  // ─── Фигуры и паутинка (SVG) ───
+  function figureSvg(id, cls) {
+    var shapes = {
+      square: '<rect x="14" y="14" width="52" height="52" rx="4"/>',
+      circle: '<circle cx="40" cy="40" r="28"/>',
+      rectangle: '<rect x="6" y="22" width="68" height="36" rx="4"/>',
+      triangle: '<path d="M40 11 L70 66 L10 66 Z"/>',
+      zigzag: '<path d="M8 58 L22 22 L36 58 L50 22 L64 58 L74 34" fill="none"/>',
+    };
+    return '<svg class="' + (cls || 'fig') + '" viewBox="0 0 80 80" fill="currentColor" fill-opacity=".12" stroke="currentColor" stroke-width="4" '
+      + 'stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">' + shapes[id] + '</svg>';
+  }
+
+  function radarSvg(axes) {
+    // Подписи крупные и короткие: на телефоне схема ужимается почти вдвое. Полные названия — в списке ниже.
+    var n = axes.length, W = 500, H = 400, cx = W / 2, cy = H / 2, R = 115, LR = R + 22;
+    var pt = function (i, r) { var a = -Math.PI / 2 + (i * 2 * Math.PI) / n; return [cx + Math.cos(a) * r, cy + Math.sin(a) * r]; };
+    var f = function (x) { return Math.round(x * 10) / 10; };
+    var s = '<svg class="radar" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Диаграмма черт характера">';
+    [0.25, 0.5, 0.75, 1].forEach(function (k) {
+      var ring = axes.map(function (_, i) { return pt(i, R * k).map(f).join(','); }).join(' ');
+      s += '<polygon points="' + ring + '" fill="' + (k === 1 ? 'var(--fill)' : 'none') + '" stroke="var(--sep)" stroke-width="1"/>';
+    });
+    axes.forEach(function (_, i) { var p = pt(i, R); s += '<line x1="' + cx + '" y1="' + cy + '" x2="' + f(p[0]) + '" y2="' + f(p[1]) + '" stroke="var(--sep)"/>'; });
+    var at = function (a, i) { return pt(i, R * Math.max(0.06, a.value / 100)).map(f); };
+    s += '<g class="poly"><polygon points="' + axes.map(function (a, i) { return at(a, i).join(','); }).join(' ')
+      + '" fill="var(--tint)" fill-opacity=".18" stroke="var(--tint)" stroke-width="2.5" stroke-linejoin="round"/>';
+    axes.forEach(function (a, i) { var p = at(a, i); s += '<circle cx="' + p[0] + '" cy="' + p[1] + '" r="4.5" fill="var(--card)" stroke="var(--tint)" stroke-width="2.5"/>'; });
+    s += '</g>';
+    axes.forEach(function (a, i) {
+      var p = pt(i, LR), anchor = Math.abs(p[0] - cx) < 8 ? 'middle' : p[0] > cx ? 'start' : 'end';
+      var y1 = p[1] < cy - R ? p[1] - 20 : p[1] > cy + R ? p[1] + 14 : p[1] - 2;
+      s += '<text x="' + f(p[0]) + '" y="' + f(y1) + '" text-anchor="' + anchor + '">' + esc(a.label) + '</text>';
+      s += '<text class="v" x="' + f(p[0]) + '" y="' + f(y1 + 18) + '" text-anchor="' + anchor + '">' + a.value + '%</text>';
+    });
+    return s + '</svg>';
+  }
+
+  // ─── Экраны ───
+  function viewError(msg) {
+    screen({ back: '#/', body: [h('h1', { class: 'large' }, 'Не получилось'), h('p', { class: 'lead' }, msg),
+      h('button', { class: 'btn gray', onclick: function () { location.reload(); } }, 'Обновить')] });
+  }
+
+  function viewPickUni() {
+    var box = h('div', { class: 'group' }, h('div', { class: 'spinner', style: 'margin:30px auto' }));
+    screen({ title: 'Выбор вуза', body: [h('div', { class: 'appicon', html: I.radar }), h('h1', { class: 'large' }, 'Психологический паспорт'),
+      h('p', { class: 'lead' }, 'Выберите свой вуз, чтобы начать.'), section('Вузы', box)] });
+    fetch('/api/universities').then(function (r) { return r.json(); }).then(function (j) {
+      box.textContent = '';
+      (j.data || []).forEach(function (u) {
+        add(box, row({ text: u.short, small: u.university, chev: true, onclick: function () { location.href = '/psy?uni=' + encodeURIComponent(u.id); } }));
+      });
+    }).catch(function () { box.textContent = 'Не удалось загрузить список вузов'; });
+  }
+
+  function viewHome(dir) {
+    var me = S.me, u = me.user;
+    var body = [
+      h('div', { class: 'appicon', html: I.radar }),
+      h('h1', { class: 'large' }, 'Психологический паспорт'),
+      h('p', { class: 'lead' }, 'Узнайте свой темперамент, сильные стороны и стиль мышления. Результат — сразу после теста, в виде диаграммы‑паутинки.'),
+      h('div', { class: 'facts' }, h('span', { class: 'fact' }, '≈ 7 минут'), h('span', { class: 'fact' }, '3 части'), h('span', { class: 'fact' }, 'Рус · Ўзб')),
+    ];
+
+    if (!u) body.push(signinBlock());
+    else {
+      var d = loadDraft();
+      var resume = d && d.step > 0;
+      body.push(h('div', { class: 'stack' },
+        me.mine ? h('button', { class: 'btn', onclick: function () { go('#/result'); } }, 'Мой результат') : null,
+        resume ? h('button', { class: me.mine ? 'btn gray' : 'btn', onclick: function () { S.draft = d; go('#/test'); } }, 'Продолжить тест · шаг ' + (d.step + 1)) : null,
+        h('button', { class: me.mine || resume ? 'btn plain' : 'btn', onclick: function () { S.draft = newDraft(); saveDraft(); go('#/test'); } },
+          me.mine ? 'Пройти заново' : resume ? 'Начать сначала' : 'Начать тест')));
+      body.push(section('Аккаунт', h('div', { class: 'group' },
+        row({ icon: I.person, color: 'var(--label3)', text: u.name || u.email, small: u.name ? u.email : null }),
+        me.mine ? row({ icon: I.spark, color: 'var(--tint)', text: 'Последнее прохождение', val: fmtDate(me.mine.updatedAt) }) : null),
+        me.mine ? 'Новое прохождение заменит прежний результат.' : null));
+    }
+
+    body.push(h('div', { class: 'group', style: 'margin-top:26px' },
+      row({ icon: I.eye, color: 'var(--indigo)', text: 'Пример результата', small: 'Как выглядит итог', chev: true, onclick: function () { go('#/sample'); } })));
+
+    if (me.canView) {
+      body.push(section('Для психолога · ' + me.uni.label, h('div', { class: 'group' },
+        row({ icon: I.list, color: 'var(--green)', text: 'Результаты студентов', chev: true, onclick: function () { go('#/list'); } }),
+        me.isAdmin ? row({ icon: I.lock, color: 'var(--orange)', text: 'Кто видит результаты', chev: true, onclick: function () { go('#/access'); } }) : null)));
+    }
+    body.push(h('p', { class: 'disclaimer' }, 'Ваши ответы видите вы и психолог вуза. Результат — повод для разговора, а не диагноз.'));
+    screen({ title: 'Психологический паспорт', body: body, dir: dir });
+  }
+
+  function signinBlock() {
+    var me = S.me;
+    if (!me.google || !me.signin) return h('p', { class: 'lead', style: 'margin-top:22px' }, 'Вход сейчас недоступен. Попробуйте позже.');
+    var age = h('select', { 'aria-label': 'Возраст' },
+      h('option', { value: '' }, 'Выбрать'),
+      h('option', { value: 'adult' }, '18 и больше'),
+      h('option', { value: 'minor' }, me.minAge + '–17'),
+      h('option', { value: 'young' }, 'Меньше ' + me.minAge));
+    var acc = h('input', { type: 'checkbox', class: 'toggle', 'aria-label': 'Принимаю правила и политику' });
+    var err = h('p', { class: 'foot err', role: 'alert' });
+    var btn = h('button', { class: 'btn', onclick: function () {
+      err.textContent = '';
+      if (!age.value) { err.textContent = 'Укажите возраст'; return; }
+      if (age.value === 'young') { err.textContent = 'Вход доступен с ' + me.minAge + ' лет'; return; }
+      if (!acc.checked) { err.textContent = 'Нужно согласиться с правилами и политикой'; return; }
+      var back = '/psy' + (UNI ? '?uni=' + encodeURIComponent(UNI) : '');
+      location.replace('/api/auth/google/start?return=' + encodeURIComponent(back) + '&age=' + age.value + '&accept=1');
+    } }, 'Войти через Google');
+    return [
+      section('Вход', h('div', { class: 'group' },
+        h('label', { class: 'row static' }, h('span', { class: 'main' }, 'Возраст'), h('span', { class: 'val' }, age)),
+        h('div', { class: 'row static' }, h('span', { class: 'main' }, 'Принимаю ', h('a', { href: '/rules', target: '_blank' }, 'правила'), ' и ',
+          h('a', { href: '/policy', target: '_blank' }, 'политику')), acc)),
+        'Вход нужен, чтобы результат сохранился. Аккаунт — тот же, что в приложении расписания.'),
+      h('div', { class: 'stack' }, btn), err,
+    ];
+  }
+
+  // ─── Тест ───
+  // Шаги: 0 — о себе, 1 — фигура, 2–5 — пробы, 6–17 — вопросы.
+  function totalSteps() { return 6 + S.me.test.questions.length; }
+
+  function viewTest(dir) {
+    if (!S.me.user) return go('#/');
+    if (!S.draft) S.draft = loadDraft() || newDraft();
+    var st = S.draft.step, total = totalSteps();
+    var body;
+    if (st === 0) body = stepPersonal();
+    else if (st === 1) body = stepFigure();
+    else if (st < 6) body = stepLateral(st - 2);
+    else body = stepQuestion(st - 6);
+    screen({
+      back: function () { if (S.draft.step > 0) { S.draft.step--; saveDraft(); viewTest(-1); } else go('#/'); },
+      backLabel: st > 0 ? 'Назад' : 'Отмена',
+      title: 'Шаг ' + (st + 1) + ' из ' + total, alwaysTitle: true,
+      progress: st / total, body: body, dir: dir,
+    });
+  }
+  // Выбор сразу отмечается галочкой, затем экран сам уходит дальше; повторное нажатие во время перехода не перескакивает вопрос.
+  var advancing = false;
+  function advance(redraw) {
+    if (advancing) return;
+    advancing = true;
+    redraw();
+    setTimeout(function () { advancing = false; next(); }, REDUCED ? 120 : 260);
+  }
+  function next() {
+    S.draft.step++;
+    saveDraft();
+    if (S.draft.step >= totalSteps()) submit(); else viewTest(1);
+  }
+
+  function choiceGroup(list, get, set, otherKey) {
+    var box = h('div', { class: 'group' });
+    var other = otherKey ? h('input', { type: 'text', maxlength: '100', placeholder: 'Свой вариант', 'aria-label': 'Свой вариант' }) : null;
+    if (other) {
+      other.value = S.draft.a[otherKey] || '';
+      other.addEventListener('input', function () { S.draft.a[otherKey] = other.value; saveDraft(); });
+    }
+    function draw() {
+      box.textContent = '';
+      list.forEach(function (label, i) {
+        var p = String(label).split(' · ');
+        add(box, row({ text: p[0], small: p[1], check: true, on: get() === i, onclick: function () { set(i); saveDraft(); draw(); } }));
+      });
+      if (otherKey) {
+        add(box, row({ text: 'Другое', small: 'Бошқа', check: true, on: get() === -1, onclick: function () { set(-1); saveDraft(); draw(); other.focus(); } }));
+        if (get() === -1) add(box, h('div', { class: 'cell' }, other));
+      }
+    }
+    draw();
+    return box;
+  }
+
+  function stepPersonal() {
+    var a = S.draft.a, P = S.me.test.personal;
+    var inp = function (key, attrs, tag) {
+      var el = h(tag || 'input', attrs);
+      el.value = a[key] || '';
+      el.addEventListener('input', function () { a[key] = el.value; saveDraft(); });
+      el.addEventListener('change', function () { a[key] = el.value; saveDraft(); });
+      return el;
+    };
+    var cell = function (label, el) { return h('label', { class: 'cell' }, h('span', { class: 'cap' }, label), el); };
+    var err = h('p', { class: 'foot err', role: 'alert' });
+    var q = function (ru, uz) { return h('div', null, ru, h('span', null, uz)); };
+    return [
+      h('h1', { class: 'large' }, 'О себе'),
+      h('p', { class: 'lead' }, 'Ўзингиз ҳақингизда. Эти ответы увидит только психолог вуза.'),
+      section('Основное', h('div', { class: 'group' },
+        cell('Ф.И.О. · F.I.Sh.', inp('fio', { type: 'text', maxlength: '100', autocomplete: 'name', placeholder: 'Фамилия Имя Отчество' })),
+        cell('Номер группы · Гуруҳ рақами', inp('group', { type: 'text', maxlength: '40', placeholder: 'Например, 01-23' })),
+        cell('Дата рождения · Туғилган сана', inp('birth', { type: 'date', max: new Date().toISOString().slice(0, 10), min: '1940-01-01' })))),
+      section(q('Семейное положение', 'Оилавий ҳолати'), choiceGroup(P.family, function () { return a.family; }, function (v) { a.family = v; }), null, 'q'),
+      section(q('Как менялась семейная ситуация, пока Вы взрослели?', 'Вояга етиш даврида оилавий ҳолатингиз қандай ўзгарган?'),
+        choiceGroup(P.upbringing, function () { return a.upbringing; }, function (v) { a.upbringing = v; }, 'upbringingOther'), null, 'q'),
+      section(q('Где Вы проживаете в период обучения?', 'O‘qish davrida qayerda yashaysiz?'),
+        choiceGroup(P.living, function () { return a.living; }, function (v) { a.living = v; }, 'livingOther'), null, 'q'),
+      section(q('Как Вы проводите свободное время?', 'Бўш вақтингизни қандай ўтказасиз?'),
+        h('div', { class: 'group' }, h('div', { class: 'cell' }, inp('freeTime', { maxlength: '500', rows: '3', placeholder: 'Например: спорт, книги, друзья' }, 'textarea'))), null, 'q'),
+      section(q('Чем Вы интересуетесь? Как часто?', 'Нималарга қизиқасиз, қанчалик тез-тез?'),
+        h('div', { class: 'group' }, h('div', { class: 'cell' }, inp('interests', { maxlength: '500', rows: '3', placeholder: 'Например: программирование — каждый день' }, 'textarea'))), null, 'q'),
+      h('div', { class: 'stack' }, h('button', { class: 'btn', onclick: function () {
+        var miss = !a.fio.trim() ? 'Укажите Ф.И.О.' : a.fio.trim().split(/\s+/).length < 2 ? 'Укажите фамилию и имя полностью'
+          : !a.group.trim() ? 'Укажите номер группы' : !a.birth ? 'Укажите дату рождения'
+          : a.family === null ? 'Выберите семейное положение'
+          : a.upbringing === null || (a.upbringing === -1 && !a.upbringingOther.trim()) ? 'Ответьте про семейную ситуацию'
+          : a.living === null || (a.living === -1 && !a.livingOther.trim()) ? 'Укажите, где проживаете'
+          : !a.freeTime.trim() ? 'Расскажите про свободное время' : !a.interests.trim() ? 'Расскажите про интересы' : '';
+        err.textContent = miss;
+        if (!miss) next();
+      } }, 'Далее')), err,
+    ];
+  }
+
+  function stepFigure() {
+    var a = S.draft.a;
+    var tiles = h('div', { class: 'figs' });
+    function draw() {
+      tiles.textContent = '';
+      S.me.test.figures.forEach(function (f) {
+        var p = f.label.split(' · ');
+        add(tiles, h('button', { type: 'button', class: 'tile' + (a.figure === f.id ? ' on' : ''), 'aria-pressed': a.figure === f.id ? 'true' : 'false',
+          onclick: function () { if (advancing) return; a.figure = f.id; saveDraft(); advance(draw); } },
+          h('span', { class: 'badge', html: I.tick }), svg(figureSvg(f.id)), h('span', null, p[0], p[1] ? h('small', null, p[1]) : null)));
+      });
+    }
+    draw();
+    return [h('div', { class: 'kicker' }, 'Часть 1 · Психогеометрия'),
+      h('h1', { class: 'title1' }, 'Какая фигура нравится вам больше всего?'),
+      h('p', { class: 'lead' }, 'Сизга энг кўп ёққан шаклни танланг. Не раздумывайте — важно первое впечатление.'), tiles];
+  }
+
+  function stepLateral(i) {
+    var L = S.me.test.lateral[i], a = S.draft.a, isEye = L.key === 'eye';
+    var box = h('div', { class: 'lr' });
+    function draw() {
+      box.textContent = '';
+      [['L', isEye ? 'Левый' : 'Левая'], ['R', isEye ? 'Правый' : 'Правая']].forEach(function (o) {
+        add(box, h('button', { type: 'button', class: 'tile' + (a.lateral[L.key] === o[0] ? ' on' : ''),
+          onclick: function () { if (advancing) return; a.lateral[L.key] = o[0]; saveDraft(); advance(draw); } },
+          h('span', { class: 'badge', html: I.tick }), h('span', null, o[1], h('small', null, o[0] === 'L' ? 'Чап' : 'Ўнг'))));
+      });
+    }
+    draw();
+    return [h('div', { class: 'kicker' }, 'Часть 2 · Проба ' + (i + 1) + ' из 4'),
+      h('h1', { class: 'title1' }, L.ask), h('p', { class: 'lead' }, L.uz),
+      h('div', { class: 'pic' }, h('img', { src: '/psy/img/' + L.img + '.jpg', alt: 'Рисунок ' + L.img, width: '187', height: '133' })),
+      box,
+      h('p', { class: 'foot' }, 'Сделайте это прямо сейчас, не раздумывая, — важна привычная поза.')];
+  }
+
+  function stepQuestion(i) {
+    var Q = S.me.test.questions[i], a = S.draft.a, order = S.draft.order[i];
+    var box = h('div', { class: 'group' });
+    function draw() {
+      box.textContent = '';
+      order.forEach(function (k) {
+        add(box, row({ text: Q.a[k], check: true, on: a.q[i] === k, onclick: function () { if (advancing) return; a.q[i] = k; saveDraft(); advance(draw); } }));
+      });
+    }
+    draw();
+    return [h('div', { class: 'kicker' }, 'Часть 3 · Вопрос ' + (i + 1) + ' из ' + S.me.test.questions.length),
+      h('h1', { class: 'title1' }, Q.q), h('p', { class: 'lead' }, Q.uz), box];
+  }
+
+  function submit() {
+    screen({ title: 'Результат', alwaysTitle: true, progress: 1, dir: 1, body: [h('div', { class: 'spinner' }),
+      h('p', { class: 'lead', style: 'text-align:center' }, 'Считаем результат…')] });
+    var a = S.draft.a;
+    var body = Object.assign({}, a, { fio: a.fio.trim(), group: a.group.trim() });
+    api('/api/social/psy/submit', { method: 'POST', body: body }).then(function (mine) {
+      S.me.mine = mine; dropDraft(); S.draft = null; S.list = null;
+      try { if (navigator.vibrate) navigator.vibrate(12); } catch (e) { /* нет вибрации */ }
+      go('#/result');
+    }, function (e) {
+      S.draft.step = totalSteps() - 1; saveDraft();
+      screen({ back: '#/', body: [h('h1', { class: 'large' }, 'Не удалось сохранить'), h('p', { class: 'lead' }, e.message),
+        h('div', { class: 'stack' },
+          h('button', { class: 'btn', onclick: submit }, 'Отправить ещё раз'),
+          h('button', { class: 'btn gray', onclick: function () { S.draft.step = 0; saveDraft(); viewTest(-1); } }, 'Проверить ответы'))] });
+    });
+  }
+
+  // ─── Результат ───
+  function resultBlocks(r, opts) {
+    opts = opts || {};
+    var T = r.temperament, lat = r.lateral, fig = r.figure;
+    var axisBy = {}; r.axes.forEach(function (x) { axisBy[x.key] = x; });
+    var sideColor = function (s) { return s === 'R' ? 'var(--tint)' : 'var(--indigo)'; };
+    var meter = function (pct, color) { return h('span', { class: 'meter' }, h('i', { style: 'width:' + pct + '%;background:' + color })); };
+    return [
+      h('div', { class: 'res-head' },
+        h('div', { class: 'kicker' }, opts.kicker || 'Ваш тип'),
+        h('div', { class: 'res-name' }, r.headline.archetype),
+        h('div', { class: 'res-sub' }, r.headline.subtitle)),
+      h('div', { class: 'card', style: 'margin-top:18px' },
+        h('div', { html: radarSvg(r.axes) }),
+        h('p', null, r.headline.text),
+        r.headline.kind !== 'pure' ? h('p', { class: 'sub' }, T.text) : null),
+
+      section('Суперсилы', h('div', { class: 'group' }, T.strengths.map(function (s) { return row({ icon: I.spark, color: 'var(--green)', text: s }); })),
+        'Ярче всего у вас — ' + r.top.map(function (k) { return axisBy[k].label.toLowerCase(); }).join(' и ') + '.'),
+      section('Над чем поработать', h('div', { class: 'group' }, T.growth.map(function (s) { return row({ icon: I.up, color: 'var(--orange)', text: s }); })),
+        'Больше всего пространства для роста — ' + axisBy[r.low].label.toLowerCase() + '.'),
+      section('Совет для учёбы', h('div', { class: 'group' }, row({ icon: I.bulb, color: 'var(--teal)', text: T.tip }))),
+
+      section('Черты', h('div', { class: 'group' }, r.axes.map(function (x) {
+        return row({ text: x.label, small: x.hint, trail: [meter(x.value, 'var(--tint)'), h('span', { class: 'num' }, x.value + '%')] });
+      }))),
+      section('Темперамент', h('div', { class: 'group' }, T.list.map(function (x) {
+        return row({ lead: h('span', { class: 'dot', style: 'background:' + tc(x.id) }), text: x.name,
+          trail: [meter(x.pct, tc(x.id)), h('span', { class: 'num' }, x.pct + '%')] });
+      })), 'Доля ответов, характерных для каждого типа.'),
+
+      section('Психогеометрия', h('div', { class: 'group' },
+        row({ lead: svg(figureSvg(fig.id, 'figbig')), text: h('span', { class: 'headline' }, fig.archetype), small: 'Любимая фигура — ' + fig.name.toLowerCase() }),
+        h('div', { class: 'cell' }, fig.text))),
+      section('Профиль латеральности', h('div', { class: 'group' },
+        row({ lead: h('span', { class: 'code' }, lat.code), text: h('span', { class: 'headline' }, lat.style.name), small: lat.style.text }),
+        lat.signs.map(function (s) {
+          return row({ lead: h('span', { class: 'lat', style: 'background:' + sideColor(s.side) }, s.side === 'R' ? 'П' : 'Л'),
+            text: s.title, small: s.text });
+        }))),
+
+      h('p', { class: 'disclaimer' },
+        'Тест основан на упрощённых методиках: опросник темперамента, психогеометрия С. Деллингер и профиль латеральной организации. '
+        + 'Это не диагноз, а повод узнать себя лучше.'),
+    ];
+  }
+  function printBtn() { return h('button', { class: 'navbtn', onclick: function () { window.print(); } }, 'PDF'); }
+
+  function viewResult(dir) {
+    var mine = S.me.mine;
+    if (!mine) return go('#/');
+    screen({ back: '#/', backLabel: 'Главная', title: mine.result.headline.archetype, action: printBtn(), dir: dir,
+      body: [resultBlocks(mine.result),
+        h('div', { class: 'stack noprint' },
+          h('button', { class: 'btn gray', onclick: function () { S.draft = newDraft(); saveDraft(); go('#/test'); } }, 'Пройти заново'))] });
+  }
+
+  function viewSample(dir) {
+    screen({ back: '#/', backLabel: 'Главная', title: 'Пример', body: h('div', { class: 'spinner' }), dir: dir });
+    api('/api/social/psy/sample').then(function (r) {
+      screen({ back: '#/', backLabel: 'Главная', title: 'Пример · ' + r.headline.archetype, keepScroll: true,
+        body: [resultBlocks(r, { kicker: 'Пример результата' }),
+          h('p', { class: 'foot', style: 'text-align:center' }, 'Ответы выдуманные — так выглядит итог после теста.'),
+          h('div', { class: 'stack noprint' }, h('button', { class: 'btn', onclick: function () { go('#/'); } }, S.me.user ? 'Пройти тест' : 'Войти и пройти тест'))] });
+    }, function (e) { viewError(e.message); });
+  }
+
+  // ─── Список (психолог) ───
+  function viewList(dir) {
+    if (!S.me.canView) return go('#/');
+    var search = h('input', { type: 'search', placeholder: 'Ф.И.О. или группа', 'aria-label': 'Поиск' });
+    search.value = S.listQ;
+    var chips = h('div', { class: 'chips' });
+    var stats = h('div', { class: 'stats' });
+    var list = h('div', null, h('div', { class: 'spinner' }));
+    var csv = h('a', { class: 'navbtn', href: withUni('/api/social/psy/export.csv'), download: '' }, 'Excel');
+    screen({ back: '#/', backLabel: 'Главная', title: 'Результаты', action: csv, wide: true, dir: dir,
+      body: [h('h1', { class: 'large' }, 'Результаты'),
+        h('div', { class: 'searchbar' }, svg(I.search), search), chips, stats, list] });
+
+    function draw() {
+      var items = S.list || [];
+      var groups = {}; items.forEach(function (x) { groups[x.group] = (groups[x.group] || 0) + 1; });
+      var keys = Object.keys(groups).sort(function (x, y) { return x.localeCompare(y, 'ru', { numeric: true }); });
+      chips.textContent = '';
+      [''].concat(keys).forEach(function (g) {
+        add(chips, h('button', { class: 'chipbtn' + (S.listGroup === g ? ' on' : ''), onclick: function () { S.listGroup = g; draw(); } },
+          g ? g + ' · ' + groups[g] : 'Все · ' + items.length));
+      });
+      var q = S.listQ.trim().toLowerCase().replace(/ё/g, 'е');
+      var shown = items.filter(function (x) {
+        return (!S.listGroup || x.group === S.listGroup)
+          && (!q || (x.fio + ' ' + x.group).toLowerCase().replace(/ё/g, 'е').indexOf(q) >= 0);
+      });
+      var by = { sanguine: 0, choleric: 0, phlegmatic: 0, melancholic: 0 };
+      shown.forEach(function (x) { by[x.temperament]++; });
+      stats.textContent = '';
+      add(stats, h('div', { class: 'stat' }, h('b', null, shown.length), h('span', null, 'прошли')));
+      TEMPS.forEach(function (k) { add(stats, h('div', { class: 'stat' }, h('b', { style: 'color:' + tc(k) }, by[k]), h('span', null, TEMP_NAME[k]))); });
+      list.textContent = '';
+      if (!shown.length) { add(list, h('div', { class: 'empty' }, items.length ? 'Никого не нашли' : 'Пока никто не прошёл тест')); return; }
+      add(list, section(shown.length + ' ' + plural(shown.length, 'человек', 'человека', 'человек'), h('div', { class: 'group' }, shown.map(function (x) {
+        return row({ lead: h('span', { class: 'dot', style: 'background:' + tc(x.temperament) }),
+          text: x.fio, small: x.group + ' · ' + FIG_NAME[x.figure] + ' · ' + x.profile + ' · ' + fmtDate(x.updatedAt),
+          trail: h('span', { class: 'pilltag', style: 'color:' + tc(x.temperament) + ';background:var(--fill)' }, x.archetype),
+          chev: true, onclick: function () { go('#/r/' + x.id); } });
+      }))));
+    }
+    search.addEventListener('input', function () { S.listQ = search.value; draw(); });
+    if (S.list) draw();
+    api('/api/social/psy/results').then(function (d) { S.list = d.items; draw(); }, function (e) { list.textContent = e.message; });
+  }
+  function plural(n, one, few, many) {
+    var m10 = n % 10, m100 = n % 100;
+    return m10 === 1 && m100 !== 11 ? one : m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14) ? few : many;
+  }
+
+  function viewDetail(id, dir) {
+    if (!S.me.canView) return go('#/');
+    screen({ back: '#/list', backLabel: 'Результаты', body: h('div', { class: 'spinner' }), dir: dir });
+    api('/api/social/psy/results/' + id).then(function (d) {
+      var a = d.answers, P = S.me.test.personal;
+      var kv = function (k, v) { return row({ text: h('span', { class: 'sub' }, k), small: h('span', { class: 'kvv' }, v) }); };
+      var kvs = function (k, v) { return row({ text: k, val: v }); };
+      var latName = { fingers: 'Пальцы в замок', eye: 'Закрытый глаз', arms: 'Руки на груди', clap: 'Аплодисменты' };
+      var del = S.me.isAdmin ? h('div', { class: 'stack noprint' }, h('button', { class: 'btn red', onclick: function () {
+        if (!confirm('Удалить результат «' + d.fio + '»? Это нельзя отменить.')) return;
+        api('/api/social/psy/results/' + id, { method: 'DELETE' }).then(function () { S.list = null; hud('Удалено'); go('#/list'); },
+          function (e) { hud(e.message); });
+      } }, 'Удалить результат')) : null;
+      screen({ back: '#/list', backLabel: 'Результаты', title: d.fio, action: printBtn(), keepScroll: true,
+        body: [
+          h('h1', { class: 'large' }, d.fio),
+          h('p', { class: 'lead' }, 'Группа ' + d.group + ' · ' + fmtDate(d.updatedAt) + (d.attempts > 1 ? ' · попыток: ' + d.attempts : '')
+            + (d.account.username ? ' · @' + d.account.username : '')),
+          section('Анкета', h('div', { class: 'group' },
+            kvs('Дата рождения', birthText(d.birth)),
+            kvs('Семейное положение', plain(P.family[a.family])),
+            kv('Семейная ситуация', a.upbringing === -1 ? a.upbringingOther : plain(P.upbringing[a.upbringing])),
+            kv('Проживание', a.living === -1 ? a.livingOther : plain(P.living[a.living])),
+            kv('Свободное время', a.freeTime),
+            kv('Интересы', a.interests))),
+          section('Пробы', h('div', { class: 'group' },
+            kvs('Фигура', FIG_NAME[a.figure]),
+            S.me.test.lateral.map(function (L) { return kvs(latName[L.key], a.lateral[L.key] === 'R' ? 'правый(ая)' : 'левый(ая)'); }))),
+          resultBlocks(d.result, { kicker: 'Тип' }),
+          section('Ответы на 12 вопросов', h('div', { class: 'group' }, S.me.test.questions.map(function (Q, i) {
+            var k = a.q[i];
+            return row({ lead: h('span', { class: 'dot', style: 'background:' + tc(TEMPS[k]) }), text: Q.a[k], small: (i + 1) + '. ' + Q.q });
+          }))),
+          del] });
+    }, function (e) { viewError(e.message); });
+  }
+
+  // ─── Доступ (модератор) ───
+  function viewAccess(dir) {
+    if (!S.me.isAdmin) return go('#/');
+    var current = h('div', { class: 'group' }, h('div', { class: 'spinner', style: 'margin:24px auto' }));
+    var q = h('input', { type: 'search', placeholder: 'Имя, @username или почта', 'aria-label': 'Поиск людей' });
+    var found = h('div');
+    screen({ back: '#/', backLabel: 'Главная', title: 'Доступ', dir: dir, body: [
+      h('h1', { class: 'large' }, 'Доступ'),
+      h('p', { class: 'lead' }, 'Отмеченные люди видят полный список прошедших тест в ' + S.me.uni.label + ' и все их ответы.'),
+      section('Видят результаты', current, 'Модераторы видят всегда.'),
+      section('Дать доступ', h('div', { class: 'searchbar' }, svg(I.search), q),
+        'Человек должен один раз войти в приложение или на эту страницу, чтобы его можно было найти.'),
+      found] });
+
+    function person(p, trail) {
+      return row({ icon: I.person, color: 'var(--label3)', text: (p.name || '—') + (p.username ? ' · @' + p.username : ''), small: p.email, trail: trail });
+    }
+    function loadCurrent() {
+      api('/api/social/psy/viewers').then(function (list) {
+        current.textContent = '';
+        if (!list.length) { add(current, row({ text: h('span', { class: 'sub' }, 'Пока никому, кроме модераторов') })); return; }
+        list.forEach(function (p) {
+          add(current, person(p, h('button', { class: 'btn sm red', onclick: function () {
+            api('/api/social/psy/viewers/' + p.id, { method: 'DELETE' }).then(function () { hud('Доступ снят'); loadCurrent(); search(); }, function (e) { hud(e.message); });
+          } }, 'Убрать')));
+        });
+      }, function (e) { current.textContent = e.message; });
+    }
+    var timer = 0;
+    function search() {
+      var v = q.value.trim();
+      if (v.length < 2) { found.textContent = ''; return; }
+      api('/api/social/psy/accounts?q=' + encodeURIComponent(v)).then(function (list) {
+        found.textContent = '';
+        add(found, h('div', { class: 'group', style: 'margin-top:12px' }, list.length ? list.map(function (p) {
+          return person(p, p.team ? h('span', { class: 'sub' }, 'Модератор')
+            : p.viewer ? h('span', { class: 'sub' }, 'Уже видит')
+            : h('button', { class: 'btn sm', onclick: function () {
+              api('/api/social/psy/viewers', { method: 'POST', body: { userId: p.id } }).then(function () { hud('Доступ выдан'); loadCurrent(); search(); },
+                function (e) { hud(e.message); });
+            } }, 'Дать'));
+        }) : row({ text: h('span', { class: 'sub' }, 'Никого не нашли') })));
+      }, function (e) { found.textContent = e.message; });
+    }
+    q.addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(search, 250); });
+    loadCurrent();
+  }
+
+  // ─── Маршруты: направление перехода — по глубине экрана (глубже — справа, назад — слева) ───
+  var DEPTH = { '#/': 0, '#/sample': 1, '#/result': 1, '#/test': 1, '#/list': 1, '#/access': 1 };
+  var lastDepth = 0;
+  function route() {
+    var hsh = location.hash || '#/';
+    var m = hsh.match(/^#\/r\/(\d+)$/);
+    var depth = m ? 2 : DEPTH[hsh] !== undefined ? DEPTH[hsh] : 0;
+    var dir = depth > lastDepth ? 1 : depth < lastDepth ? -1 : 0;
+    lastDepth = depth;
+    if (hsh === '#/test') viewTest(dir);
+    else if (hsh === '#/result') viewResult(dir);
+    else if (hsh === '#/list') viewList(dir);
+    else if (hsh === '#/access') viewAccess(dir);
+    else if (hsh === '#/sample') viewSample(dir);
+    else if (m) viewDetail(m[1], dir);
+    else viewHome(dir);
+  }
+
+  // Итог входа приходит во фрагменте (#auth=…): показываем и убираем из адреса.
+  var authMsg = '';
+  var am = location.hash.match(/^#auth=([a-z_]+)/);
+  if (am) {
+    var code = am[1];
+    authMsg = code === 'ok' ? '' : code === 'cancelled' || code === 'access_denied' ? 'Вход отменён'
+      : code === 'limited' ? 'Слишком много попыток входа — подождите немного' : 'Не получилось войти — попробуйте ещё раз';
+    history.replaceState(null, '', location.pathname + location.search + '#/');
+  }
+
+  api('/api/social/psy/me').then(function (me) {
+    S.me = me;
+    window.addEventListener('hashchange', route);
+    route();
+    if (authMsg) hud(authMsg);
+  }, function (e) {
+    if (e.code === 'uni') viewPickUni();
+    else viewError(e.message);
+  });
+})();
+</script>
+</body>
+</html>

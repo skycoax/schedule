@@ -374,7 +374,41 @@ CREATE INDEX IF NOT EXISTS idx_push_grp     ON push_subs (uni, grp);
 CREATE INDEX IF NOT EXISTS idx_push_session ON push_subs (session_id);
 `;
 
-const MIGRATIONS = [SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6, SCHEMA_V7, SCHEMA_V8, SCHEMA_V9, SCHEMA_V10];
+// Психологический паспорт студента (psy/, страница /psy): ответы теста и кто их видит. Ответ один на аккаунт в вузе
+// (повторное прохождение заменяет прежний). Удаление аккаунта стирает и его ответы, и его доступ (CASCADE).
+// Смотреть результаты вуза может модератор (SOCIAL_ADMIN_EMAILS) и тот, кого он отметил здесь.
+export const SCHEMA_V11 = `
+CREATE TABLE IF NOT EXISTS psy_results (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  uni         TEXT    NOT NULL,
+  fio         TEXT    NOT NULL,
+  fio_fold    TEXT    NOT NULL,                            -- для поиска
+  grp         TEXT    NOT NULL,
+  birth       TEXT    NOT NULL,                            -- 'YYYY-MM-DD'
+  answers     TEXT    NOT NULL,                            -- JSON ответов как прислала страница (после проверки)
+  result      TEXT    NOT NULL,                            -- JSON итога (psy/scoring.js) на момент прохождения
+  temperament TEXT    NOT NULL,                            -- ведущий темперамент: sanguine|choleric|phlegmatic|melancholic
+  figure      TEXT    NOT NULL,                            -- square|circle|rectangle|triangle|zigzag
+  profile     TEXT    NOT NULL,                            -- латеральный профиль, 'ПЛПП'
+  attempts    INTEGER NOT NULL DEFAULT 1,
+  created_at  TEXT    NOT NULL,
+  updated_at  TEXT    NOT NULL,
+  UNIQUE (user_id, uni)
+);
+CREATE INDEX IF NOT EXISTS idx_psy_results_uni ON psy_results (uni, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS psy_viewers (
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  uni         TEXT    NOT NULL,
+  granted_by  INTEGER,                                     -- без FK: переживает удаление модератора
+  created_at  TEXT    NOT NULL,
+  PRIMARY KEY (user_id, uni)
+) WITHOUT ROWID;
+`;
+
+const MIGRATIONS = [SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6, SCHEMA_V7, SCHEMA_V8, SCHEMA_V9, SCHEMA_V10,
+  SCHEMA_V11];
 
 /** Открыть (и при необходимости создать) social.db и довести схему до последней версии. */
 export function openSocialDb(dir = config.dataDir) {

@@ -37,7 +37,9 @@ function render(site, url, dir, brandObj) {
   const brandJson = JSON.stringify(brandObj).replace(/</g, '\\u003c');
   return template()
     .replace(/\{\{BRAND_JSON\}\}/g, () => brandJson)
-    .replace(/\{\{(URL|OG_IMAGE|SITE_NAME|TITLE|DESCRIPTION)\}\}/g, (_, k) => esc(values[k]));
+    .replace(/\{\{(URL|OG_IMAGE|SITE_NAME|TITLE|DESCRIPTION)\}\}/g, (_, k) => esc(values[k]))
+    // Приглашение пройти психологический тест (src/psy/nudge.js): исходники приложения отдельно, поэтому — отсюда.
+    .replace('</body>', () => '<script src="/psy/nudge.js" defer></script>\n</body>');
 }
 
 /**

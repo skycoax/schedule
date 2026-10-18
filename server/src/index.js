@@ -20,6 +20,10 @@ import { addReview, listReviews, ReviewError } from './reviews.js';
 import { startPoller, pollOnce } from './poller.js';
 import { registerSocial, corsOptions, logSerializers } from './social/index.js';
 
+// Психологический паспорт студента: своя страница и картинки к пробам (API — social/psy.js).
+const PSY_DIR = new URL('./psy/', import.meta.url).pathname;
+const PSY_IMG = /^\/psy\/img\/([1-4])\.jpg$/;
+
 // Отдельные страницы Para (публичные ссылки для Google Play и правила «Обсуждений»): одни на все адреса.
 const HUB_PAGES = { '/policy': 'policy.html', '/rules': 'rules.html', '/delete-account': 'delete-account.html' };
 
@@ -201,9 +205,24 @@ async function site(req, reply) {
     }
   }
 
+  // Тест — на адресе вуза и на Para (там вуз — выбранный); без вуза страница сама попросит его выбрать.
+  if (path.replace(/\/+$/, '') === '/psy') {
+    reply.header('cache-control', 'no-cache').header('x-robots-tag', 'noindex').type('text/html; charset=utf-8');
+    return readFileSync(join(PSY_DIR, 'page.html'));
+  }
+  if (path === '/psy/nudge.js') {
+    reply.header('cache-control', 'no-cache').type('text/javascript; charset=utf-8');
+    return readFileSync(join(PSY_DIR, 'nudge.js'));
+  }
+  const psyImg = path.match(PSY_IMG);
+  if (psyImg) {
+    reply.header('cache-control', 'public, max-age=86400').type('image/jpeg');
+    return readFileSync(join(PSY_DIR, 'img', `${psyImg[1]}.jpg`));
+  }
+
   if (path === '/robots.txt') {
     reply.header('cache-control', 'public, max-age=86400').type('text/plain; charset=utf-8');
-    return 'User-agent: *\nDisallow: /api/\n';
+    return 'User-agent: *\nDisallow: /api/\nDisallow: /psy\n';
   }
 
   // Связь сайта с Android-приложением (TWA): без неё сверху видна адресная строка.

@@ -9,6 +9,7 @@
 //   limits.js — пределы частоты · jobs.js — фоновые задачи
 //   game.js — «Покер» (маршруты) · poker-table.js — стол, таймеры, view · poker-logic.js — карты и банки
 //   poker-bot.js — бот · game-stream.js — поток событий
+//   psy.js — психологический паспорт студента (страница /psy, вопросы и подсчёт — ../psy/test.js)
 //   live.js — живые обновления приложения (поток SSE /api/social/live: чужие посты, ответы, заявки, приглашения)
 import { mkdirSync } from 'node:fs';
 import { social, googleConfigured } from '../config.js';
@@ -24,6 +25,7 @@ import { startJobs } from './jobs.js';
 import { gameRoutes } from './game.js';
 import { liveRoutes } from './live.js';
 import { initPush, pushRoutes, pushSchedule } from './push.js';
+import { psyRoutes } from './psy.js';
 import { setChangesHook } from '../poller.js';
 
 export const SOCIAL_PATH = /^\/api\/(auth|social|media)(\/|$)/;
@@ -90,6 +92,7 @@ export async function registerSocial(app, { hub, tenants }) {
     authRoutes(inst, ctx);
     accountRoutes(inst, ctx);                        // DELETE /api/social/me — во всех режимах
     pushRoutes(inst);                                // уведомления: изменения пар от обсуждений не зависят
+    psyRoutes(inst, ctx);                            // психологический тест (/psy): от режима обсуждений не зависит
     if (social.mode !== 'off') {
       postRoutes(inst, ctx);
       instantRoutes(inst, ctx);
