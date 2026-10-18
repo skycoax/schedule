@@ -1,6 +1,7 @@
 {
   "hosts": ["para.skycoax.uz"],
   "redirectOldHosts": false,
+  "playTest": "",
   "site": {
     "name": "Para",
     "title": "Para — расписание вузов",

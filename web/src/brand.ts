@@ -25,6 +25,8 @@ export interface Brand {
   social?: SocialMode;
   /** Только Para: старые адреса вузов переносят сюда настройки во фрагменте #m= (hub.json redirectOldHosts). */
   moveIn?: boolean;
+  /** Ссылка на закрытое тестирование в Google Play (hub.json playTest) — карточка «Стать тестером»; пусто — карточки нет. */
+  playTest?: string;
 }
 
 // Заглушка для разработки без сервера (vite dev отдаёт index.html как есть).

@@ -646,6 +646,15 @@ button.panel:active{transform:scale(.985)}
 .inst__btn{flex:none;height:30px;padding:0 15px;border-radius:99px;display:grid;place-items:center;
   background:var(--c1);color:#fff;font-size:14px;font-weight:600}
 
+/* Приглашение в тестирование Google Play (TesterCard): та же карточка, плюс крестик в углу */
+.tst{display:flex;position:relative;padding-right:30px}
+.tst .inst__btn{text-decoration:none}
+.tst .inst__btn:active{opacity:.7}
+.tst__x{position:absolute;top:4px;right:4px;width:28px;height:28px;border-radius:50%;
+  display:grid;place-items:center;color:var(--ink-30)}
+.tst__x:active{opacity:.6}
+.tst__x:focus-visible,.tst .inst__btn:focus-visible{outline:2px solid var(--c1);outline-offset:2px}
+
 /* Оценки: средняя + гистограмма */
 .rate__sum{display:flex;align-items:center;gap:18px;width:100%;text-align:left;padding:16px 16px 14px;
   border-radius:var(--r-card) var(--r-card) 0 0}

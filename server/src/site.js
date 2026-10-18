@@ -45,7 +45,7 @@ function render(site, url, dir, brandObj) {
  * social — режим «Обсуждений» (есть, когда есть Para: вход и лента общие с ней); без него — одно расписание.
  */
 export function pageHtml(t, hub) {
-  const brandObj = hub ? { ...t.brand, social: social.mode } : t.brand;
+  const brandObj = hub ? { ...t.brand, social: social.mode, playTest: hub.playTest } : t.brand;
   return render(t.site, `https://${t.hosts[0]}`, t.dir, brandObj);
 }
 
@@ -58,11 +58,13 @@ export function hubPageHtml(hub, t) {
   // social — режим «Обсуждений» (SOCIAL_MODE) для первой отрисовки вкладок; точный ответ даёт /api/auth/me.
   // moveIn — старые адреса вузов переносят сюда настройки (#m=, redirectOldHosts); иначе #m= не принимается.
   // Здесь нет ничего личного: эту страницу service worker хранит как страницу приложения.
+  // playTest — ссылка на тестирование в Google Play (hub.json), для карточки «Стать тестером».
   const moveIn = hub.redirectOldHosts === true;
+  const playTest = hub.playTest;
   const brandObj = t
-    ? { ...t.brand, hub: true, label: shortName(t), about: hub.about, social: social.mode, moveIn }
+    ? { ...t.brand, hub: true, label: shortName(t), about: hub.about, social: social.mode, moveIn, playTest }
     : { hub: true, id: '', label: hub.site.name, university: '', logoCredit: '', about: hub.about,
-        source: '', sourceShort: '', searchHint: '', social: social.mode, moveIn };
+        source: '', sourceShort: '', searchHint: '', social: social.mode, moveIn, playTest };
   return render(hub.site, hubUrl(hub), hub.dir, brandObj);
 }
 
