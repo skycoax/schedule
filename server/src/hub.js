@@ -27,6 +27,8 @@ export function loadHub() {
     site: cfg.site,
     about: cfg.about,
     playTest,
+    // Карточка «Ранний доступ»: вошедший на Android записывается со своей почтой (с согласием, social/early.js).
+    earlyAccess: cfg.earlyAccess === true,
   };
 }
 

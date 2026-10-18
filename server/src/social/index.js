@@ -24,6 +24,7 @@ import { startJobs } from './jobs.js';
 import { gameRoutes } from './game.js';
 import { liveRoutes } from './live.js';
 import { initPush, pushRoutes, pushSchedule } from './push.js';
+import { earlyRoutes } from './early.js';
 import { setChangesHook } from '../poller.js';
 
 export const SOCIAL_PATH = /^\/api\/(auth|social|media)(\/|$)/;
@@ -90,6 +91,7 @@ export async function registerSocial(app, { hub, tenants }) {
     authRoutes(inst, ctx);
     accountRoutes(inst, ctx);                        // DELETE /api/social/me — во всех режимах
     pushRoutes(inst);                                // уведомления: изменения пар от обсуждений не зависят
+    earlyRoutes(inst, ctx);                          // ранний доступ в Google Play — во всех режимах
     if (social.mode !== 'off') {
       postRoutes(inst, ctx);
       instantRoutes(inst, ctx);

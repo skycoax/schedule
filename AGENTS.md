@@ -95,6 +95,7 @@ server/src/social/
                  в posts/users/moderation/instants/game, всё — после COMMIT (контракт — CONTRACT.md §J)
   push.js        уведомления, когда Para закрыта (Web Push): подписки устройств (push_subs, V10), ключи VAPID
                  в <DATA_DIR>/push-vapid.json (создаются сами; секрет), заявки/ответы/покер/изменения пар (§K)
+  early.js       ранний доступ в Google Play: запись с согласием (early_access, V11), выгрузка почт модератору (§L)
 server/test/social-smoke.mjs   дымовой тест всех маршрутов
 server/test/social-seed.mjs    наполнение для разработки (alice, bob, mia до 18, boss — модератор)
 server/test/poker-logic.test.mjs  карты, банки, Чен, бот всегда ходит по правилам (node --test)
@@ -126,8 +127,8 @@ web/src/game/                  «Покер» в приложении: вход 
 Аварийный выключатель: `SOCIAL_MODE=readonly` (писать нельзя; жалобы, блокировки, удаление своего и аккаунта,
 выход работают) или `off` (обсуждений нет; вход ради удаления, выход и удаление аккаунта работают), затем
 `sudo systemctl restart schedule-api`. Только покер: `SOCIAL_GAME=off` (стола нет). Стол живёт в памяти: перезапуск
-службы обрывает текущую раздачу (фишки в банке теряются) — выкладывать лучше при пустом столе. Схема — social.db V10
-(V8 `poker_players`: стек и счёт; V9 — бонус дня и серия; V10 `push_subs` — уведомления); контракт — `docs/social/CONTRACT.md`
+службы обрывает текущую раздачу (фишки в банке теряются) — выкладывать лучше при пустом столе. Схема — social.db V11
+(V8 `poker_players`: стек и счёт; V9 — бонус дня и серия; V10 `push_subs` — уведомления; V11 `early_access` — ранний доступ); контракт — `docs/social/CONTRACT.md`
 §I (покер) и §K (уведомления). Только уведомления: `SOCIAL_PUSH=off`.
 
 Правила обсуждений меняются по существу (`web/src/social/rules.ts`, `server/hub/rules.html`) — **вместе с ними

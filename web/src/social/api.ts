@@ -412,4 +412,16 @@ export const socialApi = {
   adminAudit(cursor?: string | null, signal?: AbortSignal): Promise<Page<AuditItem>> {
     return call<Page<AuditItem>>('GET', '/api/social/admin/audit', { params: { cursor }, signal });
   },
+
+  /** Ранний доступ в Google Play (§L): записаться — только с согласием на передачу почты; → записан ли. */
+  async earlyJoin(): Promise<boolean> {
+    return (await call<{ earlyAccess: boolean }>('POST', '/api/social/early', { body: { consent: true } })).earlyAccess;
+  },
+  async earlyLeave(): Promise<boolean> {
+    return (await call<{ earlyAccess: boolean }>('POST', '/api/social/early/remove', { body: {} })).earlyAccess;
+  },
+  /** Модератору: сколько записалось и их почты через запятую — для списка тестеров в Play Console. */
+  adminEarly(signal?: AbortSignal): Promise<{ count: number; emails: string }> {
+    return call<{ count: number; emails: string }>('GET', '/api/social/admin/early', { signal });
+  },
 };

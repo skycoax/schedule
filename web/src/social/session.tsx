@@ -55,7 +55,7 @@ const OUTCOME_OK = new Set<AuthOutcome>(['ok', 'cancelled', 'none']);
  *  'game' — игра «Код» с людьми; в режиме «только чтение» её нет (в READONLY_OK не входит). */
 const WRITES = new Set<AuthReason>(['post', 'reply', 'like', 'friend', 'game']);
 /** Что можно в режиме «только чтение». */
-const READONLY_OK = new Set<AuthReason>(['profile', 'search', 'account', 'delete', 'expired', 'report', 'block']);
+const READONLY_OK = new Set<AuthReason>(['profile', 'search', 'account', 'delete', 'expired', 'report', 'block', 'early']);
 
 const OFF_TEXT = 'Обсуждения временно недоступны';
 const READONLY_TEXT = 'Обсуждения временно доступны только для чтения';
