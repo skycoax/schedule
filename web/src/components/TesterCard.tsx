@@ -14,6 +14,9 @@ import { toast } from '../ui/Toast';
 
 const KEY = 'playTest';
 const INTENT = 'earlyIntent';   // нажал «Хочу» гостем: после входа сразу спросим согласие
+// Страница приложения в Google Play (пакет — android/twa-manifest.json). Пока идёт закрытое тестирование, она
+// открывается только тестерам; остальным — ссылка участия (brand.playTest) на кнопке.
+const PLAY_STORE = 'https://play.google.com/store/apps/details?id=uz.skycoax.para';
 const IS_ANDROID = /Android/i.test(navigator.userAgent || '');
 const CAN_JOIN = !!brand.earlyAccess && hasSocial;
 
@@ -86,9 +89,12 @@ export function TesterCard({ onDone }: { onDone: () => void }) {
       <span className="inst__txt">
         <span className="inst__t">{title}</span>
         <span className="inst__s">{sub}</span>
-        {joined && (
-          <button type="button" className="tst__out" disabled={busy} onClick={() => void setEarly(false)}>Выйти из списка</button>
-        )}
+        <span className="tst__links">
+          <a className="tst__out" href={PLAY_STORE} target="_blank" rel="noopener">Страница в Google Play</a>
+          {joined && (
+            <button type="button" className="tst__out" disabled={busy} onClick={() => void setEarly(false)}>Выйти из списка</button>
+          )}
+        </span>
       </span>
       {action}
       <button type="button" className="tst__x" aria-label="Скрыть карточку" onClick={hide}>
