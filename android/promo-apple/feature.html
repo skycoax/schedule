@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Para — баннер Play</title>
+<link rel="stylesheet" href="promo.css">
+<script src="promo.js"></script>
+<style>
+  .canvas { width: 1024px; height: 500px; }
+  .copy { position: absolute; left: 64px; top: 0; bottom: 0; display: flex; flex-direction: column; justify-content: center; z-index: 5; }
+  .brand { display: flex; align-items: center; gap: 18px; margin-left: -6px; }
+  .word { font-size: 120px; font-weight: 700; letter-spacing: -.04em; line-height: .9; }
+  .tag { margin-top: 28px; font-size: 36px; font-weight: 700; letter-spacing: -.022em; line-height: 1.12; }
+  .sub { margin-top: 16px; font-size: 20px; font-weight: 500; color: var(--muted); letter-spacing: -.005em; }
+  .sub b { color: #d2d2d7; font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="canvas" id="c">
+  <div class="glow" style="--blur:80px; left:600px; top:60px; width:420px; height:400px; background:rgba(255,255,255,.08)"></div>
+
+  <div class="copy">
+    <div class="brand"><span id="logo"></span><span class="word">Para</span></div>
+    <div class="tag">Сколько до конца пары?<br><span class="dim">Видно сразу.</span></div>
+    <div class="sub"><b>14 вузов</b> · работает офлайн · без рекламы</div>
+  </div>
+</div>
+<script>
+  document.getElementById('logo').outerHTML = logo(132);
+  document.getElementById('c').insertAdjacentHTML('beforeend',
+    phone({ shot: 'week', w: 250, x: 590, y: 122, z: 1 }) +
+    phone({ shot: 'now', w: 276, x: 734, y: 50, z: 2 }));
+</script>
+</body>
+</html>
