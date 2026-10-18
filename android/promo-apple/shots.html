@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Para — скриншоты Play</title>
+<link rel="stylesheet" href="promo.css">
+<script src="promo.js"></script>
+<style>
+  .canvas { width: 1080px; height: 1920px; }
+
+  .copy { position: absolute; left: 0; right: 0; top: 136px; padding: 0 70px; text-align: center; z-index: 5; }
+  .eyebrow { font-size: 40px; font-weight: 600; letter-spacing: -.01em; color: #a1a1a6; }
+  h1 { margin-top: 14px; font-size: 100px; font-weight: 700; letter-spacing: -.03em; line-height: 1.04; }
+  h1 .l2 { display: inline-block; padding-bottom: .06em; }
+  .sub { margin: 30px auto 0; max-width: 880px; font-size: 38px; font-weight: 500; line-height: 1.3;
+         letter-spacing: -.012em; color: var(--muted); text-wrap: balance; }
+
+  /* Обложка */
+  .hero { position: absolute; left: 0; right: 0; top: 104px; text-align: center; z-index: 5; }
+  .hero .word { margin-top: 26px; font-size: 190px; font-weight: 700; letter-spacing: -.042em; line-height: .88; }
+  .hero .tag { margin-top: 36px; font-size: 64px; font-weight: 700; letter-spacing: -.028em; line-height: 1.1; }
+
+  /* Коротко о главном */
+  .bento { position: absolute; left: 64px; right: 64px; top: 520px; display: grid;
+           grid-template-columns: 1fr 1fr; gap: 24px; }
+  .tile { background: var(--tile); border-radius: 44px; padding: 44px 44px 46px; box-shadow: inset 0 0 0 1px var(--line); }
+  .tile.wide { grid-column: 1 / -1; display: flex; align-items: center; gap: 44px; }
+  .tile svg { width: 80px; height: 80px; fill: none; stroke: currentColor; stroke-width: 1.7;
+              stroke-linecap: round; stroke-linejoin: round; display: block; }
+  .tile h3 { margin-top: 30px; color: var(--ink); font-size: 46px; font-weight: 700; letter-spacing: -.03em; line-height: 1.08; }
+  .tile p { margin-top: 12px; font-size: 30px; font-weight: 500; line-height: 1.3; color: var(--muted); letter-spacing: -.005em; }
+  .tile.wide h3 { margin-top: 0; }
+  .tile.wide svg { width: 96px; height: 96px; flex: none; }
+  .big { font-size: 230px; font-weight: 800; letter-spacing: -.02em; line-height: .8; padding-bottom: 18px; flex: none; }
+</style>
+</head>
+<body>
+<div class="canvas" id="c"></div>
+<script>
+  // Зачёркивание с зазором цвета плитки, чтобы линия не сливалась с рисунком
+  const SLASH = '<path d="M4 4l16 16" stroke="#141416" stroke-width="4.6"/><path d="M4 4l16 16"/>';
+  const ICON = {
+    offline: '<path d="M2.5 9a14 14 0 0 1 19 0"/><path d="M5.8 12.4a9.2 9.2 0 0 1 12.4 0"/><path d="M9.1 15.8a4.4 4.4 0 0 1 5.8 0"/><circle cx="12" cy="19.2" r="1" fill="currentColor"/>' + SLASH,
+    noreg: '<circle cx="12" cy="8" r="4"/><path d="M4.5 20.5a7.5 7.5 0 0 1 15 0"/>' + SLASH,
+    noads: '<path d="M12 3 4.5 6v5.5c0 4.6 3.2 8.4 7.5 9.5 4.3-1.1 7.5-4.9 7.5-9.5V6z"/><path d="m8.6 12.1 2.4 2.4 4.4-4.9"/>',
+    theme: '<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor"/>',
+    teacher: '<rect x="3" y="4" width="18" height="12.5" rx="2"/><path d="M8.5 20.5 12 16.5l3.5 4"/><path d="m7 12.5 3-3 2.2 2.2L17 7"/>',
+  };
+  const svg = (name) => `<svg viewBox="0 0 24 24">${ICON[name]}</svg>`;
+  const lines = (a, b) => `${a}<br><span class="l2 dim">${b}</span>`;
+  const glow = (x, y, w, h, color, blur = 110) =>
+    `<div class="glow" style="--blur:${blur}px; left:${x}px; top:${y}px; width:${w}px; height:${h}px; background:${color}"></div>`;
+  // Только нейтральный свет за телефоном, без цвета
+  const LIGHT = 'rgba(255,255,255,.075)';
+
+  const copy = (eyebrow, h, sub) =>
+    `<div class="copy"><div class="eyebrow">${eyebrow}</div><h1>${h}</h1><p class="sub">${sub}</p></div>`;
+  const single = (shot) =>
+    glow(150, 640, 780, 700, LIGHT, 130) +
+    phone({ shot, w: 780, x: 150, y: 646 });
+
+  const SLIDES = {
+    // Главное — отсчёт до конца пары: обложка и крупный план часов
+    1: () =>
+      glow(100, 860, 880, 820, LIGHT, 140) +
+      `<div class="hero">${logo(200)}
+         <div class="word">Para</div>
+         <div class="tag">Сколько до конца пары?<br><span class="dim">Видно сразу.</span></div>
+       </div>` +
+      phone({ shot: 'week', w: 600, x: 64, y: 920, z: 1 }) +
+      phone({ shot: 'now', w: 660, x: 360, y: 820, z: 2 }),
+
+    2: () => copy('Сейчас', lines('До конца пары —', 'ещё 22 минуты.'),
+      'Флип-часы считают время до конца идущей пары, а на перемене — до начала следующей.') +
+      glow(60, 620, 960, 800, LIGHT, 140) +
+      phone({ shot: 'now', w: 960, x: 60, y: 640 }),
+
+    3: () => copy('Неделя', lines('Шесть дней.', 'Одна сетка.'),
+      'Цветная полоса пар: видно начало, окна и конец дня — не читая текст.') + single('week'),
+
+    4: () => copy('Правки', lines('Пару перенесли?', 'Уже видно.'),
+      'Журнал изменений: что было и что стало. Изменённые пары отмечены прямо в расписании.') + single('edits'),
+
+    5: () => copy('14 вузов', lines('Выбери свой.', 'И всё готово.'),
+      'Para сразу открывается на расписании твоей группы. Регистрация не нужна.') + single('vuzy'),
+
+    6: () =>
+      `<div class="copy"><div class="eyebrow">Коротко о главном</div><h1>${lines('Всё нужное.', 'Ничего лишнего.')}</h1></div>
+       <div class="bento">
+         <div class="tile wide">
+           <div class="big">14</div>
+           <div><h3>вузов в одном приложении</h3><p>Новый вуз появляется в Para сам — обновлять ничего не нужно.</p></div>
+         </div>
+         <div class="tile">${svg('offline')}<h3>Без интернета</h3><p>Последнее расписание всегда в телефоне.</p></div>
+         <div class="tile">${svg('noreg')}<h3>Без регистрации</h3><p>Ни имени, ни телефона, ни&nbsp;почты.</p></div>
+         <div class="tile">${svg('noads')}<h3>Без рекламы</h3><p>И без трекеров. Данные не продаются.</p></div>
+         <div class="tile">${svg('theme')}<h3>Тёмная и светлая</h3><p>По настройке телефона или вручную.</p></div>
+         <div class="tile wide">${svg('teacher')}
+           <div><h3>Режим преподавателя</h3><p>Свои пары, аудитории и группы.</p></div>
+         </div>
+       </div>`,
+  };
+
+  const n = new URLSearchParams(location.search).get('s') || '1';
+  document.getElementById('c').innerHTML = SLIDES[n]();
+</script>
+</body>
+</html>

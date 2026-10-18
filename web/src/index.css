@@ -344,11 +344,11 @@ svg{display:block}
 .hero__lbl.is-idle{color:var(--ink-30)}
 .hero__lbl.is-bad{color:var(--red-ink)}
 .clk{margin:8px 0 2px}
-.clk__d{display:flex;align-items:center;gap:5px;max-width:400px}
+.clk__d{display:flex;align-items:center;gap:5px;container-type:inline-size}
 .clk__sep{flex:none;width:16px;text-align:center;font-size:34px;font-weight:500;
   color:var(--ink-30);animation:blink 1s steps(1,end) infinite}
 @keyframes blink{0%,55%{opacity:1}56%,100%{opacity:.25}}
-.clk__lbls{display:flex;gap:5px;margin-top:10px;max-width:400px}
+.clk__lbls{display:flex;gap:5px;margin-top:10px}
 .clk__lbls span{flex:2;text-align:center;font-size:10px;font-weight:600;
   letter-spacing:.1em;text-transform:uppercase;color:var(--ink-30)}
 .clk__lbls .sp{flex:none;width:16px}
@@ -371,6 +371,8 @@ svg{display:block}
 @keyframes flipU{to{transform:rotateX(-90deg)}}
 @keyframes flipL{to{transform:rotateX(0deg)}}
 @supports not (aspect-ratio: 5/6){ .fl{height:21vw;max-height:104px} }
+/* Часы — на всю ширину карточки: цифры растут вместе с ней (у створок игры «Код» размер свой) */
+@supports (container-type: inline-size){ .clk__d .fl{font-size:clamp(42px, 18.5cqw, 150px)} }
 .hero__cap{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
   color:var(--ink-30);margin-top:12px}
 .hero__bar{height:3px;border-radius:99px;background:var(--fill);

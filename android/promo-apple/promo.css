@@ -1,0 +1,109 @@
+/* Картинки Para для Google Play в стиле презентаций Apple: монохром — чёрный фон, белый и серый текст,
+   телефон с живым скриншотом, мягкий нейтральный свет. Цвет есть только в логотипе и на экранах. Рендер — node android/promo-apple/render.mjs */
+@import url('https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..800&display=block');
+
+:root {
+  --bg: #000;
+  --ink: #f5f5f7;
+  --muted: #86868b;
+  --tile: #141416;
+  --line: rgba(255, 255, 255, .08);
+  --font: 'Inter', 'SF Pro Display', 'Segoe UI Variable Display', system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { background: var(--bg); }
+body {
+  font-family: var(--font);
+  font-optical-sizing: auto;
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+.canvas { position: relative; overflow: hidden; background: var(--bg); }
+
+/* Вторая строка заголовка — серым, как у Apple */
+.dim { color: var(--muted); }
+
+/* Мягкий нейтральный свет за телефоном */
+.glow {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(var(--blur, 90px));
+  pointer-events: none;
+}
+
+/* Телефон: корпус цвета графитового титана, чёрная рамка, экран с полосой статуса.
+   Размеры считаются от --w (ширина корпуса). Нижняя часть может уходить за край кадра. */
+.phone {
+  --w: 760px;
+  --edge: calc(var(--w) * .014);
+  --bezel: calc(var(--w) * .022);
+  --r: calc(var(--w) * .135);
+  position: absolute;
+  width: var(--w);
+  padding: var(--edge);
+  border-radius: var(--r);
+  background: linear-gradient(150deg, #6b6b70 0%, #2a2a2d 22%, #19191b 50%, #2c2c2f 78%, #77777c 100%);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, .06),
+    0 calc(var(--w) * .06) calc(var(--w) * .16) rgba(0, 0, 0, .7);
+}
+.phone::after { /* боковые кнопки справа */
+  content: '';
+  position: absolute;
+  right: calc(var(--edge) * -.55);
+  top: calc(var(--w) * .34);
+  width: calc(var(--edge) * .7);
+  height: calc(var(--w) * .2);
+  border-radius: 0 4px 4px 0;
+  background: linear-gradient(90deg, #3a3a3d, #6b6b70);
+  box-shadow: 0 calc(var(--w) * .27) 0 0 #4a4a4e;
+}
+.bezel {
+  padding: var(--bezel);
+  border-radius: calc(var(--r) - var(--edge));
+  background: #050505;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .05);
+}
+.screen {
+  position: relative;
+  overflow: hidden;
+  border-radius: calc(var(--r) - var(--edge) - var(--bezel));
+  background: var(--top, #000);
+}
+.screen img { display: block; width: 100%; height: auto; }
+.status {
+  position: relative;
+  height: calc(var(--w) * .075);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 calc(var(--w) * .075) 0 calc(var(--w) * .085);
+  font-size: calc(var(--w) * .033);
+  font-weight: 600;
+  letter-spacing: -.01em;
+  color: #fff;
+}
+.status .cam {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: calc(var(--w) * .036);
+  height: calc(var(--w) * .036);
+  transform: translate(-50%, -40%);
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #2b3440 0 18%, #0b0b0d 40%);
+  box-shadow: 0 0 0 calc(var(--w) * .004) #111;
+}
+.status svg { height: calc(var(--w) * .03); width: auto; fill: #fff; }
+.status .icons { display: flex; gap: calc(var(--w) * .014); align-items: center; }
+/* Блик на стекле */
+.screen::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(115deg, rgba(255, 255, 255, .07) 0%, rgba(255, 255, 255, 0) 32%);
+  pointer-events: none;
+}
