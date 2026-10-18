@@ -1,7 +1,7 @@
 {
   "hosts": ["para.skycoax.uz"],
   "redirectOldHosts": false,
-  "playTest": "",
+  "playTest": "https://play.google.com/apps/testing/uz.skycoax.para",
   "earlyAccess": true,
   "site": {
     "name": "Para",
