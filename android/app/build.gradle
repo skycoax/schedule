@@ -55,10 +55,10 @@ android {
     namespace "uz.skycoax.para"
     defaultConfig {
         applicationId "uz.skycoax.para"
-        minSdkVersion 21
+        minSdkVersion 24
         targetSdkVersion 36
-        versionCode 1
-        versionName "1.0.0"
+        versionCode 3
+        versionName "1.0.2"
 
         // The name for the application
         resValue "string", "appName", twaManifest.name

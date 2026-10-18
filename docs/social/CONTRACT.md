@@ -3419,6 +3419,26 @@ open — nothing, after it closes — «Новый ответ»; reply to a repl
 invite → `Urgency: high`, TTL 600; a 410 device is forgotten; `kinds` without `replies` → nothing, back on → sent; after logout →
 nothing. `server/test/push.test.mjs` — schedule texts (`pairChangesByGroup`, `schedText`, plurals).
 
+## L. Ранний доступ в Google Play (schema V12)
+
+`server/src/social/early.js`, client — `web/src/components/TesterCard.tsx` (card «Ранний доступ» under the schedule, Android
+browsers only, never inside the Play app: `document.referrer` `android-app://uz.skycoax.para` → `ls('fromPlay')`), admin line
+in `ModerationView`. Turned on by `server/hub/hub.json` `earlyAccess: true` (brand `earlyAccess`); `playTest` — Play
+Console opt-in link (brand `playTest`, validated `https://play.google.com/…` or `https://groups.google.com/…`). The
+person's email goes to the Play tester list only after they tapped «Хочу» and agreed in the consent modal; the owner pastes
+the export into Play Console by hand. Policy — `server/hub/policy.html#early`, `DocSheet`.
+
+### L.1 Routes (all `SOCIAL_MODE`s; CSRF as §B.1)
+- `POST /api/social/early` `{ consent: true }` → `{ earlyAccess: true }`. Guard `S`; bucket `profile`. Without
+  `consent === true` → 400 `invalid` field `consent` («Нужно согласие на передачу почты в Google Play»). Repeat — no-op.
+- `POST /api/social/early/remove` → `{ earlyAccess: false }`. Guard `S`; bucket `profile`.
+- `GET /api/social/admin/early` → `{ count, emails }` — `emails` joined with `', '`, in signup order. Guard `SA`; bucket `admin`.
+- `Me.earlyAccess: boolean` (§B.6 `Me`, optional on the client for older servers).
+
+### L.2 Table `early_access` (V12; V11 is the psychological test, `psy_results` / `psy_viewers`)
+`user_id` PK → `users(id) ON DELETE CASCADE`, `created_at` (consent time). The email is not copied: the export reads
+`users.email`, so account deletion and «Выйти из списка» drop the person from the next export by themselves.
+
 ## Open questions (owner decisions; the defaults above apply until answered)
 
 - **Q1.** Minimum age and Play target audience.

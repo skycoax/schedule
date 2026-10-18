@@ -14,12 +14,21 @@ export function loadHub() {
   if (!Array.isArray(cfg.hosts) || !cfg.hosts.length) fail('нужен hosts: ["para.skycoax.uz"]');
   for (const k of ['name', 'title', 'description', 'appDescription']) if (!cfg.site || !cfg.site[k]) fail(`нет site.${k}`);
   if (!cfg.about) fail('нет about');
+  // Ссылка на закрытое тестирование в Google Play (Play Console → Тестирование → «Ссылка для участия»
+  // или Google-группа тестеров). Пусто — карточки «Стать тестером» в приложении нет.
+  const playTest = String(cfg.playTest || '').trim();
+  if (playTest && !/^https:\/\/(play|groups)\.google\.com\//.test(playTest)) {
+    fail('playTest — ссылка https://play.google.com/… или https://groups.google.com/…');
+  }
   return {
     dir: config.hubDir,
     hosts: cfg.hosts.map((h) => String(h).trim().toLowerCase()),
     redirectOldHosts: cfg.redirectOldHosts === true,
     site: cfg.site,
     about: cfg.about,
+    playTest,
+    // Карточка «Ранний доступ»: вошедший на Android записывается со своей почтой (с согласием, social/early.js).
+    earlyAccess: cfg.earlyAccess === true,
   };
 }
 

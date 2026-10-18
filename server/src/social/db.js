@@ -407,8 +407,18 @@ CREATE TABLE IF NOT EXISTS psy_viewers (
 ) WITHOUT ROWID;
 `;
 
+// Ранний доступ в Google Play (early.js, CONTRACT.md §L): человек сам согласился, чтобы почту его аккаунта Google
+// добавили в список тестеров Para в Google Play. Почта здесь не хранится — выгрузка берёт её из users; удаление
+// аккаунта убирает запись (каскад), «Выйти из списка» — тоже.
+export const SCHEMA_V12 = `
+CREATE TABLE IF NOT EXISTS early_access (
+  user_id     INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  created_at  TEXT    NOT NULL                             -- когда согласился
+);
+`;
+
 const MIGRATIONS = [SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6, SCHEMA_V7, SCHEMA_V8, SCHEMA_V9, SCHEMA_V10,
-  SCHEMA_V11];
+  SCHEMA_V11, SCHEMA_V12];
 
 /** Открыть (и при необходимости создать) social.db и довести схему до последней версии. */
 export function openSocialDb(dir = config.dataDir) {

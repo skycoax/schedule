@@ -14,7 +14,7 @@ export type AuthOutcome =
   | 'ok' | 'cancelled' | 'expired' | 'failed' | 'browser' | 'limited' | 'unavailable' | 'unverified' | 'consent' | 'none';
 export type AuthReason =
   | 'post' | 'reply' | 'like' | 'friend' | 'block' | 'report' | 'profile' | 'search' | 'account' | 'delete' | 'expired'
-  | 'game';
+  | 'game' | 'early';
 export type ErrorCode =
   | 'invalid' | 'uni' | 'auth' | 'profile' | 'rules' | 'banned' | 'readonly' | 'forbidden' | 'csrf' | 'blocked'
   | 'not_found' | 'conflict' | 'too_large' | 'media_type' | 'rate' | 'server' | 'disk' | 'network';
@@ -114,6 +114,8 @@ export interface Me {
   counts: { friends: number; posts: number };
   usernameNextChange: string | null; // когда снова можно сменить @имя; null — можно сейчас
   createdAt: string;
+  /** Записан на ранний доступ в Google Play (карточка «Ранний доступ», §L); у старого сервера поля нет. */
+  earlyAccess?: boolean;
   /** Покер: сколько людей сейчас за столом, приглашение друга (живёт 10 минут) и ждёт ли ежедневный бонус. null — игра выключена. */
   game: { players: number; invite?: GameInvite | null; bonus?: boolean } | null;
 }

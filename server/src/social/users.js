@@ -17,6 +17,7 @@ import { humans as pokerHumans, inviteOf as pokerInviteOf, bonusWaiting as poker
 import { areFriends } from './instant-access.js';
 import { liveTo } from './live.js';
 import { pushFriend } from './push.js';
+import { earlyOf } from './early.js';
 
 // ─── Имя пользователя (§C.3, §B.4) ───
 
@@ -222,6 +223,7 @@ export function meOf(ctx, u) {
     counts: { friends: friendCount(db, u.id), posts },
     usernameNextChange: usernameNextChange(u),
     createdAt: u.created_at,
+    earlyAccess: earlyOf(db, u.id),        // записан на ранний доступ в Google Play (early.js)
     // «Покер»: сколько людей сейчас за столом, приглашение друга (или null) и ждёт ли ежедневный бонус (стол не
     // находил — false); игра выключена — null.
     game: gameMode() === 'off' ? null

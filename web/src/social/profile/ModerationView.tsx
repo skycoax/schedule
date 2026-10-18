@@ -219,12 +219,24 @@ export function ModerationView(p: {
   const [tab, setTab] = useState<Status>('open');
   const [lists, setLists] = useState<Record<Status, ListState | null>>({ open: null, closed: null });
   const [stats, setStats] = useState<AdminStats | null>(null);
+  // Ранний доступ в Google Play: сколько записалось (с согласием) и их почты через запятую — для Play Console.
+  const [early, setEarly] = useState<{ count: number; emails: string } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const ctrl = useRef<Record<Status, AbortController | null>>({ open: null, closed: null });
 
   const loadStats = useCallback(() => {
     socialApi.adminStats().then(setStats, () => {});
+    socialApi.adminEarly().then(setEarly, () => {});
   }, []);
+  const copyEarly = async () => {
+    if (!early || !early.emails) return;
+    try {
+      await navigator.clipboard.writeText(early.emails);
+      toast(`Скопировано: ${early.count} ${plural(early.count, ['почта', 'почты', 'почт'])}`);
+    } catch {
+      toast('Не получилось скопировать', { kind: 'error' });
+    }
+  };
 
   const listsRef = useRef(lists);
   listsRef.current = lists;
@@ -413,6 +425,12 @@ export function ModerationView(p: {
     <div className="wrap wrap--prof prof-screen">
       {p.active && <NavBar left={<BackButton onClick={p.onBack} />} title="Жалобы" />}
       <p className="mod-stats">{stats ? statsLine(stats) : ' '}</p>
+      {early && early.count > 0 && (
+        <p className="mod-stats">
+          Ранний доступ: {early.count} {plural(early.count, ['человек', 'человека', 'человек'])} ·{' '}
+          <button type="button" className="mod-link" onClick={() => void copyEarly()}>Скопировать почты</button>
+        </p>
+      )}
       <div className="frd-seg">
         <Segmented<Status>
           ariaLabel="Жалобы" value={tab} onChange={switchTab} asTabs controls="mod-panel"

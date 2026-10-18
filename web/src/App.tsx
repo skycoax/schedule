@@ -30,6 +30,7 @@ import { DocSheet } from './components/DocSheet';
 import { ReviewsModal } from './components/ReviewsModal';
 import { ReviewPrompt } from './components/ReviewPrompt';
 import { InstallCard } from './components/InstallCard';
+import { TesterCard, testerCardWanted } from './components/TesterCard';
 import { ReviewsBlock } from './components/ReviewsBlock';
 import { StatsBlock } from './components/StatsBlock';
 import { OfflineNote } from './components/OfflineNote';
@@ -118,6 +119,7 @@ function StudentApp({ active, command, onContext, theme, setRole }: ScheduleSlot
   const gameOpenRef = useRef(gameOpen);
   gameOpenRef.current = gameOpen;
   const [installLater, setInstallLater] = useState(false);
+  const [tester, setTester] = useState(testerCardWanted);
   const [seenTs, setSeenTs] = useState(() => store('seenTs') || '');
   const [reviews, setReviews] = useState<ReviewsData | null>(null);
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -460,7 +462,9 @@ function StudentApp({ active, command, onContext, theme, setRole }: ScheduleSlot
         )}
 
         <div className="extras">
-          {!isStandalone() && <InstallCard onOpen={() => setInstallOpen(true)} />}
+          {/* На Android с тестированием в Play зовём в приложение из Play, а не на главный экран */}
+          {tester ? <TesterCard onDone={() => setTester(false)} />
+            : !isStandalone() && <InstallCard onOpen={() => setInstallOpen(true)} />}
           <ReviewsBlock data={reviews} myRating={Number(store('myRating') || 0)}
             onOpen={() => openReviews()} onRate={openReviews} />
           <StatsBlock data={summary} onOpen={() => setStatsOpen(true)} />
