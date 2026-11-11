@@ -267,7 +267,7 @@ function NotifySection({ signed, onInstall }: { signed: boolean; onInstall?: () 
       {signed && (
         <>
           <CtlRow label="Приглашения в игру" icon={{ name: 'plane', color: 'var(--c3)' }} sw>
-            <Switch label="Показывать приглашения в покер" checked={game} onChange={(v) => setNotify('game', v)} />
+            <Switch label="Показывать приглашения в шахматы" checked={game} onChange={(v) => setNotify('game', v)} />
           </CtlRow>
           <CtlRow label="Заявки в друзья" icon={{ name: 'people', color: 'var(--c2)' }} sw>
             <Switch label="Уведомлять о заявках в друзья" checked={friends} onChange={(v) => setNotify('friends', v)} />

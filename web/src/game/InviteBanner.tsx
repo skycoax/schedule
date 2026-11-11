@@ -1,5 +1,6 @@
-// «Алиса зовёт тебя в покер» — плашка сверху на любом экране приложения (основной бандл). «Играть» — открыть стол и
-// сразу сесть; крестик — «не сейчас» (приглашение гаснет и у сервера). Сама уходит через 30 с. Пока стол открыт — не видна.
+// «Алиса зовёт тебя сыграть в шахматы» — плашка сверху на любом экране приложения (основной бандл). «Играть» — открыть
+// шахматы и принять (партия создаётся сразу); крестик — «не сейчас» (приглашение гаснет и у сервера). Сама уходит
+// через 30 с. Пока шахматы открыты — не видна (там приглашение показывает сам экран).
 import { useEffect, useState } from 'react';
 import type { JSX } from 'react';
 import { Avatar } from '../social/ui/Avatar';
@@ -11,7 +12,7 @@ const LEAVE_MS = 220;
 
 /** Сказать серверу «не сейчас» (файл API — отдельный кусок, грузится по требованию). */
 function dismissOnServer(): void {
-  void import('../social/api').then(({ apiCall }) => apiCall('POST', '/api/social/games/invite/dismiss', { body: {} })).catch(() => {});
+  void import('../social/api').then(({ apiCall }) => apiCall('POST', '/api/social/chess/invite/dismiss', { body: {} })).catch(() => {});
 }
 
 export function InviteBanner(): JSX.Element | null {
@@ -31,16 +32,13 @@ export function InviteBanner(): JSX.Element | null {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inv]);
 
-  // Стол уже открыт — приглашение сделало своё.
-  useEffect(() => { if (inv && game.status !== 'closed') dropInvite(); }, [inv, game.status]);
-
   if (!inv || game.status !== 'closed') return null;
   const name = inv.from.name;
   return (
     <div className={'gi' + (leaving ? ' is-leaving' : '')} role="status" aria-live="polite">
       <Avatar user={inv.from} size={36} />
-      <div className="gi__t"><b>{name}</b><span>зовёт тебя в покер</span></div>
-      <button type="button" className="gi__go" onClick={() => close(() => openGame({ sit: true }))}>Играть</button>
+      <div className="gi__t"><b>{name}</b><span>зовёт тебя сыграть в шахматы</span></div>
+      <button type="button" className="gi__go" onClick={() => { const from = inv.from.id; close(() => openGame({ accept: from })); }}>Играть</button>
       <button type="button" className="gi__x" aria-label="Не сейчас" onClick={() => { dismissOnServer(); close(); }}>
         <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
           <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />

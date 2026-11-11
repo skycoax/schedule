@@ -1,5 +1,5 @@
 // Живые обновления приложения: один поток SSE (GET /api/social/live) на вошедшего, пока приложение открыто и видно.
-// Сервер присылает чужие события — посты, ответы, «нравится», заявки в друзья, моменты, приглашения в покер, — а здесь
+// Сервер присылает чужие события — посты, ответы, «нравится», заявки в друзья, моменты, шахматы, — а здесь
 // они превращаются в те же локальные события (events.ts), на которые уже подписаны лента, ветки, профиль и друзья:
 // экраны обновляются сами, без перезахода. После каждого (пере)подключения (hello) — «перечитай экран» (resync)
 // и свежий Me: так догоняется всё, что пришло, пока приложение было свёрнуто.
@@ -8,13 +8,12 @@ import { brand } from '../brand';
 import { SseStream } from '../lib/sse';
 import { toast } from '../ui/Toast';
 import { notifyOn } from '../lib/notify';
-import { plural } from '../lib/plural';
 import { pushSync } from '../lib/push';
 import { emit, useSocialEvents } from './events';
 import { useSession } from './session';
-import type { GameInvite, Post, Relation, UserCard } from './types';
+import type { ChessGame, GameInvite, Post, Relation, UserCard } from './types';
 
-// ─── Приглашение в покер: из потока или из Me (открыл приложение позже, но в пределах 10 минут) ───
+// ─── Приглашение в шахматы: из потока или из Me (открыл приложение позже, но в пределах 10 минут) ───
 
 let invite: GameInvite | null = null;
 const dismissed = new Set<string>();   // уже закрытые (по from.id + at): Me может ещё помнить их до обновления
@@ -33,6 +32,15 @@ export function dropInvite(): void {
 }
 export function useInvite(): GameInvite | null {
   return useSyncExternalStore((f) => { inviteSubs.add(f); return () => { inviteSubs.delete(f); }; }, () => invite, () => null);
+}
+
+// ─── Шахматы: ход, сдача или ничья в партии — открытым шахматам (ChessHost подписывается сам) ───
+
+const chessSubs = new Set<(g: ChessGame) => void>();
+/** Подписка на партии из потока; возвращает отписку. */
+export function onChess(f: (g: ChessGame) => void): () => void {
+  chessSubs.add(f);
+  return () => { chessSubs.delete(f); };
 }
 
 const SEEN_MAX = 500;
@@ -100,21 +108,17 @@ export function useLive(): void {
         refreshMe();
       },
       me: () => refreshMe(),
-      chips: (d) => {
-        if (typeof d.amount !== 'number' || !d.amount) return;
-        const n = Math.abs(d.amount);
-        const text = n.toLocaleString('ru-RU').replace(/\u00a0/g, ' ') + ' ' + plural(n, ['фишку', 'фишки', 'фишек']);
-        if (notifyOn('game')) toast(d.amount > 0 ? 'Тебе начислили ' + text : 'Модератор снял ' + text);
-      },
       instants: () => emit({ type: 'instants' }),
       invite: (d) => {
         const from = d.from as UserCard | undefined;
         if (from && typeof from.id === 'number') setInvite({ from, at: (d.at as number | string) ?? Date.now() });
       },
-      players: (d) => {
+      chess: (d) => {
+        const g = d.game as ChessGame | undefined;
+        if (g && typeof g.id === 'number') chessSubs.forEach((f) => f(g));
         const cur = sRef.current;
-        if (typeof d.n !== 'number' || cur.status !== 'signed' || !cur.me || !cur.me.game) return;
-        if (cur.me.game.players !== d.n) cur.setMe({ ...cur.me, game: { ...cur.me.game, players: d.n } });
+        if (typeof d.turn !== 'number' || cur.status !== 'signed' || !cur.me || !cur.me.game) return;
+        if (cur.me.game.turn !== d.turn) cur.setMe({ ...cur.me, game: { ...cur.me.game, turn: d.turn } });
       },
     },
   })));

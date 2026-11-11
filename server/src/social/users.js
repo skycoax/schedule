@@ -13,7 +13,7 @@ import { cleanText, tooLong, isProfane, maskProfanity, fold, graphemes } from '.
 import { mediaUrl, thumbUrl, unlinkMedia, MEDIA_ID_RE } from './media.js';
 import { audit } from './moderation.js';
 import { postsOut, deleteAccount, viewerOf } from './posts.js';
-import { humans as pokerHumans, inviteOf as pokerInviteOf, bonusWaiting as pokerBonusWaiting } from './poker-table.js';
+import { inviteOf as chessInviteOf, chessTurns } from './chess-games.js';
 import { areFriends } from './instant-access.js';
 import { liveTo } from './live.js';
 import { pushFriend } from './push.js';
@@ -224,19 +224,18 @@ export function meOf(ctx, u) {
     usernameNextChange: usernameNextChange(u),
     createdAt: u.created_at,
     earlyAccess: earlyOf(db, u.id),        // записан на ранний доступ в Google Play (early.js)
-    // «Покер»: сколько людей сейчас за столом, приглашение друга (или null) и ждёт ли ежедневный бонус (стол не
-    // находил — false); игра выключена — null.
+    // «Шахматы»: приглашение друга (или null) и сколько партий ждут твоего хода; игра выключена — null.
     game: gameMode() === 'off' ? null
-      : { players: pokerHumans(), invite: gameInviteOf(ctx, u.id), bonus: pokerBonusWaiting(u.id) },
+      : { invite: gameInviteOf(ctx, u.id), turn: chessTurns(db, u.id) },
   };
 }
 
 /**
- * Приглашение в покер для Me (§J.5): { from: UserCard, at } — только если оно не истекло (10 минут), пригласивший
+ * Приглашение в шахматы для Me (§J.5): { from: UserCard, at } — только если оно не истекло (10 минут), пригласивший
  * активен, между ними нет блокировки в любую сторону и они всё ещё друзья; иначе null.
  */
 function gameInviteOf(ctx, uid) {
-  const inv = pokerInviteOf(uid);
+  const inv = chessInviteOf(uid);
   if (!inv) return null;
   const db = ctx.db;
   const from = usersByIds(db, [inv.fromId]).get(inv.fromId);
@@ -748,9 +747,9 @@ export function userRoutes(inst, ctx) {
     return ok({ items: blockRows.all(me.id).map((u) => userCardOf(ctx, u, false)) });
   });
 
-  // #30 — заблокировать: дружба и заявки в обе стороны удаляются. Стол покера не трогаем: если оба уже за ним,
-  // каждый видит другого как «Игрока» (masked), см. poker-table.js. Живых обновлений второму нет ни при блокировке,
-  // ни при снятии (блокировку не раскрываем).
+  // #30 — заблокировать: дружба и заявки в обе стороны удаляются. Идущие шахматные партии между ними не трогаем
+  // (доиграть или сдаться может каждый), новые приглашения уже не пройдут. Живых обновлений второму нет ни при
+  // блокировке, ни при снятии (блокировку не раскрываем).
   inst.put('/api/social/blocks/:userId', async (req) => {
     const me = guard(req, 'S');
     const id = userIdParam(req.params.userId);

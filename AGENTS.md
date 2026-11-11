@@ -84,24 +84,21 @@ server/src/social/
   limits.js      ведёрки частоты (в памяти) и дневные пределы (по базе)
   jobs.js        уборка: входы, баны, фото-сироты, сессии, сроки хранения, копия базы
   db.js          social.db и схема (PRAGMA user_version)
-  game.js        «Покер»: маршруты /api/social/games (стол, сесть, встать, ход, реакция, чат и стикеры, поток, позвать друга) — один общий стол Para
-  poker-table.js стол в памяти: места, раздача, таймеры (ход, бот, улицы, паузы), присутствие, view каждому зрителю,
-                 sit/stand/act/react/kick; стек и счёт людей — в poker_players
-  poker-logic.js карты без стола: колода (crypto), evaluate7, compare, handName, sidePots, формула Чена
-  poker-bot.js   «Бот Para»: decide() — азартный: Чен префлоп, Монте-Карло постфлоп, блефы и «посмотреть»
-  game-stream.js поток событий стола (SSE): реестр соединений (гостям тоже), table каждому своё view, ping, bye
+  chess-games.js «Шахматы» с друзьями: маршруты /api/social/chess (список, партия, позвать, принять, ход, сдаться,
+                 ничья), приглашения в памяти (10 минут), партии — chess_games (V13); правила — chess.js (§I).
+                 Партия с ботом — целиком в приложении (web/src/game/bot.worker.ts), сервер о ней не знает
   live.js        живые обновления: поток SSE /api/social/live на вошедшего (чужие посты, ответы, «нравится», удаления,
-                 заявки в друзья, моменты, приглашения в покер, число людей за столом); кому что видно — решают хуки
-                 в posts/users/moderation/instants/game, всё — после COMMIT (контракт — CONTRACT.md §J)
+                 заявки в друзья, моменты, приглашения и ходы в шахматах); кому что видно — решают хуки
+                 в posts/users/moderation/instants/chess-games, всё — после COMMIT (контракт — CONTRACT.md §J)
   push.js        уведомления, когда Para закрыта (Web Push): подписки устройств (push_subs, V10), ключи VAPID
-                 в <DATA_DIR>/push-vapid.json (создаются сами; секрет), заявки/ответы/покер/изменения пар (§K)
+                 в <DATA_DIR>/push-vapid.json (создаются сами; секрет), заявки/ответы/шахматы/изменения пар (§K)
   early.js       ранний доступ в Google Play: запись с согласием (early_access, V12), выгрузка почт модератору (§L)
   psy.js         психологический тест: страница /psy (src/psy/), ответы и кто их видит (psy_results, psy_viewers, V11)
 server/test/social-smoke.mjs   дымовой тест всех маршрутов
 server/test/social-seed.mjs    наполнение для разработки (alice, bob, mia до 18, boss — модератор)
-server/test/poker-logic.test.mjs  карты, банки, Чен, бот всегда ходит по правилам (node --test)
 server/test/push.test.mjs         тексты уведомлений об изменениях пар (node --test)
-web/src/game/                  «Покер» в приложении: вход по 5 касаниям часов (entry.ts), стол, поток, чат и стикеры (Chat.tsx, stickers.tsx)
+web/src/game/                  «Шахматы» в приложении: вход по 5 касаниям часов (entry.ts), ChessHost.tsx (начало, бот, друг),
+                               доска (Board.tsx), бот в отдельном потоке (bot.ts, bot.worker.ts)
 ```
 
 Данные: `data/social.db` (одна база на все вузы), `data/media/` (фото), `data/backup/` (копии базы за 7 дней).
@@ -117,21 +114,22 @@ web/src/game/                  «Покер» в приложении: вход 
 | `SOCIAL_ADMIN_EMAILS` | пусто | почты модераторов через запятую |
 | `SOCIAL_SALT` | `IP_SALT` | соль отпечатков банов (длинная случайная строка) |
 | `SOCIAL_MODE` | `on` | `on` \| `readonly` \| `off` — аварийный выключатель |
-| `SOCIAL_GAME` | `on` | `on` \| `off` — «Покер» (общий стол); off — маршрутов игры нет, пасхалка в приложении молчит |
+| `SOCIAL_GAME` | `on` | `on` \| `off` — «Шахматы» с друзьями; off — маршрутов нет (`me.game = null`), с ботом играть можно |
 | `SOCIAL_PUSH` | `on` | `on` \| `off` — уведомления, когда Para закрыта; off — ничего не отправляется, подписка → 503 |
 | `SOCIAL_MIN_AGE` | `16` | возраст для аккаунта (13–18); тексты политики — то же число |
 | `SOCIAL_REPORT_THRESHOLD` | `3` | сколько учитываемых жалоб скрывают пост |
 | `SOCIAL_REPORTER_MIN_AGE_H` | `24` | жалобы аккаунтов моложе — не учитываются для автоскрытия |
 | `MEDIA_DIR` | `<DATA_DIR>/media` | папка фото |
-| `PARA_ORIGIN`, `DEV_LOGIN`, `DEV_HUB`, `SOCIAL_NEW_ACCOUNT_H`, `SOCIAL_RATE_LIMITS`, `SOCIAL_DEV_GOOGLE_TOKEN_URL`, `POKER_FAST`, `GAME_PING_MS`, `GAME_STREAM_MAX_MS` | — | только для разработки, в production не действуют (`POKER_FAST=1` — быстрые таймеры стола для теста) |
+| `PARA_ORIGIN`, `DEV_LOGIN`, `DEV_HUB`, `SOCIAL_NEW_ACCOUNT_H`, `SOCIAL_RATE_LIMITS`, `SOCIAL_DEV_GOOGLE_TOKEN_URL`, `GAME_PING_MS`, `GAME_STREAM_MAX_MS` | — | только для разработки, в production не действуют (`GAME_*` — частые ping и короткий поток для теста) |
 
 Аварийный выключатель: `SOCIAL_MODE=readonly` (писать нельзя; жалобы, блокировки, удаление своего и аккаунта,
 выход работают) или `off` (обсуждений нет; вход ради удаления, выход и удаление аккаунта работают), затем
-`sudo systemctl restart schedule-api`. Только покер: `SOCIAL_GAME=off` (стола нет). Стол живёт в памяти: перезапуск
-службы обрывает текущую раздачу (фишки в банке теряются) — выкладывать лучше при пустом столе. Схема — social.db V12
-(V8 `poker_players`: стек и счёт; V9 — бонус дня и серия; V10 `push_subs` — уведомления; V11 `psy_results`, `psy_viewers` —
-психологический тест; V12 `early_access` — ранний доступ); контракт — `docs/social/CONTRACT.md`
-§I (покер) и §K (уведомления). Только уведомления: `SOCIAL_PUSH=off`.
+`sudo systemctl restart schedule-api`. Только шахматы с друзьями: `SOCIAL_GAME=off`. Партии лежат в базе, перезапуск
+их не трогает (теряются только приглашения — они в памяти). Схема — social.db V13
+(V8 `poker_players` — от прежнего покера, никто не читает, уходит вместе с аккаунтом; V10 `push_subs` — уведомления;
+V11 `psy_results`, `psy_viewers` — психологический тест; V12 `early_access` — ранний доступ; V13 `chess_games` — шахматы);
+контракт — `docs/social/CONTRACT.md` §I (шахматы) и §K (уведомления). Только уведомления: `SOCIAL_PUSH=off`.
+Покера больше нет (возрастной рейтинг Google Play: симуляция азартных игр — 18+); не возвращать игры со ставками и фишками.
 
 Правила обсуждений меняются по существу (`web/src/social/rules.ts`, `server/hub/rules.html`) — **вместе с ними
 поднять `social.rulesVersion` в `server/src/config.js`**: все примут правила заново.
@@ -142,12 +140,11 @@ web/src/game/                  «Покер» в приложении: вход 
 P=8792; DATA="$TEMP/para-data-$P"; mkdir -p "$DATA"
 cd server && NODE_ENV=development DEV_LOGIN=1 DEV_HUB=1 PARA_ORIGIN=http://be.localhost:$P NO_POLL=1 \
   SOCIAL_ADMIN_EMAILS=boss@dev.local SOCIAL_REPORTER_MIN_AGE_H=0 SOCIAL_NEW_ACCOUNT_H=0 \
-  POKER_FAST=1 GAME_PING_MS=1000 GAME_STREAM_MAX_MS=5000 \
+  GAME_PING_MS=1000 GAME_STREAM_MAX_MS=5000 \
   PORT=$P DATA_DIR="$DATA" WEB_DIR=../web/dist node --experimental-sqlite src/index.js
 # в другом терминале, из корня проекта:
 node server/test/social-smoke.mjs http://127.0.0.1:8792 kfu     # «Всё прошло: N проверок.»
 node server/test/social-seed.mjs  http://127.0.0.1:8792 kfu     # наполнение для интерфейса (можно повторять)
-node --test server/test/poker-logic.test.mjs                     # карты, банки и бот покера (сервер не нужен)
 node --test server/test/push.test.mjs                            # тексты уведомлений об изменениях пар
 node --test server/test/source-gsheet.test.mjs server/test/source-fallback.test.mjs   # открытые Google-таблицы
 ```

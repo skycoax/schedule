@@ -3,7 +3,7 @@
 // уже с брендом этого вуза (server/src/hub.js). Группа и преподаватель у каждого вуза
 // свои: при смене вуза прежние откладываем в prev_<id> и возвращаем, когда человек
 // вернётся к тому вузу.
-// Ссылки на «Обсуждения», «Профиль» и покер (?post=, ?user=, ?tab=…, ?game=1, #auth=) переживают
+// Ссылки на «Обсуждения», «Профиль» и шахматы (?post=, ?user=, ?tab=…, ?game=1&chess=, #auth=) переживают
 // выбор вуза и переход на его страницу: их разбирает shell/deeplink.ts уже внутри приложения.
 import { brand } from '../brand';
 import { store } from './store';
@@ -28,7 +28,7 @@ function fromOldHost(): boolean {
 }
 
 /** Параметры адреса для вкладок «Обсуждения», «Профиль» и игры «Код» (их читает shell/deeplink.ts). */
-export const DEEP_PARAMS: readonly string[] = ['tab', 'post', 'user', 'compose', 'delete', 'mod', 'game'];
+export const DEEP_PARAMS: readonly string[] = ['tab', 'post', 'user', 'compose', 'delete', 'mod', 'game', 'chess'];
 
 const AUTH_HASH = /^#auth=/;
 

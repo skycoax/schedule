@@ -1,51 +1,38 @@
-// Клиент API покера: /api/social/games/* (CONTRACT.md §I, формы — social/types.ts).
-// Транспорт общий с «Обсуждениями» (apiCall): uni=, X-Para у изменений, конверт {ok,data} и тексты ошибок.
+// Клиент API шахмат: /api/social/chess/* (CONTRACT.md §I, формы — social/types.ts). Только партии с друзьями:
+// игра с ботом целиком в приложении (bot.ts). Транспорт общий с «Обсуждениями» (apiCall): uni=, X-Para у изменений,
+// конверт {ok,data} и тексты ошибок.
 import { apiCall } from '../social/api';
-import type { GameReaction, PokerAction, PokerChatItem, PokerSticker, PokerTop, PokerTopScope, PokerView } from '../social/types';
+import type { ChessGame, ChessList } from '../social/types';
 
-const base = '/api/social/games';
+const base = '/api/social/chess';
 
-export const gameApi = {
-  /** Стол целиком (гостю тоже). */
-  table(signal?: AbortSignal): Promise<PokerView> {
-    return apiCall<PokerView>('GET', base, { signal, para: true });
+export const chessApi = {
+  /** Мои партии: идущие и последние законченные, счёт побед. */
+  list(signal?: AbortSignal): Promise<ChessList> {
+    return apiCall<ChessList>('GET', base, { signal });
   },
-  async sit(): Promise<PokerView> {
-    return (await apiCall<{ table: PokerView }>('POST', base + '/sit', { body: {} })).table;
+  async game(id: number, signal?: AbortSignal): Promise<ChessGame> {
+    return (await apiCall<{ game: ChessGame }>('GET', base + '/' + id, { signal })).game;
   },
-  async stand(): Promise<PokerView> {
-    return (await apiCall<{ table: PokerView }>('POST', base + '/stand', { body: {} })).table;
-  },
-  /** amount — итоговая ставка на улице (raise «до»); у fold/check/call/allin не нужен. */
-  async act(hand: number, action: PokerAction, amount?: number): Promise<PokerView> {
-    const body: Record<string, unknown> = { hand, action };
-    if (amount !== undefined) body.amount = amount;
-    return (await apiCall<{ table: PokerView }>('POST', base + '/act', { body })).table;
-  },
-  /** Чат стола: последние сообщения (гостю тоже). */
-  async chat(signal?: AbortSignal): Promise<PokerChatItem[]> {
-    return (await apiCall<{ items: PokerChatItem[] }>('GET', base + '/chat', { signal })).items;
-  },
-  /** Сообщение или стикер в чат стола (только сидящим). */
-  async say(m: { text: string } | { sticker: PokerSticker }): Promise<PokerChatItem> {
-    return (await apiCall<{ item: PokerChatItem }>('POST', base + '/chat', { body: m })).item;
-  },
-  async react(r: GameReaction): Promise<void> {
-    await apiCall<unknown>('POST', base + '/react', { body: { r } });
-  },
-  /** Забрать ежедневный бонус: got — сколько фишек пришло, table — стол со свежим me. */
-  bonus(): Promise<{ got: number; table: PokerView }> {
-    return apiCall<{ got: number; table: PokerView }>('POST', base + '/bonus', { body: {} });
-  },
-  /** Рейтинг по фишкам: друзья или все (в «Все» — взрослые из поиска и друзья). */
-  top(scope: PokerTopScope, signal?: AbortSignal): Promise<PokerTop> {
-    return apiCall<PokerTop>('GET', base + '/top', { params: { scope }, signal });
-  },
-  /** Позвать друга: у него сразу появится «… зовёт тебя в покер». */
+  /** Позвать друга: у него сразу появится «… зовёт тебя сыграть в шахматы». */
   async invite(to: number): Promise<void> {
     await apiCall<unknown>('POST', base + '/invite', { body: { to } });
   },
+  async dismiss(): Promise<void> {
+    await apiCall<unknown>('POST', base + '/invite/dismiss', { body: {} });
+  },
+  /** Принять приглашение друга from: партия создаётся, цвет случайный. */
+  async accept(from: number): Promise<ChessGame> {
+    return (await apiCall<{ game: ChessGame }>('POST', base + '/accept', { body: { from } })).game;
+  },
+  /** Ход в UCI ('e2e4', 'e7e8q'); ply — сколько полуходов было до него (сервер сверит). */
+  async move(id: number, move: string, ply: number): Promise<ChessGame> {
+    return (await apiCall<{ game: ChessGame }>('POST', base + '/' + id + '/move', { body: { move, ply } })).game;
+  },
+  async resign(id: number): Promise<ChessGame> {
+    return (await apiCall<{ game: ChessGame }>('POST', base + '/' + id + '/resign', { body: {} })).game;
+  },
+  async draw(id: number, action: 'offer' | 'accept' | 'decline'): Promise<ChessGame> {
+    return (await apiCall<{ game: ChessGame }>('POST', base + '/' + id + '/draw', { body: { action } })).game;
+  },
 };
-
-/** Адрес потока событий (EventSource сам uni= не добавит). */
-export const streamUrl = (uni: string) => base + '/stream?uni=' + encodeURIComponent(uni);

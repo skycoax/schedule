@@ -2,7 +2,7 @@
 // запрос уходит обычным fetch). Контракт — CONTRACT.md §K.
 // Подписка — одно устройство (браузер или приложение с экрана «Домой»): endpoint и ключи шифрования, где подписались
 // (Para или адрес вуза — для ссылки в уведомлении), вуз и группа (изменения пар), сессия этого устройства (заявки
-// в друзья, ответы, приглашения в покер — только пока на нём выполнен вход) и что присылать (kinds — переключатели
+// в друзья, ответы, приглашения и ходы в шахматах — только пока на нём выполнен вход) и что присылать (kinds — переключатели
 // «Уведомлений» в приложении). Содержимое шифруется ключом устройства: служба push видит только адрес, время и размер.
 // Кому своё событие видно на открытом экране (живой поток, live.js), тому push о нём не шлём.
 // Ключи VAPID создаются при первом запуске: <DATA_DIR>/push-vapid.json (секрет: не выводить, не коммитить).
@@ -252,25 +252,24 @@ export function pushReply(toId, author, row) {
   }), { ttl: DAY_S, topic: 'r' + row.root_id, dedupe: `r:${toId}:${row.root_id}`, dedupeMs: 30_000 });
 }
 
-/** Приглашение в покер (живёт 10 минут) — другу toId. from — строка users. */
+/** Приглашение сыграть в шахматы (живёт 10 минут) — другу toId. from — строка users. */
 export function pushInvite(toId, from) {
   pushUser(toId, 'game', (r) => ({
-    t: 'Покер',
-    b: nameOf(from) + ' зовёт тебя за стол',
+    t: 'Шахматы',
+    b: nameOf(from) + ' зовёт тебя сыграть',
     u: link(r, 'game=1'),
     g: 'game',
   }), { ttl: 600, urgency: 'high', topic: 'game' });
 }
 
-/** Модератор начислил (amount > 0) или снял фишки покера — человеку toId (вид «Приглашения в игру»). */
-export function pushChips(toId, amount) {
-  const n = Math.abs(amount).toLocaleString('ru-RU').replace(/\u00a0/g, ' ');
+/** Ход, сдача или ничья в партии gameId — сопернику toId (body — готовый текст, chess-games.js). */
+export function pushChess(toId, gameId, body) {
   pushUser(toId, 'game', (r) => ({
-    t: 'Покер',
-    b: (amount > 0 ? 'Тебе начислили ' : 'Модератор снял ') + n + ' ' + plural(Math.abs(amount), 'фишку', 'фишки', 'фишек'),
-    u: link(r, 'game=1'),
-    g: 'chips',
-  }), { ttl: DAY_S, topic: 'chips' });
+    t: 'Шахматы',
+    b: clip(maskProfanity(body), 120),
+    u: link(r, 'game=1&chess=' + gameId),
+    g: 'chess-' + gameId,
+  }), { ttl: DAY_S, topic: 'c' + gameId });
 }
 
 // ─── Изменения пар ───

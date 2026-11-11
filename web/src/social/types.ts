@@ -50,7 +50,7 @@ export interface Limits {
   mediaBytes: number; thumbBytes: number; mediaSide: number; thumbSide: number; avatarSide: number;
   name: number; bio: number; usernameMin: number; usernameMax: number; note: number;
 }
-/** Покер (SOCIAL_GAME): on | off. */
+/** Шахматы с друзьями (SOCIAL_GAME): on | off. */
 export type GameMode = 'on' | 'off';
 export interface SocialConfig { rulesVersion: number; minAge: number; limits: Limits; game: GameMode }
 /** GET /api/auth/me. В режиме 'off' маршрут остаётся (ради удаления аккаунта); 404 клиент понимает так же, как 'off' без аккаунта. */
@@ -116,8 +116,8 @@ export interface Me {
   createdAt: string;
   /** Записан на ранний доступ в Google Play (карточка «Ранний доступ», §L); у старого сервера поля нет. */
   earlyAccess?: boolean;
-  /** Покер: сколько людей сейчас за столом, приглашение друга (живёт 10 минут) и ждёт ли ежедневный бонус. null — игра выключена. */
-  game: { players: number; invite?: GameInvite | null; bonus?: boolean } | null;
+  /** Шахматы: приглашение друга (живёт 10 минут) и сколько партий ждут моего хода. null — игра с друзьями выключена. */
+  game: { invite?: GameInvite | null; turn: number } | null;
 }
 
 /** Публикация и ответ — одна форма (одна таблица на сервере). */
@@ -162,7 +162,7 @@ export interface MePatch {
 export interface ReportBody { target: 'post' | 'user' | 'instant'; id: number; reason: ReportReason; note?: string }
 
 export type ReportTarget = { type: 'post'; id: number } | { type: 'user'; id: number } | { type: 'instant'; id: number };
-export type AdminAction = 'dismiss' | 'hide' | 'unhide' | 'delete' | 'ban' | 'unban' | 'reset' | 'badge' | 'chips';
+export type AdminAction = 'dismiss' | 'hide' | 'unhide' | 'delete' | 'ban' | 'unban' | 'reset' | 'badge';
 export type ResetField = 'avatar' | 'bio' | 'links' | 'name';
 export interface AdminActionBody {
   action: AdminAction;
@@ -172,7 +172,6 @@ export interface AdminActionBody {
   hidePosts?: boolean;
   fields?: ResetField[];
   badge?: UserBadge | null;
-  amount?: number;              // chips: сколько фишек начислить (< 0 — снять)
 }
 /** Снимок цели на момент первой жалобы. */
 export interface ReportSnapshot {
@@ -247,7 +246,7 @@ export interface AdminUser {
   signup: { host: string; device: string };
   rulesAt: string | null; lastLoginAt: string | null; loginCount: number; lastSeen: string | null;
   sessions: number; devices: string[];
-  chips?: number | null;        // фишки покера; null — стол не открывал
+  chess?: number;               // партий в шахматы с друзьями
 }
 export interface AdminUsersStats { total: number; today: number; week: number; active: number; noProfile: number; banned: number }
 export interface AdminUsersPage { items: AdminUser[]; next: string | null; stats: AdminUsersStats | null }
@@ -256,70 +255,31 @@ export interface AuditItem {
   action: string; target: string | null; uni: string | null; info: Record<string, unknown>;
 }
 
-// ─── Покер (/api/social/games, CONTRACT.md §I): один общий стол на всю Para, техасский холдем на игровые фишки ───
+// ─── Шахматы (/api/social/chess, CONTRACT.md §I): партии с друзьями; игра с ботом — только в приложении ───
 
-export type GameReaction = 'wave' | 'like' | 'wow' | 'lol' | 'fire' | 'deal';
-/** Стикеры чата стола (server/src/social/poker-table.js STICKERS, фронт — game/stickers.tsx). */
-export type PokerSticker = 'gg' | 'allin' | 'fire' | 'lol' | 'cry' | 'cool' | 'think' | 'shock' | 'angry' | 'love' | 'clap'
-  | 'crown' | 'money' | 'bluff' | 'skull' | 'lucky';
-/** Строка чата стола: сообщение или стикер; bot — от Para; at — время сервера (мс). */
-export interface PokerChatItem {
-  id: number; at: number; seat: number; bot: boolean; user: UserCard | null;
-  text: string | null; sticker: PokerSticker | null;
-}
-/** Друг зовёт в покер (at — когда позвал: время сервера, ms или ISO). */
+/** Друг зовёт сыграть в шахматы (at — когда позвал: время сервера, ms или ISO). */
 export interface GameInvite { from: UserCard; at: number | string }
-/** Карта: ранг A K Q J T 9 8 7 6 5 4 3 2 и масть s h d c — 'As', 'Td'; чужая закрытая — '?'. */
-export type Card = string;
-export type PokerAction = 'fold' | 'check' | 'call' | 'raise' | 'allin';
-export type PokerLast = 'fold' | 'check' | 'call' | 'bet' | 'raise' | 'allin' | 'sb' | 'bb' | 'win';
-export type PokerPhase = 'preflop' | 'flop' | 'turn' | 'river' | 'showdown' | 'done';
-
-export interface PokerSeat {
-  seat: number; user: UserCard | null; bot: boolean; masked: boolean;
-  chips: number; bet: number;            // bet — поставлено на этой улице, в банк ещё не ушло
-  folded: boolean; allIn: boolean; away: boolean; reserved: boolean; inHand: boolean; leaving: boolean;
-  cards: Card[] | null;                  // свои — настоящие; чужие в раздаче — ['?','?']; после сброса и вне раздачи — null
-  last: { a: PokerLast; amount: number } | null;
-  dealer: boolean;
+export type ChessColor = 'w' | 'b';
+export type ChessResult = '1-0' | '0-1' | '1/2-1/2';
+/** Чем кончилась партия: мат, сдался, пат, мало фигур, троекратное повторение, 50 ходов, ничья по согласию, аккаунт удалён. */
+export type ChessReason = 'mate' | 'resign' | 'stalemate' | 'material' | 'repetition' | 'fifty' | 'agreement' | 'left';
+export interface ChessGame {
+  id: number;
+  white: UserCard | null;                // null — аккаунт удалён
+  black: UserCard | null;
+  me: ChessColor;                        // мой цвет
+  moves: string[];                       // ходы в UCI: 'e2e4', 'e7e8q'
+  fen: string;                           // позиция после последнего хода
+  turn: ChessColor;
+  status: 'active' | 'over';
+  result: ChessResult | null;
+  reason: ChessReason | null;
+  drawOffer: ChessColor | null;          // кто предложил ничью
+  createdAt: string;
+  updatedAt: string;
 }
-export interface PokerResult {
-  showdown: boolean;
-  winners: { seat: number; amount: number; name: string; cards: Card[] }[];   // cards — лучшая пятёрка (пусто без вскрытия)
-  reveal: { seat: number; cards: Card[] }[];
-}
-export interface PokerHand {
-  id: number; phase: PokerPhase;
-  board: Card[]; pot: number;            // pot — уже в банке, без текущих ставок seats[].bet
-  pots: { amount: number; seats: number[] }[];
-  turn: { seat: number; deadline: number } | null;   // deadline — время сервера, ms
-  currentBet: number; minRaise: number;
-  result: PokerResult | null;
-}
-export interface PokerActions { fold: boolean; check: boolean; call: number; raise: { min: number; max: number } | null; allin: number }
-/** Ежедневный бонус: available — сегодня ещё не забирал; amount — сколько дадут сейчас; streak — серия дней (0 — сгорела);
- *  tomorrow — сколько завтра, если продолжить; resetAt — ближайшая полночь по Ташкенту (ms). */
-export interface PokerBonus { available: boolean; amount: number; streak: number; tomorrow: number; resetAt: number }
-export interface PokerMe {
-  seat: number | null; state: 'none' | 'reserved' | 'seated' | 'leaving';
-  chips: number;
-  cards: Card[] | null; actions: PokerActions | null;
-  stats: { hands: number; wins: number; bestPot: number };
-  kicked: 'idle' | 'broke' | null;
-  bonus?: PokerBonus;
-  broke?: boolean;                       // фишек меньше большого блайнда (и не в раздаче) — до завтрашнего бонуса не сесть
-}
-export type PokerTopScope = 'friends' | 'all';
-export interface PokerTop {
-  scope: PokerTopScope;
-  items: { place: number; user: UserCard; chips: number; me: boolean }[];
-  me: { place: number; chips: number } | null; total: number;
-}
-export interface PokerView {
-  seq: number; now: number;
-  seats: (PokerSeat | null)[];
-  hand: PokerHand | null; countdown: number | null;
-  watchers: number;
-  blinds: { small: number; big: number }; startStack: number;
-  me: PokerMe | null;                    // гостю — null
+export interface ChessList {
+  games: ChessGame[];                    // идущие (все) и последние законченные
+  stats: { wins: number; losses: number; draws: number };
+  turn: number;                          // сколько партий ждут моего хода
 }

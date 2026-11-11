@@ -1,0 +1,180 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   Шахматы (web/src/game). Экран — поверх всего, всегда тёмный, как экраны моментов (.ix из instants.css): слой 58,
+   подложка 57 — ниже листов (60), меню (70) и тостов (100). Внутри .gx свои тёмные цвета, поэтому общие части
+   (аватар, значки) выглядят как в тёмной теме. Стиль тихий: чёрный фон, серая доска, одна тёплая подсветка хода.
+   ───────────────────────────────────────────────────────────────────────── */
+
+.gx{--ink-100:#fff;--ink-60:rgba(235,235,245,.6);--ink-30:rgba(235,235,245,.3);--sep:rgba(84,84,88,.55);
+  --fill:rgba(118,118,128,.24);--glass-edge:rgba(255,255,255,.1);--surface:#1c1c1e;--surface-2:#2c2c2e;
+  --seg-track:rgba(118,118,128,.24);--seg-active:#636366;--media-bg:#2c2c2e;
+  color-scheme:dark;outline:none;overscroll-behavior:contain}
+/* Пока шахматы открыты (html.has-game, ChessHost Root): тосты — сверху, а не на кнопках; плашка «Оцените» не появляется. */
+html.has-game .ui-toasts{top:calc(env(safe-area-inset-top) + 64px);bottom:auto}
+html.has-game .nudge{display:none}
+.gx button{-webkit-tap-highlight-color:transparent}
+.gx button:focus-visible{outline:2px solid #fff;outline-offset:2px}
+
+/* ─── Верхняя строка ─── */
+.ch-root{display:flex;flex-direction:column}
+.ch-bar{grid-template-columns:44px minmax(0,1fr) 44px}
+.ch-bar__mid{display:flex;flex-direction:column;align-items:center;min-width:0;line-height:1.15}
+.ch-bar__t{margin:0;font-size:17px;font-weight:600}
+.ch-bar__s{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:rgba(255,255,255,.55)}
+
+/* ─── Кнопки ─── */
+.ch-btn{flex:1;min-width:0;height:50px;padding:0 16px;border-radius:14px;background:rgba(255,255,255,.1);color:#fff;
+  font-size:16px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  transition:transform 120ms,opacity 120ms,background-color 120ms}
+.ch-btn:active:not(:disabled){transform:scale(.97);background:rgba(255,255,255,.16)}
+.ch-btn:disabled{opacity:.35}
+.ch-btn--main{background:#fff;color:#000}
+.ch-btn--main:active:not(:disabled){background:#e5e5ea}
+.ch-pill{flex:none;height:32px;padding:0 14px;border-radius:16px;background:rgba(255,255,255,.14);color:#fff;font-size:14px;font-weight:600;
+  transition:transform 120ms,background-color 120ms}
+.ch-pill:active:not(:disabled){transform:scale(.96)}
+.ch-pill:disabled{opacity:.4}
+.ch-pill--main{background:#fff;color:#000}
+.ch-link{color:#fff;font:inherit;font-weight:600;text-decoration:underline;text-underline-offset:2px}
+
+/* ─── Начало ─── */
+.ch-lobby{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;
+  padding:4px 16px calc(env(safe-area-inset-bottom) + 24px)}
+.ch-lobby > *{max-width:520px;margin-left:auto;margin-right:auto}
+.ch-sec{display:flex;flex-direction:column;gap:10px;margin-top:22px}
+.ch-sec > .ch-btn{flex:none}   /* в столбике кнопка не сжимается по высоте (flex:1 — только для ряда .ch-acts) */
+.ch-sec__h{margin:0 4px 2px;font-size:22px;font-weight:700;letter-spacing:-.01em}
+.ch-sec__sub{margin:12px 4px 0;font-size:13px;font-weight:600;color:rgba(255,255,255,.5)}
+.ch-note{margin:0 4px;font-size:15px;line-height:1.4;color:rgba(255,255,255,.6)}
+.ch-note--c{text-align:center;font-size:13px}
+
+.ch-seg{display:flex;padding:2px;border-radius:10px;background:rgba(118,118,128,.24)}
+.ch-seg button{flex:1;min-width:0;height:34px;border-radius:8px;color:#fff;font-size:14px;font-weight:500;
+  transition:background-color 160ms}
+.ch-seg button.is-on{background:#636366;font-weight:600}
+
+.ch-list{display:flex;flex-direction:column;margin:0;padding:0;list-style:none}
+.ch-row{display:flex;align-items:center;gap:12px;width:100%;min-height:60px;padding:8px 4px;border-radius:12px;color:#fff;text-align:left;
+  transition:background-color 120ms}
+.ch-row:active{background:rgba(255,255,255,.08)}
+.ch-row__main{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.ch-row__main b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:16px;font-weight:600}
+.ch-row__main span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;color:rgba(255,255,255,.55)}
+.ch-row__main span.is-turn{color:#fff}
+.ch-row__dot{flex:none;width:8px;height:8px;border-radius:50%;background:#ffd60a}
+.ch-row__chev{flex:none;color:rgba(255,255,255,.3)}
+.ch-row__ico{flex:none}
+.ch-list .ch-row + .ch-row, .ch-list li + li{border-top:.5px solid rgba(84,84,88,.45)}
+
+/* Значок бота: конь в круге (вместо фото). */
+.ch-botico{display:grid;place-items:center;width:40px;height:40px;border-radius:50%;background:#2c2c2e}
+.ch-botico svg{width:30px;height:30px}
+.ch-botico--sm{width:32px;height:32px}
+.ch-botico--sm svg{width:24px;height:24px}
+
+.ch-stats{display:flex;justify-content:center;gap:18px;margin:14px 0 0;font-size:14px;color:rgba(255,255,255,.55)}
+.ch-stats b{color:#fff;font-weight:600;font-variant-numeric:tabular-nums}
+
+.ch-invite{display:flex;align-items:center;gap:12px;margin-top:8px;padding:12px 8px 12px 12px;border-radius:16px;background:#1c1c1e;
+  animation:ch-up 260ms cubic-bezier(.2,.9,.22,1) both}
+.ch-invite__t{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.25}
+.ch-invite__t b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:15px}
+.ch-invite__t span{font-size:13px;color:rgba(255,255,255,.6)}
+.ch-invite__x{flex:none;display:grid;place-items:center;width:32px;height:32px;border-radius:50%;color:rgba(255,255,255,.6)}
+
+/* ─── Партия ─── */
+.ch-play{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;align-items:center;gap:8px;
+  padding:4px 8px calc(env(safe-area-inset-bottom) + 16px)}
+.ch-play > *{width:var(--ch-size);max-width:100%}
+.ch-play{--ch-size:min(calc(100vw - 16px), calc(100dvh - 330px - env(safe-area-inset-top) - env(safe-area-inset-bottom)), 560px)}
+@media (max-height:560px){.ch-play{--ch-size:min(calc(100vw - 16px), 300px)}}
+
+.ch-player{display:flex;align-items:center;gap:10px;min-height:40px;padding:0 4px}
+.ch-player__n{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:15px;font-weight:600;color:rgba(255,255,255,.7)}
+.ch-player.is-turn .ch-player__n{color:#fff}
+.ch-player__s{flex:none;font-size:13px;color:rgba(255,255,255,.5)}
+.ch-player.is-turn::after{content:'';flex:none;width:8px;height:8px;margin-left:auto;border-radius:50%;background:#ffd60a}
+
+.ch-status{margin:4px 0 0;text-align:center;font-size:17px;font-weight:600;letter-spacing:-.01em}
+.ch-status.is-over{font-size:20px;animation:ch-pop 320ms cubic-bezier(.2,.9,.22,1) both}
+
+.ch-moves{display:flex;gap:12px;margin:0;padding:6px 4px;overflow-x:auto;list-style:none;white-space:nowrap;scrollbar-width:none;
+  font-size:14px;font-variant-numeric:tabular-nums;color:rgba(255,255,255,.75)}
+.ch-moves::-webkit-scrollbar{display:none}
+.ch-moves__n{margin-right:4px;color:rgba(255,255,255,.35)}
+.ch-moves--empty{display:block;text-align:center;color:rgba(255,255,255,.35)}
+
+.ch-acts{display:flex;gap:8px;margin-top:4px}
+.ch-acts .ch-btn{padding:0 8px;font-size:15px}
+.ch-offer{display:flex;align-items:center;gap:8px;padding:10px 10px 10px 14px;border-radius:14px;background:#1c1c1e;font-size:14px;
+  animation:ch-up 240ms ease-out both}
+.ch-offer span{flex:1;min-width:0}
+
+.ch-load{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;
+  text-align:center;font-size:15px;color:rgba(255,255,255,.6)}
+.ch-load p{margin:0}
+.ch-load .ch-btn{flex:none;min-width:180px}
+.ch-dots{display:flex;justify-content:center;gap:8px;margin:8px 0}
+.ch-dots i{width:8px;height:8px;border-radius:50%;background:#fff;opacity:.25;animation:ch-dot 1.2s ease-in-out infinite}
+.ch-dots i:nth-child(2){animation-delay:.2s}
+.ch-dots i:nth-child(3){animation-delay:.4s}
+@keyframes ch-dot{0%,100%{opacity:.25}40%{opacity:.9}}
+@keyframes ch-up{from{opacity:0;transform:translateY(10px)}}
+@keyframes ch-pop{from{opacity:0;transform:scale(.9)}}
+
+/* ─── Доска ─── */
+.ch-board{position:relative;display:flex;flex-direction:column;aspect-ratio:1;border-radius:8px;overflow:hidden;
+  box-shadow:0 0 0 1px rgba(255,255,255,.08);touch-action:manipulation;user-select:none;-webkit-user-select:none}
+.ch-rank{display:flex;flex:1;min-height:0}
+.ch-sq{position:relative;flex:1;min-width:0;padding:0;border-radius:0;display:grid;place-items:center}
+.ch-sq.is-light{background:#d9d9de}
+.ch-sq.is-dark{background:#8d8d94}
+.ch-sq.is-last::before, .ch-sq.is-sel::before{content:'';position:absolute;inset:0;background:rgba(255,204,0,.38);pointer-events:none}
+.ch-sq.is-sel::before{background:rgba(255,204,0,.6)}
+.ch-sq.is-check::before{content:'';position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(circle,rgba(255,59,48,.95) 0%,rgba(255,59,48,.55) 45%,rgba(255,59,48,0) 75%)}
+.ch-pc{position:relative;z-index:1;display:block;width:92%;height:92%;pointer-events:none}
+.ch-pc svg{display:block;width:100%;height:100%}
+.ch-dot{position:absolute;z-index:2;width:28%;height:28%;border-radius:50%;background:rgba(0,0,0,.24);pointer-events:none}
+.ch-ring{position:absolute;z-index:2;inset:4%;border-radius:50%;box-shadow:inset 0 0 0 5px rgba(0,0,0,.26);pointer-events:none}
+.ch-co{position:absolute;z-index:1;font-size:10px;font-weight:600;line-height:1;pointer-events:none}
+.ch-sq.is-light .ch-co{color:#8d8d94}
+.ch-sq.is-dark .ch-co{color:#d9d9de}
+.ch-co--r{top:3px;left:3px}
+.ch-co--f{right:3px;bottom:3px}
+.gx .ch-sq:focus-visible{outline:2px solid #0a84ff;outline-offset:-2px}
+
+.ch-promo{position:absolute;inset:0;z-index:3;display:grid;place-items:center;background:rgba(0,0,0,.55);
+  animation:ch-pop 200ms ease-out both}
+.ch-promo__box{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding:10px;border-radius:16px;background:#2c2c2e;
+  width:min(86%,320px)}
+.ch-promo__pc{aspect-ratio:1;border-radius:10px;background:#d9d9de;display:grid;place-items:center}
+.ch-promo__pc svg{width:86%;height:86%}
+.ch-promo__pc:active{transform:scale(.94)}
+.ch-promo__x{grid-column:1 / -1;height:38px;border-radius:10px;color:#fff;font-size:15px;font-weight:600}
+
+@media (prefers-reduced-motion:reduce){
+  .ch-invite, .ch-offer, .ch-status.is-over, .ch-promo{animation:none}
+}
+
+/* ─── «Сыграть с другом» (лист в обычной теме приложения) ─── */
+.ch-inv{padding:4px 16px 24px;color:var(--ink-100)}
+.ch-inv__h{margin:0 4px 14px;font-size:20px;font-weight:700}
+.ch-inv__link{display:flex;align-items:center;gap:12px;width:100%;margin-top:16px;padding:12px 14px;border-radius:14px;background:var(--fill);
+  text-align:left;color:var(--ink-100);transition:transform 120ms}
+.ch-inv__link:active{transform:scale(.98)}
+.ch-inv__ico{flex:none;display:grid;place-items:center;width:40px;height:40px;border-radius:50%;background:var(--c1);color:#fff}
+.ch-inv__lt{display:flex;flex-direction:column;gap:2px;min-width:0}
+.ch-inv__lt b{font-size:16px;font-weight:600}
+.ch-inv__lt span{font-size:13px;color:var(--ink-60)}
+.ch-inv__sec{margin:8px 4px 6px;font-size:13px;font-weight:600;color:var(--ink-60)}
+.ch-inv__empty{margin:12px 4px;font-size:15px;line-height:1.45;color:var(--ink-60)}
+.ch-inv__list{margin:0;padding:0;list-style:none}
+.ch-inv__row{display:flex;align-items:center;gap:12px;padding:8px 4px}
+.ch-inv__main{flex:1;min-width:0;display:flex;flex-direction:column}
+.ch-inv__name{display:flex;align-items:center;gap:4px;min-width:0;font-size:15px;font-weight:600}
+.ch-inv__name > span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ch-inv__user{font-size:13px;color:var(--ink-60)}
+.ch-inv__go{flex:none;min-width:92px;height:32px;padding:0 14px;border-radius:16px;background:var(--c1);color:#fff;font-size:14px;font-weight:600;
+  transition:transform 120ms,background-color 200ms,color 200ms}
+.ch-inv__go:active:not(:disabled){transform:scale(.95)}
+.ch-inv__go.is-sent{background:var(--fill);color:var(--ink-60)}

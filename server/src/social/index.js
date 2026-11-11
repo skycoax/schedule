@@ -7,8 +7,7 @@
 //   users.js — Me, имена, профили, друзья · posts.js — лента и ветки · media.js — фото
 //   jpeg.js — очистка JPEG · text.js — очистка текста и мат · moderation.js — жалобы и модератор
 //   limits.js — пределы частоты · jobs.js — фоновые задачи
-//   game.js — «Покер» (маршруты) · poker-table.js — стол, таймеры, view · poker-logic.js — карты и банки
-//   poker-bot.js — бот · game-stream.js — поток событий
+//   chess-games.js — «Шахматы» с друзьями (партии, ходы, приглашения); бот — в приложении
 //   psy.js — психологический паспорт студента (страница /psy, вопросы и подсчёт — ../psy/test.js)
 //   live.js — живые обновления приложения (поток SSE /api/social/live: чужие посты, ответы, заявки, приглашения)
 import { mkdirSync } from 'node:fs';
@@ -22,7 +21,7 @@ import { userRoutes, accountRoutes } from './users.js';
 import { mediaRoutes } from './media.js';
 import { adminRoutes } from './moderation.js';
 import { startJobs } from './jobs.js';
-import { gameRoutes } from './game.js';
+import { chessRoutes } from './chess-games.js';
 import { liveRoutes } from './live.js';
 import { initPush, pushRoutes, pushSchedule } from './push.js';
 import { psyRoutes } from './psy.js';
@@ -102,8 +101,8 @@ export async function registerSocial(app, { hub, tenants }) {
       mediaRoutes(inst, ctx);
       adminRoutes(inst, ctx);
       liveRoutes(inst, ctx);                         // GET /api/social/live — и в readonly (в off — общий 404)
-      // «Покер»: SOCIAL_GAME=off (или SOCIAL_MODE=off) — маршрутов нет, общий 404, пасхалка в приложении молчит.
-      if (social.game !== 'off') gameRoutes(inst, ctx);
+      // «Шахматы»: SOCIAL_GAME=off (или SOCIAL_MODE=off) — маршрутов нет, общий 404; с ботом играть можно и так.
+      if (social.game !== 'off') chessRoutes(inst, ctx);
     }
 
     // Неизвестные адреса — 404 JSON (не setNotFoundHandler: он общий с корнем).
@@ -117,6 +116,6 @@ export async function registerSocial(app, { hub, tenants }) {
     });
   });
 
-  // 4) Фоновые задачи (стол покера запускается вместе со своими маршрутами, game.js).
+  // 4) Фоновые задачи.
   startJobs(ctx);
 }
