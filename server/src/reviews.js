@@ -65,7 +65,8 @@ export function addReview(t, { cid, name, rating, text, ip }) {
   return { name: maskProfanity(nameClean), rating: r, text: maskProfanity(textClean) };
 }
 
-export function listReviews(t, limit = 50) {
+// Все отзывы, без «последних 50»: комментарии видны всем целиком. Предел — только от разрастания ответа.
+export function listReviews(t, limit = 5000) {
   const rows = t.db.prepare('SELECT ts, name, rating, text FROM reviews ORDER BY id DESC LIMIT ?').all(limit);
   const agg = t.db.prepare('SELECT COUNT(*) n, AVG(rating) a FROM reviews').get();
   // Разброс по звёздам для гистограммы: dist[0] — единицы, dist[4] — пятёрки.

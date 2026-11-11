@@ -78,14 +78,12 @@ export const social = {
   // Для строки в журнале при старте: DEV_LOGIN=1 в production — ошибка настройки (он всё равно не действует).
   devLoginIgnored: prod && env.DEV_LOGIN === '1',
   production: prod,
-  // «Покер» (game.js, poker-table.js): on — стол работает; off — маршрутов игры нет (общий 404), пасхалка в приложении
-  // молчит. SOCIAL_MODE=off выключает и игру.
+  // «Шахматы» с друзьями (chess-games.js): on — партии работают; off — маршрутов нет (общий 404), в приложении остаётся
+  // игра с ботом. SOCIAL_MODE=off выключает и их.
   game: ['on', 'off'].includes(env.SOCIAL_GAME) ? env.SOCIAL_GAME : 'on',
   // Уведомления, когда Para закрыта (push.js): off — ничего не отправляется, подписаться нельзя.
   push: ['on', 'off'].includes(env.SOCIAL_PUSH) ? env.SOCIAL_PUSH : 'on',
-  // Только для разработки и дымового теста: быстрые таймеры стола (POKER_FAST=1), как часто ping в потоке игры
-  // и сколько живёт одно соединение.
-  pokerFast: !prod && env.POKER_FAST === '1',
+  // Только для разработки и дымового теста: как часто ping в потоке живых обновлений и сколько живёт одно соединение.
   gamePingMs: !prod && Number(env.GAME_PING_MS) > 0 ? Math.max(200, Number(env.GAME_PING_MS)) : 20_000,
   gameStreamMaxMs: !prod && Number(env.GAME_STREAM_MAX_MS) > 0 ? Math.max(2000, Number(env.GAME_STREAM_MAX_MS)) : 900_000,
 };

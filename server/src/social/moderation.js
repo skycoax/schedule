@@ -11,9 +11,6 @@ import { mediaRefsByIds, mediaUrl, thumbUrl, unlinkMedia } from './media.js';
 import { usersByIds, userCardOf, uniShortOf, friendCount, BADGES, badgeOf } from './users.js';
 import { postOut, deletePost, viewerOf, liveGone } from './posts.js';
 import { canSeeInstant, instantById, deleteInstantRows, liveInstant } from './instant-access.js';
-import { closeStreams } from './game-stream.js';
-import { kick as pokerKick, grantChips, tableReady, GRANT_MAX } from './poker-table.js';
-import { pushChips } from './push.js';
 import { liveTo, liveUsers } from './live.js';
 
 const INSTANT_GONE = 'Момент недоступен';
@@ -65,8 +62,7 @@ const REPORT_TEXT = {
   banReason: 'Укажи причину',
 };
 
-const CHIPS_OFF = 'Покер сейчас выключен — фишки не начислить';
-const ACTIONS = ['dismiss', 'hide', 'unhide', 'delete', 'ban', 'unban', 'reset', 'badge', 'chips'];
+const ACTIONS = ['dismiss', 'hide', 'unhide', 'delete', 'ban', 'unban', 'reset', 'badge'];
 const RESET_FIELDS = ['avatar', 'bio', 'links', 'name'];
 const CASE_PAGE = 30;
 const AUDIT_PAGE = 50;
@@ -357,14 +353,6 @@ export function adminRoutes(inst, ctx) {
     // Значок у имени: один из BADGES или null — убрать. Выдаётся и себе (модератору), и автору поста/момента.
     const badge = action === 'badge' ? (b.badge === null ? null : BADGES.includes(b.badge) ? b.badge : undefined) : null;
     if (badge === undefined) throw invalid(TEXT.invalid, 'badge');
-    // Фишки покера (§I.12): amount — целое ≠ 0, по модулю не больше GRANT_MAX; только человеку и пока стол работает.
-    let amount = 0;
-    if (action === 'chips') {
-      if (!Number.isInteger(b.amount) || !b.amount || Math.abs(b.amount) > GRANT_MAX) throw invalid(TEXT.invalid, 'amount');
-      if (t.type !== 'user') throw invalid(TEXT.invalid, 'target');
-      if (!tableReady()) throw invalid(CHIPS_OFF, 'action');
-      amount = b.amount;
-    }
     if (action === 'reset') {
       if (!Array.isArray(b.fields) || !b.fields.length || b.fields.some((f) => !RESET_FIELDS.includes(f))) {
         throw invalid(TEXT.invalid, 'fields');
@@ -375,7 +363,7 @@ export function adminRoutes(inst, ctx) {
     // Цель: пост (для hide/unhide/delete/dismiss) и человек (для ban/unban/reset — сам или автор поста).
     const post = t.type === 'post' ? getPost.get(id) : null;
     const instant = t.type === 'instant' ? instantById(db, id) : null;
-    const userAction = ['ban', 'unban', 'reset', 'badge', 'chips'].includes(action);
+    const userAction = ['ban', 'unban', 'reset', 'badge'].includes(action);
     // Пост удалён (надгробие) или его строки уже нет (автор удалил ответ без ответов): hide/unhide/delete — 404;
     // dismiss закрывает жалобы, а ban/unban/reset действуют на автора из жалоб (reports.user_id).
     const lastReport = (t.type === 'post' && (!post || post.deleted_at)) || (t.type === 'instant' && !instant)
@@ -399,15 +387,6 @@ export function adminRoutes(inst, ctx) {
     }
 
     limit('admin', 'u:' + me.id);
-    // Фишки — своей транзакцией стола (стек за столом меняется в памяти вместе с базой), затем журнал.
-    if (action === 'chips') {
-      const chips = grantChips(user.id, amount);
-      tx(db, () => audit(db, me.id, 'user.chips', 'u:' + user.id, null, { amount, chips }));
-      liveTo([user.id], 'chips', { amount, chips });
-      liveTo([user.id], 'me', {});
-      pushChips(user.id, amount);
-      return ok({ chips });
-    }
     const key = (t.type === 'post' ? 'p:' : t.type === 'instant' ? 'i:' : 'u:') + id;
     const uni = post ? post.uni : instant ? instant.uni : null;
     let files = [];
@@ -468,12 +447,6 @@ export function adminRoutes(inst, ctx) {
       }
     });
     unlinkMedia(files);
-    if (action === 'ban') {
-      // Покер: встаёт из-за стола (в раздаче — сброс), потоки игры закрываются с bye { reason: 'ban' }.
-      // Поток живых обновлений остаётся: ограниченный читает (ему me — ниже).
-      closeStreams(user.id, 'ban');
-      pokerKick(user.id);
-    }
     // Живые обновления (после COMMIT): скрытие — gone всем, кроме модераторов и автора (снятие скрытия — ничего:
     // приложение подтянет при следующем обновлении); удаление — gone всем, кроме сессии модератора (приложение
     // убрало пост само), момент — instants тем, кто его видел; человеку — me (бан, снятие, сброс профиля, значок);
@@ -522,7 +495,7 @@ export function adminRoutes(inst, ctx) {
     (SELECT COALESCE(SUM(p.like_count), 0) FROM posts p WHERE p.author_id = u.id AND p.deleted_at IS NULL) AS n_likes,
     (SELECT COUNT(*) FROM reports r WHERE r.user_id = u.id AND r.status = 'open') AS rep_open,
     (SELECT COUNT(*) FROM reports r WHERE r.user_id = u.id) AS rep_all,
-    (SELECT pp.chips FROM poker_players pp WHERE pp.user_id = u.id) AS pk_chips`;
+    (SELECT COUNT(*) FROM chess_games g WHERE g.white_id = u.id OR g.black_id = u.id) AS n_chess`;
   const usersAll = db.prepare(`SELECT ${USER_COLS} FROM users u LEFT JOIN media m ON m.id = u.avatar_id
     WHERE u.id < $cursor ORDER BY u.id DESC LIMIT $lim`);
   const usersFound = db.prepare(`SELECT ${USER_COLS} FROM users u LEFT JOIN media m ON m.id = u.avatar_id
@@ -568,7 +541,7 @@ export function adminRoutes(inst, ctx) {
       lastSeen: u.last_seen || null,
       sessions: Number(u.n_sessions) || 0,
       devices: u.devices ? String(u.devices).split(',').filter(Boolean) : [],
-      chips: u.pk_chips === null || u.pk_chips === undefined ? null : Number(u.pk_chips),   // фишки покера; null — стол не открывал
+      chess: Number(u.n_chess) || 0,   // партий в шахматы с друзьями (идущих и законченных)
     }));
     // Сводка — с первой страницей общего списка. «Заходили за неделю» — только число, без имён.
     let stats = null;

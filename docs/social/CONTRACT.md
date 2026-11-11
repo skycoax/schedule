@@ -2989,284 +2989,104 @@ Phase 4  lead integration gate (§G.7) → owner deploys (§F.6)
 
 ---
 
-## I. «Покер» (schema V8)
+## I. «Шахматы» (schema V15)
 
-A hidden multiplayer easter egg: No-Limit Texas Hold'em at **one shared table** for the whole of Para (every university and
-every host). Five taps on the `Hero` clock open it (web: `web/src/game/`). Play chips only — no money, nothing to buy or
-cash out. The server decides everything. The table state lives **in memory** (a restart interrupts the current hand — chips
-already in that pot are lost, which is accepted — and the table starts empty); the database keeps only each person's stack
-and counters. It replaced the mini-game «Код» (V7); V8 drops its tables.
+A hidden easter egg: chess. Five taps on the `Hero` clock open it (web: `web/src/game/`). No stakes, chips, money or prizes —
+only games and a win/draw/loss count, so it is not simulated gambling (Google Play age rating). It replaced «Покер» (V8–V9):
+the poker routes, the in-memory table, its stream and the moderator's chips are gone; the table `poker_players` stays in
+social.db (people's data is never deleted by scripts) — nobody reads it, it goes away with the account (ON DELETE CASCADE).
 
-Server files: `poker-logic.js` (pure rules: deck with `crypto.randomInt`, `evaluate7`, `compare`, `handName`, `sidePots`,
-`chen`), `poker-bot.js` (`decide`, `strength`), `poker-table.js` (the table singleton: state, timers, `viewFor`,
-`sit/stand/act/react/kick`, `setOnline`, `humans`, `touchPlayer`, `startTable`), `game.js` (routes; gives the table
-user-card and block providers), `game-stream.js` (SSE registry; imports only `http.js`, `limits.js` and config — the table
-registers its view builder and presence hook through `setStreamHooks`). `users.js`, `posts.js`, `moderation.js` import
-`poker-table.js` (`humans`, `kick`, `inviteOf`); `poker-table.js` never imports them (only `game-stream.js` and `live.js`,
-§J: the `players` event and the in-memory poker invites).
+- **With the bot** — entirely in the app (`bot.ts` + `bot.worker.ts`: negamax with alpha-beta and quiescence, three levels),
+  saved in `localStorage` `chess_bot` (moves, colour, level, result); works for guests and offline. The server knows nothing.
+- **With a friend** — server: `server/src/social/chess-games.js` (routes, the in-memory invites, `chessAccountGone`,
+  `chessTurns`). Rules — `chess.js` 1.4.0 on both sides; the server replays every move list (threefold repetition needs the
+  history). No clocks: each side moves at their own pace.
 
-### I.1 Rules (`poker-table.js`)
+### I.1 Rules
+- An invite (§J.5) → the friend accepts → a game; colours are random. Only accepted friends with an active profile and no block
+  in either direction can invite or accept. At most 20 active games per person (`409 conflict` «Уже идут 20 партий…»).
+- A move is UCI (`e2e4`, `e7e8q`) with `ply` — the number of half-moves before it. Not your turn → `409` «Сейчас ход
+  соперника»; `ply` differs (two devices) → `409` «Позиция изменилась — обнови партию»; illegal → `400 invalid` field `move`.
+- The game ends by mate, stalemate, insufficient material, threefold repetition, the fifty-move rule (also 1000 half-moves,
+  a database guard), resignation, a draw by agreement, or account deletion (`left`: the remaining player wins).
+- Draw: `offer` — a pending offer of the opponent is accepted instead; your own repeated offer → `409` «Ничья уже предложена».
+  Any move clears the offer. `decline` — drop the opponent's offer.
+- A block between the players does not end the game (that would disclose it): they can finish or resign; push is not sent.
+- Account deletion: active games end with `reason: 'left'`, games whose opponent is already gone are deleted; in the others
+  the deleted side becomes `null` (ON DELETE SET NULL) — the opponent sees «Аккаунт удалён».
 
-- 4 seats (0–3), blinds 10/20 (fixed), start stack 1000 (`BLINDS`, `START_STACK`). The stack is persisted
-  (`poker_players.chips`); a person plays with their own stack. Below 20 (cannot post the big blind) when sitting down or when
-  a hand starts → refilled to 1000 for free (the bot too; its stack lives in memory).
-- Dealer button: the next in-hand seat clockwise (ascending index, cyclic) after the previous dealer; the first hand's dealer is
-  random (`randomInt`). Small blind = next in-hand seat after the dealer, big blind = the one after. **Heads-up**: the dealer
-  posts the small blind and acts first preflop; postflop the first active seat after the dealer acts first (so the non-dealer).
-- Streets `preflop → flop (3) → turn (1) → river (1) → showdown`. When a betting round ends, bets go to the pot and the next
-  street is dealt **at once**; the first turn of the street starts after `STREET_MS` (`hand.turn = null` meanwhile).
-- Actions: `fold | check | call | raise | allin`. `raise.amount` is the **total** bet on this street («raise to»).
-  `hand.minRaise` is the minimum raise *increment* (the size of the last full raise, ≥ BB; reset to BB on every street);
-  `me.actions.raise = { min: currentBet + minRaise, max: bet + chips }` or `null` when `max < min`; `me.actions.allin = bet +
-  chips` (the total street bet after going all-in). A raise below the minimum is only possible as `allin`; a short all-in
-  does not change `minRaise` but does re-open the action for everyone else (every raise resets the others' «acted» flag).
-  `call` with nothing to call is recorded as `check`; a call for less than `toCall` is an all-in. Amounts are integers.
-- A betting round ends when everyone still able to act (in hand, not folded, not all-in) has acted since the last raise and
-  matched the current bet; preflop the big blind has the option. One player left un-folded → the whole pot goes to them at
-  once, nothing is revealed: `phase 'done'`, `result.showdown = false`, `winners = [{seat, amount, name: '', cards: []}]`,
-  `reveal = []`.
-- Everyone remaining all-in (or all but one, bets matched) → every un-folded seat's cards become visible at once
-  (`hand.revealed`), the remaining streets are dealt with `RUNOUT_MS` between them, then the result.
-- Pots: `sidePots` over each seat's total contribution (`put`); folded chips stay in the pots, folded seats are not eligible;
-  ties split evenly, the odd chip goes to the first winner clockwise after the dealer. Showdown: `phase 'showdown'`,
-  `result.showdown = true`, `reveal` = every un-folded seat (losers too), `winners[]` aggregated per seat (`amount` = total won
-  over all pots, `name` = the Russian hand name of the best five — «Старшая карта», «Пара», «Две пары», «Сет», «Стрит»,
-  «Флеш», «Фулл-хаус», «Каре», «Стрит-флеш», «Флеш-рояль» — `cards` = that best five in significance order). Winners get
-  `last = {a: 'win', amount}`. Once `result` is set: `pot = 0`, `pots = []`, `currentBet = 0`, `turn = null`.
-- A turn lasts `TURN_MS` (`turn.deadline`, server epoch ms). Expired → `check` if possible, else `fold`; `timeouts += 1`
-  (reset by any own action). Two in a row → removed after the hand; `me.kicked = 'idle'` in the **first** view built for that
-  person afterwards (stream or GET), then `null`.
-- «Бот Para» (`bot: true, user: null`): seated by `plan()` when exactly one live person is at the table (opposite seat
-  `(seat + 2) % 4` if free, else any free seat), leaves at the end of a hand when people ≥ 2 or 0. It thinks `BOT_MIN..BOT_MAX`
-  ms (the first decision of a hand is exactly `BOT_MAX` with p = 0.2); its turn is scheduled with the same timer slot as human
-  turn timeouts. Strategy — §I.7. If `decide()` throws or returns an illegal move, the table plays `check`/`fold` for it.
-- Presence: `game-stream.js` reports 0→1 / 1→0 of a person's open streams (`setOnline`); every table request by a seated
-  person (`GET`, `act`, `react`, `sit`, `stand`) is a touch. No stream and no touch for `AWAY_MS` → `away = true` (not dealt
-  into the next hand; the current hand is finished by the turn timer). A stream or a touch clears `away`. Away for
-  `AWAY_KICK_MS` → stands up (during a hand: fold + `leaving`). So a client that polls `GET /api/social/games` every 2 s is
-  present without a stream.
-- Pause after a hand: `DONE_FOLD_MS` / `DONE_SHOWDOWN_MS`, then `endHand()`: persist counters, remove `leaving`, kicked
-  (timeouts ≥ 2) and long-away seats, reset the seats, `plan()`.
-- `plan()` (only when no hand): `reserved` → seated; ready = seated, not away, not leaving. People = 1 → the bot sits; people ≥ 2
-  or 0 → the bot stands. Ready ≥ 2 → `countdown = now + COUNTDOWN_MS` (kept if already running) → `startHand()`; otherwise
-  `countdown = null`. Idempotent; called after sit, stand, kick, presence changes and `endHand`.
-- Sitting during a hand → `reserved` («ждёт раздачи», no cards, `inHand: false`), dealt in from the next hand. Standing
-  during a hand → fold at once (on my turn — as my action; otherwise marked folded, which may end the hand), seat freed at the
-  end of the hand (`leaving`); sitting again while `leaving` keeps the seat. Standing outside a hand, or while `reserved`/not
-  dealt in → freed at once.
-- Reactions `wave like wow lol fire deal`: seated people only (reserved too), never stored, ≤ 30 per hand per seat (429), sent
-  to every other open stream (guests included), never to the sender's own streams.
-- Safety net: a watchdog (`WATCHDOG` ms) aborts a hand that has no pending timer (returns every contribution) and logs an
-  error; timer bodies are wrapped in try/catch; every DB write is a `tx()` with no await; broadcasts only after commit.
-
-Timers, ms (`T` in `poker-table.js`): production `COUNTDOWN 5000, TURN 20000, BOT_MIN 1200, BOT_MAX 2600, STREET 900,
-RUNOUT 1200, DONE_FOLD 3500, DONE_SHOWDOWN 6500, AWAY 15000, AWAY_KICK 90000, WATCHDOG 5000`; `POKER_FAST=1` (not in
-production): `300, 2000, 50, 80, 50, 60, 300, 400, 1500, 4000, 1000`.
-
-### I.2 Who sees what, safety
-
-- Everyone, guests included, can watch: names, @names, photos, badges of the seated, their stacks, bets, the board, revealed
-  cards. Guests get user cards without «мой вуз» (`userCardOf(…, true)`, as everywhere). A guest cannot sit (`me: null`).
-- Sit: `SPNM`. Act, react: `SPNM`. Stand: `S` (works in readonly and for restricted accounts). Stream: guests ok; signed in —
-  `N` (banned → `403 banned`, the app falls back to polling).
-- Own hole cards only in own responses and streams (`seats[mine].cards` and `me.cards`, kept visible after my own fold until
-  the hand ends); other people's hidden cards are always `['?','?']`; after their fold or outside a hand — `null`; real only
-  when `hand.revealed` (all-in run-out or showdown). Nobody is revealed after a fold-win. Hole cards never appear in logs or
-  error texts; the guest view is one shared object per broadcast.
-- Blocks: if any seated person (reserved and leaving included) has a block with me in either direction → sit → `409 conflict`
-  field `status` «За этот стол сейчас не сесть — попробуй позже» (the reason is not disclosed). A block that appears while
-  both are already seated removes nobody, but in each one's view the other is `masked: true` (`user: null, bot: false`);
-  third parties and guests see both normally. `PUT /api/social/blocks/:id` does nothing to the table. `masked` is also `true`
-  for a seat whose account no longer exists (deleted mid-hand).
-- Ban (`moderation.js`) and account deletion (`posts.js deleteAccount`): after their tx, `closeStreams(id, 'ban' | 'session')`
-  and `pokerTable.kick(id)` — fold + stand (the seat is freed at the end of the hand), stats cache dropped. Logout closes
-  streams as before (`all` → every stream, else this session's).
-- `SOCIAL_GAME`: `on | off` (`friends` no longer exists). `off` or `SOCIAL_MODE=off` → routes are not registered (catch-all
-  `404 not_found`), `config.game = 'off'`, `me.game = null`. `SOCIAL_MODE=readonly` → watching and the stream work;
-  sit/act/react → `403 readonly`; stand works.
-- No messaging: people exchange only their existing identity, chips and six preset emoji. Ages 16–17 play like everyone
-  (chips have no value). The policy says plainly that presence at the table is visible to everyone who opens it.
-
-### I.3 Schema V8 (`SCHEMA_V8` in `db.js`)
-
+### I.2 Schema V15 (`SCHEMA_V15` in `db.js`)
 ```sql
-DROP TABLE IF EXISTS game_daily;  DROP TABLE IF EXISTS game_duels;  DROP TABLE IF EXISTS game_players;  DROP TABLE IF EXISTS game_meta;
-CREATE TABLE IF NOT EXISTS poker_players (
-  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-  chips INTEGER NOT NULL DEFAULT 1000, hands INTEGER NOT NULL DEFAULT 0, wins INTEGER NOT NULL DEFAULT 0,
-  best_pot INTEGER NOT NULL DEFAULT 0, found_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS chess_games (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  white_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  black_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  moves TEXT NOT NULL DEFAULT '',            -- UCI, space-separated
+  fen TEXT NOT NULL,                         -- position after the last move
+  turn TEXT NOT NULL DEFAULT 'w' CHECK (turn IN ('w','b')),
+  ply INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','over')),
+  result TEXT CHECK (result IN ('1-0','0-1','1/2-1/2')),
+  reason TEXT,                               -- mate | resign | stalemate | material | repetition | fifty | agreement | left
+  draw_offer TEXT CHECK (draw_offer IN ('w','b')),
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_chess_white ON chess_games (white_id, status, updated_at);
+CREATE INDEX IF NOT EXISTS idx_chess_black ON chess_games (black_id, status, updated_at);
 ```
 
-Writes (every one in `tx()`, no await): `INSERT OR IGNORE` on the first signed-in `GET /api/social/games` and on sit
-(`found_at`); at the end of a hand, for every person dealt into it: `chips`, `hands + 1`, `wins + (won > 0)`,
-`best_pot = MAX(best_pot, won)`; `chips` on stand/kick and on a refill. No hand history. An in-memory stats cache
-(`chips, hands, wins, bestPot`) backs `me.chips` (off the table) and `me.stats`; it is refreshed by every write and dropped
-on `kick`. `dailyJob` has nothing to do for poker.
-
-### I.4 API (`/api/social/games`, envelope and hooks as §B.1; **no U guard anywhere** — the table is one for all universities)
-
-Order in each handler: guards → fields → bucket → table (so `400` field errors cost no token; `409` table errors do).
+### I.3 API (`/api/social/chess`, envelope and hooks as §B.1; no U guard — friends may be in different universities)
+Registered when `SOCIAL_MODE ≠ off` and `SOCIAL_GAME ≠ off` (otherwise `404 not_found`, `me.game = null`).
 
 | # | Route | Guards | Bucket | Body → response |
 |---|---|---|---|---|
-| 1 | `GET /api/social/games` | none (guests ok) | read (`keyOf`) | → `PokerView`. Signed in: `INSERT OR IGNORE poker_players`, presence touch |
-| 2 | `POST …/sit` | SPNM | gameSit | `{}` → `{table: PokerView}`; `409 status` «Стол заполнен» (4 seats taken, the bot's counts) / «За этот стол сейчас не сесть — попробуй позже» (block); already seated → 200 (a `leaving` seat is kept) |
-| 3 | `POST …/stand` | S | gameSit | `{}` → `{table}`; not seated → 200 (`me.state 'none'`) |
-| 4 | `POST …/act` | SPNM | gameAct | `{hand, action, amount?}` → `{table}`. `hand` not a positive integer → `400 hand`; unknown `action` → `400 action`; `raise` without an integer `amount` → `400 amount`; no hand / other `hand` / not my turn / folded / result shown → `409 status` «Сейчас не твой ход»; `check` with a bet to call → `409 status` «Нужно уравнять или сбросить»; raise outside `[min, max]` or unavailable → `400 amount` «Неверная сумма» |
-| 5 | `POST …/react` | SPNM | gameReact; ≤ 30 per hand per seat → `429` | `{r}` → `{}`; unknown `r` → `400 r`; not seated → `409 status` «Ты не за столом` |
-| 6 | `GET …/stream` | none (guests ok; signed in: N) | gameStream by `u:<id>`, guests by `ipKey` | SSE (§I.6) |
+| 1 | `GET /api/social/chess` | S | read | → `ChessList`: all active games, the last 10 finished, `stats`, `turn` |
+| 2 | `GET …/:id` | S | read | → `{game}`; not a player → `404` «Партия не найдена» |
+| 3 | `POST …/invite` | SPNM | gameInvite `[10, 1 min]` | `{to}` → `{}` (§J.5) |
+| 4 | `POST …/invite/dismiss` | S | — | `{}` → `{}` |
+| 5 | `POST …/accept` | SPNM | gameSit `[6, 1 min]` | `{from}` → `{game}`; no valid invite from `from` → `409` «Приглашение уже не действует» |
+| 6 | `POST …/:id/move` | SPNM | gameAct `[8, 2 s]` | `{move, ply}` → `{game}` |
+| 7 | `POST …/:id/resign` | S | gameSit | `{}` → `{game}` (works in readonly and when restricted) |
+| 8 | `POST …/:id/draw` | S (`offer` — SPNM) | gameSit | `{action: 'offer' \| 'accept' \| 'decline'}` → `{game}`; nothing to accept/decline → `409` «Ничью не предлагали» |
 
-`GET /api/auth/me`: `user.game = { players: <people at the table now, leaving included>, invite: <§J.5> } | null`
-(game off); `config.game: 'on' | 'off'`. Routes #7–#8 (friend invites) — §J.5.
+Finished game → `409 conflict` «Партия уже закончена». Every change (#5–#8) → `chess` to both players (§J.2) and a push to the
+opponent (§K.3).
 
-### I.5 Types (`web/src/social/types.ts`, mirrored exactly by the server)
-
+### I.4 Types (`web/src/social/types.ts`)
 ```ts
-type Card = string;              // 'As' 'Td' '7h' '2c' — ranks A K Q J T 9 8 7 6 5 4 3 2, suits s h d c; '?' = hidden
-type PokerAction = 'fold' | 'check' | 'call' | 'raise' | 'allin';
-type PokerLast = 'fold' | 'check' | 'call' | 'bet' | 'raise' | 'allin' | 'sb' | 'bb' | 'win';
-interface PokerSeat {
-  seat: number; user: UserCard | null; bot: boolean; masked: boolean;
-  chips: number; bet: number;            // bet — this street's bet, not yet in the pot
-  folded: boolean; allIn: boolean; away: boolean; reserved: boolean; inHand: boolean; leaving: boolean;
-  cards: Card[] | null;                  // mine — real; others in a hand — ['?','?']; after fold / outside a hand — null; revealed — real
-  last: { a: PokerLast; amount: number } | null;   // last action on this street (bubble); null at every new street
-  dealer: boolean;
+interface GameInvite { from: UserCard; at: number | string }
+type ChessColor = 'w' | 'b';
+type ChessResult = '1-0' | '0-1' | '1/2-1/2';
+type ChessReason = 'mate' | 'resign' | 'stalemate' | 'material' | 'repetition' | 'fifty' | 'agreement' | 'left';
+interface ChessGame {
+  id: number; white: UserCard | null; black: UserCard | null;   // null — account deleted
+  me: ChessColor; moves: string[]; fen: string; turn: ChessColor;
+  status: 'active' | 'over'; result: ChessResult | null; reason: ChessReason | null;
+  drawOffer: ChessColor | null; createdAt: string; updatedAt: string;
 }
-interface PokerResult {
-  showdown: boolean;
-  winners: { seat: number; amount: number; name: string; cards: Card[] }[];   // cards — the best five (empty without showdown)
-  reveal: { seat: number; cards: Card[] }[];
-}
-interface PokerHand {
-  id: number; phase: 'preflop' | 'flop' | 'turn' | 'river' | 'showdown' | 'done';
-  board: Card[]; pot: number;            // pot — chips already collected (= sum of pots), without seats[].bet
-  pots: { amount: number; seats: number[] }[];
-  turn: { seat: number; deadline: number } | null;   // deadline — server epoch ms; null between streets and after the result
-  currentBet: number; minRaise: number;  // minRaise — the raise increment (min raise-to = currentBet + minRaise)
-  result: PokerResult | null;
-}
-interface PokerActions { fold: boolean; check: boolean; call: number; raise: { min: number; max: number } | null; allin: number }
-interface PokerMe {
-  seat: number | null; state: 'none' | 'reserved' | 'seated' | 'leaving';
-  chips: number;                         // at the table — the stack; otherwise — the bankroll from the database
-  cards: Card[] | null; actions: PokerActions | null;     // actions — only on my turn
-  stats: { hands: number; wins: number; bestPot: number };
-  kicked: 'idle' | null;                 // once, after being removed for two timeouts
-}
-interface PokerView {
-  seq: number; now: number;              // seq grows on every change of the table; now — server epoch ms
-  seats: (PokerSeat | null)[];           // exactly 4
-  hand: PokerHand | null; countdown: number | null;   // countdown — epoch ms of the hand start
-  watchers: number;                      // open streams in total
-  blinds: { small: number; big: number }; startStack: number;
-  me: PokerMe | null;                    // guests — null
-}
+interface ChessList { games: ChessGame[]; stats: { wins: number; losses: number; draws: number }; turn: number }
+// Me.game: { invite: GameInvite | null; turn: number } | null   — turn: games waiting for my move (the dot on the Hero)
 ```
 
-`last.amount`: `sb`/`bb` — the blind posted; `call` — the chips added; `bet`/`raise`/`allin` — the total bet on the street;
-`win` — the amount won; `fold`/`check` — 0. `hand.id` grows across restarts (seeded from the clock). `phase 'showdown'` /
-`'done'` are the final states shown during the pause; then `hand` becomes `null` and `countdown` is set (or not).
+### I.5 Who sees what
+A game — only its two players. Moderators («Пользователи») see only how many games a person has (`chess`), never the moves.
+The stats — only the person. A guest may play the bot; friends need an account.
 
-### I.6 SSE: `GET /api/social/games/stream`
-
-Before hijack (normal JSON errors): signed in → `guard('SN')`; `limit('gameStream', 'u:'+id | ipKey)`; ≥ 300 connections →
-`503 server` «Стол перегружен — попробуй чуть позже». Then: capture `reply.getHeader('set-cookie')` (the session slide),
-`reply.hijack()`, `writeHead(200, {content-type: text/event-stream; charset=utf-8, cache-control: no-store, x-accel-buffering:
-no, x-robots-tag: noindex, connection: keep-alive, set-cookie?})`, `setKeepAlive(true, 20000)`, `setNoDelay`, `setTimeout(0)`,
-write `retry: 3000\n\n`, then `hello`, then (after the presence hook) a first `table` with this connection's view. nginx
-needs no change.
-
-Registry: a `Set<Conn>` of per-connection records `{res, userId|null, key: 'u:<id>' | 'ip:<hash>', sid, cid, openedAt}`
-plus `Map<userId, Set<Conn>>`. ≤ 3 per key (a user, or a guest IP): the 4th sends the oldest `bye replaced`; cleanup on the
-response `close`; `writableLength > 65536` → destroy. `?c=` (`^[A-Za-z0-9_-]{8,24}$`, random per tab): a new connection with
-the same key and `c` silently destroys the older one (no `bye`). 0→1 / 1→0 of a user's connections → `setOnline(id, true|false)`
-(the table applies `AWAY_MS` itself). Events (`event: <name>\ndata: <json>\n\n`, no `id:`, no replay):
-
-| Event | Payload | When |
-|---|---|---|
-| `hello` | `{now}` | right after connecting |
-| `table` | `{view: PokerView}` | right after `hello`, and after every change of the table (`seq` grows): each person gets their own view (own cards, `masked`, `me`), guests share one |
-| `ping` | `{now}` | one global `setInterval(gamePingMs)` (20 s) to every connection |
-| `react` | `{seat, r}` | to every connection except the sender's own |
-| `bye` | `{reason: 'max_age'\|'replaced'\|'session'\|'ban'}` | lifetime `gameStreamMaxMs` (15 min), 4th connection, logout/deletion, ban; then `end()` |
-
-Polling instead of the stream: `GET /api/social/games` every 2 s (counts as presence).
-
-### I.7 Bot (`poker-bot.js`)
-
-`decide({ cards, board, pot (with current bets), toCall, minRaise (raise-to), maxRaise (bet + chips), chips, opponents
-(un-folded others), phase, rand, bb, currentBet })` → `{ action, amount? }`. Character — «азартный» (owner, 28.09: the bot
-must not fold every weak hand): plays almost any two cards heads-up, bets and bluffs, calls «to see», sometimes shoves; folds
-mostly junk against big bets. Heads-up (`opponents = 1`) is looser; against 2–3 opponents the call/bluff chances are halved.
-Preflop, Chen score (`chen`: A 10, K 8, Q 7, J 6, else rank/2; pair ×2 (min 5); suited +2; gap 1/2/3/4+ → −1/−2/−4/−5;
-gap ≤ 1 and both below Q → +1; halves rounded up — AA 20, AKs 12, 72o −1) and x = toCall in BB: ≥ 12 → raise to 3 BB
-(or 2.5 × currentBet), 12 % just call; nothing to call → raise with ≥ 8 (p 0.6) or any hand (p 0.25 HU / 0.12), else check;
-≥ 9 → raise (p 0.7 HU / 0.5); x ≤ 1 → raise any hand (p 0.22 / 0.1), 1 < x ≤ 4 → re-raise any (p 0.08 / 0.03); call when
-Chen ≥ need (HU 0 / 3 / 6 / 9, multiway 1 / 5 / 8 / 11 for x ≤ 1 / ≤ 4 / ≤ 10 / more), within 4 below it — call with «азарт»
-p (0.7 / 0.45 / 0.25 / 0.12, halved multiway), else p/3; otherwise fold. Postflop: `strength` = share of 160 Monte-Carlo
-deals (random opponent hand, board completed) that we beat (tie = ½), raised to the power `opponents`; price = toCall /
-(pot + toCall); size = 45–95 % of the pot: ≥ 0.85 → all-in when stack ≤ 1.5 pot (p 0.35), else bet/raise size + 20 % (p 0.8)
-or just check/call; ≥ 0.62 → checked to: bet (p 0.7), facing a bet: raise (p 0.3) or call; ≥ 0.42 → checked to: bet 0.8 size
-(p 0.45); facing a bet: call when price ≤ strength, else call p 0.45 or fold; weaker → checked to: bluff (p 0.38 HU / 0.18,
-×0.8 on the river); facing a bet: bluff-raise HU p 0.07, call p 0.55 / 0.35 / 0.2 / 0.08 for price ≤ 0.2 / 0.34 / 0.45 / more
-(halved multiway), else fold. Never folds when `toCall = 0`. Amounts are multiples of 10 where `[min, max]` allows
-(`raiseAmount`); a raise that is impossible becomes an all-in or a call/check. Tests: 1000 random spots are legal; heads-up
-the bot folds < 40 % to a 3 BB raise and > 70 % of hands to an all-in, bets > 35 % when checked to on the flop and folds < 40 %
-to a half-pot bet.
-
-### I.11 Table chat and stickers (`game.js` #11–#12, `poker-table.js`)
-
-- `POST /api/social/games/chat` `{ text }` or `{ sticker }` (guard SPNM; bucket `gameChat [8, 3 s]`) → `{ item }`. Only someone
-  at the table (seated, waiting for the next hand or leaving) — else 409 conflict «Писать в чат могут те, кто за столом».
-  `text` — one line after `cleanText`, 1…120 graphemes (400 «Напиши сообщение» / «Не длиннее 120 символов»), no links
-  (400 «Ссылки в чате стола нельзя»); `sticker` ∈ `gg allin fire lol cry cool think shock angry love clap crown money bluff
-  skull lucky` (400 field `sticker`).
-- `GET /api/social/games/chat` (guests too; bucket `read`) → `{ items }`: the last ≤ 50 items of the last 2 hours.
-- Item: `{ id, at (server ms), seat, bot, user (UserCard — guests get the card without uni; null for the bot), text (profanity
-  masked on output) | null, sticker | null }`. Stream event `chat { item }` to every game stream including the author's (the
-  app dedups by id). A viewer in a block relation with the author never gets the author's items (history or stream). Memory
-  only (no DB); `kick` (ban, account deletion) drops the person's items. Old `react` (6 emoji) still works for old clients.
-- Bot Para: at a hand result, 45 % — a sticker (big win: cool/crown/money/fire/gg; took it without showdown: bluff/cool/
-  lucky; lost big at showdown: cry/skull/shock/angry); on a human sticker, 22 % — an answer; at most one per 8 s, 0.9–1.3 s later.
-- App (`web/src/game/Chat.tsx`, `stickers.tsx`, `stickers.css`): buttons at the lower right of the felt (stickers, chat with
-  unread count), tap on your own photo → stickers; other people's text — a bubble beside their seat for 4.2 s, stickers —
-  big over the seat for 2.6 s (own sticker — right of your cards, shown at once); the panel closes when your turn starts and
-  5 s before its end (while open during your turn the header says «Твой ход · N с»); «•••» → «Скрыть чат» (localStorage
-  `pk_chat`).
-
-### I.12 Chips from a moderator
-
-`POST /api/social/admin/action` `{ action: 'chips', target: { type: 'user', id }, amount }` (guard SA; `amount` — integer,
-≠ 0, |amount| ≤ 1 000 000, else 400 field `amount`; poker routes off → 400 «Покер сейчас выключен — фишки не начислить»)
-→ `{ chips }` — the new bankroll. `poker-table.js grantChips`: the DB row (created if the person never opened the table, from
-1 000) at once; seated outside a hand — the stack at once; inside a hand — after it (`settleBonus`, like a bonus); never
-below 0. Audit `user.chips` `{ amount, chips }`; live `chips { amount, chips }` + `me` to the person; push kind `game`
-(«Тебе начислили N фишек» / «Модератор снял N фишек»). Admin users list: `chips` (null — never opened the table). App:
-«Фишки…» in the user menu (profile), in the admin users list and in the seat menu at the table (moderators only).
-
-### I.8 Limits (`limits.js`)
-
-`gameSit [6, 1 min]` (sit and stand), `gameAct [8, 2 s]`, `gameReact [5, 3 s]`, `gameStream [10, 30 s]` (per user; guests per
-IP). Reactions ≤ 30 per hand per seat (in memory). `gameGuess`, `gameNew`, `gameJoin` and the daily cap `game` are gone.
-
-### I.9 Tests
-
-`node --test server/test/poker-logic.test.mjs` (deck, categories and comparison incl. the wheel, kickers, ties, best five of
-seven, Russian names, `sidePots` with three all-ins and a folder, Chen, `raiseAmount`, 1000 random bot decisions — always
-legal) and the «Покер» section of `social-smoke.mjs` (server with `POKER_FAST=1 GAME_PING_MS=1000 GAME_STREAM_MAX_MS=5000`;
-one shared table — the section first waits for it to empty), plus its readonly and off cases.
+### I.6 Tests
+The «Шахматы» section of `social-smoke.mjs` (run A): invite rules (400 / 403 / 200 / 429), `me.game.invite`, dismiss, accept
+→ a game, `chess` events to both, moves (wrong turn, stale `ply`, illegal), a fool's mate → `mate`, draw offer / decline /
+accept, resign, the list and stats, `me.game.turn`, account deletion → `left`; readonly and off.
 
 ---
 
-## J. Живые обновления (live updates) and poker invites
+## J. Живые обновления (live updates) and chess invites
 
 The app already keeps its screens consistent on one device through the local event bus (`web/src/social/events.ts`). The
 server adds **other people's** events over one SSE stream per signed-in person, and the app turns them into the same local
 events (`web/src/social/live.ts`). The stream is a hint, not a source of truth: no `id:`, no replay — after every
 (re)connect the app gets `hello` and re-reads its screens and `/api/auth/me`.
 
-Server file: `live.js` — the stream, the registry and delivery. Like `game-stream.js` it imports only `http.js`, `limits.js`
+Server file: `live.js` — the stream, the registry and delivery. It imports only `http.js`, `limits.js`
 and config, so every module can publish without import cycles. Who may receive what is decided by the hooks (§J.3–§J.4),
 never by `live.js`.
 
@@ -3275,7 +3095,7 @@ never by `live.js`.
 Registered with the other routes when `SOCIAL_MODE ≠ off` (`off` → catch-all `404 not_found`); works in `readonly`.
 Before hijack (normal JSON errors): `guard('S')` — guests `401 auth`; restricted (banned) accounts may connect, they read;
 `limit('live', 'u:'+id)` `[10, 30 s]`; ≥ 500 connections → `503 server` «Сервер занят — попробуй чуть позже». Then exactly
-as §I.6 (the code is a copy; `game-stream.js` is unchanged): capture `set-cookie`, `hijack()`, `writeHead(200,
+as follows: capture `set-cookie`, `hijack()`, `writeHead(200,
 {content-type: text/event-stream; charset=utf-8, cache-control: no-store, x-accel-buffering: no, x-robots-tag: noindex,
 connection: keep-alive, set-cookie?})`, keep-alive / no-delay / no socket timeout, `retry: 3000\n\n`, then `hello {now}`.
 Registry `Set<Conn>` + `Map<userId, Set<Conn>>`; ≤ 3 per person (the 4th sends the oldest `bye replaced`); `?c=` tab id
@@ -3297,8 +3117,8 @@ after `gameStreamMaxMs` (15 min).
 | `relation` | `{user: UserCard, relation: 'incoming' \| 'outgoing' \| 'friends' \| 'none'}` | the recipient's relation to `user` changed because of `user`'s action (§J.4); `user` — the actor's card, `userCardOf(…, false)` |
 | `me` | `{}` | «re-read `/api/auth/me`»: request / friend counters, the mod queue, ban and unban, profile reset, badge |
 | `instants` | `{}` | a moment the recipient can see appeared, or one they could see was deleted or hidden |
-| `invite` | `{from: UserCard, at}` | a friend invites to poker (§J.5); `at` — server epoch ms (the same value as `me.game.invite.at`) |
-| `players` | `{n}` | the number of people at the poker table (`Me.game.players`) changed — every live person; at most once a second, the latest value |
+| `invite` | `{from: UserCard, at}` | a friend invites to chess (§J.5); `at` — server epoch ms (the same value as `me.game.invite.at`) |
+| `chess` | `{game: ChessGame, turn}` | a game changed (accepted, a move, a draw offer / decline / agreement, resignation) — both players (each their own view; the actor's other devices too); `turn` — `me.game.turn` of the recipient |
 
 Never sent: other people's private data, email, anything the recipient could not see through the ordinary routes, and
 nothing about blocks.
@@ -3324,7 +3144,6 @@ author; everyone else) share one object.
   that auto-hides a moment → `instants` to those who could see it; admin `hide` of a visible post → `gone` (hidden rule);
   admin `delete` → `gone` (post, `exceptSid: req.sid`) or `instants` (moment); `unhide` / `dismiss` → nothing (the app catches up on its next
   refresh); `ban` / `unban` / `reset` / `badge` → `me` to that person; after every admin action → `me` to live moderators.
-  A ban closes the poker streams (`bye ban`) but not the live stream.
 - `users.js` — A acts, B receives, only when a row actually changed, and nothing at all if A and B have a block in either
   direction or A is not active / has no profile:
   - A requests B → B: `relation {user: A, relation: 'incoming'}` + `me`;
@@ -3337,39 +3156,38 @@ author; everyone else) share one object.
 - `instants.js` / `instant-access.js` (`liveInstant`): create; delete by the author; delete by a moderator (either route) →
   `instants` to every live person for whom `canSeeInstant` is true (with the row as it was before deletion or hiding),
   except the author; moderators are included. A moderator's delete via `DELETE /instants/:id` also → `me` to live moderators.
-- `auth.js` logout → `liveCloseSid(req.sid)`; `{all: true}` → `liveClose(id, 'session')` (next to the poker streams).
-- `poker-table.js`: every `bump()` → if `humans()` differs from the last `players` sent → `players {n}` (throttled to 1 s).
+- `auth.js` logout → `liveCloseSid(req.sid)`; `{all: true}` → `liveClose(id, 'session')`.
+- `chess-games.js`: accept, move, draw, resign → `chess` to both players (`announce`).
 
 `live.js` exports: `liveRoutes(inst, ctx)`; `liveTo(userIds, event, data, {exceptSid}?)` — `data` is an object or
 `(uid) => object | null` (built once per person, `null` skips that person), `exceptSid` skips the streams of that session,
 never throws; `liveAll(event, data, {exceptSid}?)`; `liveUsers()`; `isLiveUser(id)`;
-`liveClose(id, reason)`; `liveCloseSid(sid)`; `liveThrottle(key, ms, fn)` — the coalescer behind `likes` and `players`
+`liveClose(id, reason)`; `liveCloseSid(sid)`; `liveThrottle(key, ms, fn)` — the coalescer behind `likes`
 (no window → `fn` now; otherwise the latest `fn` at the end of the window).
 
-### J.5 Poker invites (`game.js` routes, `poker-table.js` store)
+### J.5 Chess invites (`chess-games.js`)
 
 | # | Route | Guards | Bucket | Body → response |
 |---|---|---|---|---|
-| 7 | `POST /api/social/games/invite` | SPNM | `gameInvite [10, 1 min]` by `u:<id>` | `{to}` → `{}`. `to` not an integer id → `400 invalid` field `to`; not a friend (accepted), no profile, not active, a block in either direction, missing, or yourself → `403 blocked` «Нельзя позвать этого человека» (the reason is not disclosed); the same friend again within 60 s (in memory, checked before the bucket) → `429 rate` «Уже позвали — подожди минуту», `retryAfter` = seconds to the end of that minute |
-| 8 | `POST /api/social/games/invite/dismiss` | S | — | `{}` → `{}`: drop my incoming invite («не сейчас») |
+| 3 | `POST /api/social/chess/invite` | SPNM | `gameInvite [10, 1 min]` by `u:<id>` | `{to}` → `{}`. `to` not an integer id → `400 invalid` field `to`; not a friend (accepted), no profile, not active, a block in either direction, missing, or yourself → `403 blocked` «Нельзя позвать этого человека» (the reason is not disclosed); the same friend again within 60 s (in memory, checked before the bucket) → `429 rate` «Уже позвали — подожди минуту», `retryAfter` = seconds to the end of that minute |
+| 4 | `POST /api/social/chess/invite/dismiss` | S | — | `{}` → `{}`: drop my incoming invite («не сейчас») |
 
-The invite lives only in memory: `Map<toId, {fromId, at}>` in `poker-table.js`, a new one replaces the old, 10 minutes (a
-restart forgets it). It is sent as `invite {from: userCardOf(from), at}` to the recipient's live streams. Sitting down (`sit`,
-also when already seated) drops the sitter's incoming invite. `GET /api/auth/me`: `user.game = { players, invite: { from:
-UserCard, at } | null } | null` — `invite` only while it has not expired, the inviter is active, there is no block in either
+The invite lives only in memory: `Map<toId, {fromId, at}>` in `chess-games.js`, a new one replaces the old, 10 minutes (a
+restart forgets it). It is sent as `invite {from: userCardOf(from), at}` to the recipient's live streams. Accepting it
+(§I.3 #5) drops it. `GET /api/auth/me`: `user.game = { invite: { from: UserCard, at } | null, turn } | null` — `invite` only while it has not expired, the inviter is active, there is no block in either
 direction and they are still friends. `readonly` → invite `403 readonly`, dismiss works; `SOCIAL_GAME=off` or
 `SOCIAL_MODE=off` → no routes (`404 not_found`), `me.game = null`.
 
 ### J.6 Tests
 
-The «Живые обновления» section of `social-smoke.mjs` (run A, after «Покер»; the same `GAME_PING_MS=1000
-GAME_STREAM_MAX_MS=5000`, so each step opens fresh streams): guest 401; SSE headers, `retry: 3000`, `hello`, `ping`; a post →
+The «Живые обновления» section of `social-smoke.mjs` (run A; `GAME_PING_MS=1000 GAME_STREAM_MAX_MS=5000`, so each step
+opens fresh streams): guest 401; SSE headers, `retry: 3000`, `hello`, `ping`; a post →
 `post` (equal to the viewer's feed item, `mine: false`; the author's other session `mine: true`; no echo to the creating
 session) and nothing to a blocked person; a reply → `reply` (equal to the thread item, no echo); a like → `likes`; coalescing
 (3 changes → at most 2 events, the last with the final count); deletes → `gone` (no echo to the deleting session); the friend
 flows (`incoming` / `friends` / `none`, `me` except on decline); a moment for
 friends → `instants` (not to the blocked person or the author); invites (400 / 403 / 200 / 429, `me.game.invite`, dismiss,
-sitting drops it); `players` on sit and stand; a report → moderator `me`; a moderator's hide → `gone` except to the moderator
+accepting drops it); `chess` on accept and on a move; a report → moderator `me`; a moderator's hide → `gone` except to the moderator
 and the author; ban and unban → `me`, the stream stays open; `max_age`, `replaced`, `c=`; logout → `bye session` only for that
 session. Readonly: the stream opens, invite → `403 readonly`, dismiss → 200. Off: `/api/social/live` and the invite routes →
 404. `SMOKE_LIVE_SHOW=1` prints one real event of each kind.
@@ -3405,7 +3223,8 @@ with the service host and status, never the endpoint) → `fails + 1`, 10 in a r
 |---|---|---|---|---|---|
 | `friends` | request (`incoming`) or its acceptance (`friends`), exactly where §J.4 sends `relation` | the other person | «Заявка в друзья» / «Новый друг»: «<имя> хочет добавить тебя в друзья» / «<имя> теперь в друзьях» | `user=<username>` | 1 day / `f<id>` / same pair and kind once per 10 min |
 | `replies` | a new reply | author of the post and of the reply answered (`replyTo`), not the replier, only if `audienceOf` lets them see it | «Новый ответ»: «<имя>: <текст с маскировкой мата, ≤120>» (only a photo — «Фото») | `post=<rootId>` (uni of the post) | 1 day / `r<rootId>` / once per 30 s per person and thread |
-| `game` | poker invite (§J.5) | the friend | «Покер»: «<имя> зовёт тебя за стол» | `game=1` | 600 s, `Urgency: high` / `game` |
+| `game` | chess invite (§J.5) | the friend | «Шахматы»: «<имя> зовёт тебя сыграть» | `game=1` | 600 s, `Urgency: high` / `game` |
+| `game` | a chess game changed (§I.3 #5–#8; not on decline, not between blocked players) | the opponent | «Шахматы»: «<имя>: Кf3 — твой ход» / «… — мат» / «… — ничья», «<имя> сдаётся — победа твоя», «<имя> предлагает ничью», «<имя>: ничья по согласию», «<имя>: партия началась» | `game=1&chess=<id>` | 1 day / `c<id>` |
 | `sched` | a poll saved a snapshot with pair changes (`poller.js` → `setChangesHook`) | devices of that tenant whose `grp` is a changed group (names → keys by the new snapshot) | «Изменения в расписании»: «Вт, 2-я пара: <новое>» (removed — «<старое> — отменена»), + «И ещё N изменений» | `tab=schedule` | 1 day / `sched` |
 Personal kinds are skipped while the person has a live stream (§J — the app is open and visible on some device). The service
 worker skips showing `friends/replies/game` when a focused visible window exists (not on Apple: Safari requires a notification

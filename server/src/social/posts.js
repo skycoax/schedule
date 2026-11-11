@@ -12,8 +12,7 @@ import { cleanText, tooLong, lineCount, countLinks, maskProfanity } from './text
 import { usersByIds, userCardOf, uniShortOf } from './users.js';
 import { mediaByPost, unlinkMedia, MEDIA_ID_RE } from './media.js';
 import { audit, resolveReports, liveAdmins } from './moderation.js';
-import { closeStreams } from './game-stream.js';
-import { kick as pokerKick } from './poker-table.js';
+import { chessAccountGone } from './chess-games.js';
 import { liveTo, liveAll, liveUsers, liveClose, liveThrottle } from './live.js';
 import { pushReply } from './push.js';
 
@@ -319,9 +318,8 @@ export function deletePost(db, p, by) {
 /**
  * Удалить аккаунт целиком (§C.4 deleteAccount): лайки, ответы, публикации, отпечаток бана, удержание @имени,
  * строка users (каскад: сессии, фото, друзья, блокировки; жалобщик обезличивается), свои записи журнала.
- * Каскад убирает и стек с счётом покера (poker_players); после COMMIT человек встаёт из-за стола (pokerKick:
- * в раздаче — сброс, место освобождается по её окончании), потоки игры и живых обновлений закрываются
- * (bye session). Файлы — после COMMIT.
+ * Идущие шахматные партии заканчиваются победой соперника (chessAccountGone), каскад убирает и старый счёт покера
+ * (poker_players). После COMMIT закрываются потоки живых обновлений (bye session) и удаляются файлы.
  */
 export function deleteAccount(ctx, u) {
   const db = ctx.db;
@@ -351,6 +349,7 @@ export function deleteAccount(ctx, u) {
     db.prepare('UPDATE held_usernames SET user_id = NULL WHERE user_id = ?').run(u.id);
     const left = db.prepare('SELECT COUNT(*) n FROM posts WHERE author_id = ? AND deleted_at IS NULL').get(u.id).n;
     if (left) throw new Error('deleteAccount: остались живые посты');
+    chessAccountGone(db, u.id);
     db.prepare('DELETE FROM users WHERE id = ?').run(u.id);
     // Записи журнала о самом человеке (смены @имени; auth.login — от ранних версий) уходят вместе
     // с аккаунтом. Остаются решения модераторов — без текстов, 180 дней.
@@ -360,9 +359,7 @@ export function deleteAccount(ctx, u) {
     return out;
   });
   unlinkMedia(files);
-  closeStreams(u.id, 'session');
   liveClose(u.id, 'session');
-  pokerKick(u.id);
 }
 
 // ─── Ввод публикации и ответа (§B.4) ───

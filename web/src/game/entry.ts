@@ -1,10 +1,10 @@
-// Покер — вход в основном бандле (маленький): пять быстрых нажатий на флип-часы героя (или на весь герой, когда
-// часов нет) открывают стол; точка на герое — «за столом играют»; открытие и закрытие оверлея. Сам стол — отдельный
-// файл (GameHost.tsx), его грузит AppShell.
+// Шахматы — вход в основном бандле (маленький): пять быстрых нажатий на флип-часы героя (или на весь герой, когда
+// часов нет) открывают шахматы; точка на герое — «твой ход» или зовут сыграть; открытие и закрытие оверлея. Сами
+// шахматы — отдельный файл (ChessHost.tsx), его грузит AppShell.
 // Без registerGameHost() (адрес без Para, SingleShell) нажатия ничего не делают и часы не переворачиваются.
 // Нажатия считаются в ref: переживают перерисовки героя и смену «идёт пара» ↔ «на сегодня всё».
 // preventDefault и stopPropagation не вызываем никогда: прокрутка и «потянуть, чтобы обновить» — как были.
-// Подсказка (useEggHint): пока стол не находили, при запуске часы подсвечиваются и рядом — «Попробуй нажать на часы
+// Подсказка (useEggHint): пока шахматы не находили, при запуске часы подсвечиваются и рядом — «Попробуй нажать на часы
 // 5 раз» с пятью точками, которые заполняются по нажатиям. Не больше трёх запусков; закрыли крестиком — больше нет.
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
@@ -13,8 +13,8 @@ import { openLayerCount } from '../ui/layers';
 import { reducedMotion, setIxOrigin } from '../social/instants/motion';
 import { useSession } from '../social/session';
 
-/** Запрос на открытие: n — номер открытия (новый оверлей); sit — сразу сесть (приняли приглашение друга). */
-export interface GameReq { n: number; sit?: boolean }
+/** Запрос на открытие: n — номер открытия (новый оверлей); gameId — сразу партия; accept — принять приглашение друга. */
+export interface GameReq { n: number; gameId?: number; accept?: number }
 export type GameStatus = 'closed' | 'opening' | 'open';
 interface GameState { status: GameStatus; req: GameReq | null; host: boolean }
 
@@ -39,11 +39,14 @@ export function registerGameHost(): () => void {
   return () => set({ host: false, status: 'closed', req: null });
 }
 
-/** Открыть стол. originEl — откуда «вырастает» оверлей (часы, точка); по умолчанию часы героя, если они есть. */
-export function openGame(o: { originEl?: Element | null; sit?: boolean } = {}): void {
+/** Открыть шахматы. originEl — откуда «вырастает» оверлей (часы, точка); по умолчанию часы героя, если они есть. */
+export function openGame(o: { originEl?: Element | null; gameId?: number; accept?: number } = {}): void {
   if (!state.host) return;
   setIxOrigin(o.originEl ?? document.querySelector('.hero .clk') ?? document.querySelector('.hero'));
-  set({ status: 'open', req: o.sit ? { n: ++seq, sit: true } : { n: ++seq } });
+  const req: GameReq = { n: ++seq };
+  if (o.gameId && o.gameId > 0) req.gameId = o.gameId;
+  if (o.accept && o.accept > 0) req.accept = o.accept;
+  set({ status: 'open', req });
 }
 
 /** Оверлей начал уходить: часы переворачиваются обратно, пока он сжимается в них. */
@@ -60,13 +63,12 @@ export function useGameRequest(): { req: GameReq | null; status: GameStatus } {
   return useSyncExternalStore(subscribe, snapshot, snapshot);
 }
 
-/** Точка на герое: стол уже находили, и за ним сейчас кто-то играет или ждёт ежедневный бонус. */
+/** Точка на герое: шахматы уже находили, и в какой-то партии твой ход (или друг зовёт сыграть). */
 export function useGameDot(): boolean {
   const s = useSession();
   const st = useSyncExternalStore(subscribe, snapshot, snapshot);
   const g = s.status === 'signed' ? s.me?.game : null;
-  const players = g?.players ?? 0;
-  return st.host && st.status === 'closed' && (players > 0 || !!g?.bonus) && store('game_found') === '1';
+  return st.host && st.status === 'closed' && ((g?.turn ?? 0) > 0 || !!g?.invite) && store('game_found') === '1';
 }
 
 // ─── Подсказка ───
@@ -85,7 +87,7 @@ const setHint = (v: typeof hint) => { hint = v; hintSubs.forEach((f) => f()); };
 const subHint = (f: () => void) => { hintSubs.add(f); return () => { hintSubs.delete(f); }; };
 const hintOn = () => hint === 'on';
 
-/** Закрыть подсказку насовсем (крестик) или до следующего запуска (нашли игру, погасла сама). */
+/** Закрыть подсказку насовсем (крестик) или до следующего запуска (нашли шахматы, погасла сама). */
 function hideHint(forever: boolean) {
   window.clearTimeout(hintTimer);
   if (forever) ls(HINT_KEY, String(HINT_MAX));
@@ -118,7 +120,7 @@ export function useEggHint(): { on: boolean; close: () => void } {
     };
     hintTimer = window.setTimeout(check, HINT_DELAY);
   }, [st.host]);
-  // Стол открылся — подсказка сделала своё.
+  // Шахматы открылись — подсказка сделала своё.
   useEffect(() => { if (on && st.status !== 'closed') hideHint(false); }, [on, st.status]);
   return { on: on && st.status === 'closed', close: () => hideHint(true) };
 }

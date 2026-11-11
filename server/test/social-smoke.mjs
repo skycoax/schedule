@@ -12,14 +12,11 @@
 //   Прогон D (необязательный, вход через Google с поддельным Google): сервер с
 //     GOOGLE_CLIENT_ID=smoke.apps.googleusercontent.com GOOGLE_CLIENT_SECRET=smoke
 //     SOCIAL_DEV_GOOGLE_TOKEN_URL=http://127.0.0.1:9901/token, тест — SMOKE_GOOGLE_PORT=9901 (вместе с прогоном A).
-//   «Покер» проверяется в прогоне A (раздел «Покер»), в readonly и off. Серверу нужны POKER_FAST=1 (быстрые
-//     таймеры стола: ход 2 с, away 1,5 с), GAME_PING_MS=1000 GAME_STREAM_MAX_MS=5000 (ping раз в секунду, поток живёт 5 с).
-//     Стол один на сервер: раздел ждёт, пока он опустеет (игроки прошлого прогона встают сами: away → kick).
-//     Экономика фишек (§I.10) — там же: бонус, «фишки кончились» (двое играют ва-банк друг против друга, пока один
-//     не проиграет всё; без помощников в базе) и рейтинг. Серию бонуса по дням проверяет poker-logic.test.mjs.
-//   «Живые обновления» (GET /api/social/live, приглашения в покер) — в прогоне A после «Покера» (те же GAME_PING_MS
-//     и GAME_STREAM_MAX_MS: потоки открываются на каждый шаг заново), в readonly и off. SMOKE_LIVE_SHOW=1 — напечатать
-//     по одному настоящему событию каждого вида.
+//   «Шахматы» с друзьями (§I) — в прогоне A (раздел «Шахматы»), в readonly и off. Серверу нужны GAME_PING_MS=1000
+//     GAME_STREAM_MAX_MS=5000 (ping раз в секунду, поток живёт 5 с) — для потоков живых обновлений.
+//   «Живые обновления» (GET /api/social/live, приглашения и ходы в шахматах) — в прогоне A после «Шахмат» (потоки
+//     открываются на каждый шаг заново), в readonly и off. SMOKE_LIVE_SHOW=1 — напечатать по одному настоящему событию
+//     каждого вида.
 import http from 'node:http';
 import assert from 'node:assert/strict';
 import { createDecipheriv, createECDH, createHash, hkdfSync, randomBytes } from 'node:crypto';
@@ -1309,15 +1306,14 @@ async function runMain() {
   // Страницы Para (если POLICY их уже положил) и robots.txt.
   r = await call(guest, 'GET', '/robots.txt', { uni: '' });
   expect(r, 200, 'robots.txt');
-  assert.equal(r.buf.toString(), 'User-agent: *\nDisallow: /api/\n');
+  assert.equal(r.buf.toString(), 'User-agent: *\nDisallow: /api/\nDisallow: /psy\nDisallow: /analytics\n');
   const pages = [];
   for (const p of ['/policy', '/rules', '/delete-account']) pages.push(`${p} ${(await call(guest, 'GET', p, { uni: '' })).status}`);
   ok('robots.txt; страницы Para: ' + pages.join(', '));
 
-  await runGame(st, boss, guest, limitsOn);
+  await runChess(st, guest);
   await runLive(boss, guest);
   await runPush(guest);
-  await runChat(boss, guest);
   if (!limitsOn) console.log('     внимание: прогон A должен идти с включёнными пределами (без SOCIAL_RATE_LIMITS=off)');
 }
 
@@ -1467,15 +1463,24 @@ async function runPush(guest) {
     assert.equal(svc.count('/b'), nb + 1, 'push: второй ответ в той же ветке за 30 с — без уведомления');
     ok('уведомления: ответ — пока приложение открыто, нет; закрыто — «Новый ответ» (имя: текст, ссылка на ветку); ответ на ответ — автору ответа; автору публикации — не чаще раза в 30 с на ветку');
 
-    // 5. Приглашение в покер — срочное, живёт 10 минут. Служба ответила 410 — подписку забыли (больше туда не шлём).
-    expect(await call(A.jar, 'POST', '/api/social/games/invite', { json: { to: B.me.id }, headers: W }), 200, 'A зовёт B в покер');
+    // 5. Приглашение в шахматы — срочное, живёт 10 минут. Служба ответила 410 — подписку забыли (больше туда не шлём).
+    //    Принял — зовущему «партия началась» со ссылкой на партию.
+    expect(await call(A.jar, 'POST', '/api/social/chess/invite', { json: { to: B.me.id }, headers: W }), 200, 'A зовёт B в шахматы');
     m = await svc.wait('/b', svc.count('/b') + 1);
     assert.equal(m.headers.urgency, 'high');
     assert.equal(m.headers.ttl, '600');
-    assert.deepEqual(openPush(m.body, dB), { t: 'Покер', b: `Азиза ${RUN} зовёт тебя за стол`, u: `/?uni=${UNI}&game=1`, g: 'game' });
+    assert.deepEqual(openPush(m.body, dB), { t: 'Шахматы', b: `Азиза ${RUN} зовёт тебя сыграть`, u: `/?uni=${UNI}&game=1`, g: 'game' });
     await sleep(300);
     assert.equal(svc.count('/gone/b2'), 1, 'push: после 410 подписка забыта');
-    ok('уведомления: приглашение в покер — Urgency high, TTL 10 мин, ссылка на стол; после 410 устройство больше не получает');
+    const na0 = svc.count('/a');
+    const pg = expect(await call(B.jar, 'POST', '/api/social/chess/accept', { json: { from: A.me.id }, headers: W }), 200, 'B принимает').game;
+    m = await svc.wait('/a', na0 + 1);
+    assert.equal(m.headers.ttl, '86400');
+    assert.deepEqual(openPush(m.body, dA), { t: 'Шахматы', b: `Бобур ${RUN}: партия началась`, u: `/?uni=${UNI}&game=1&chess=${pg.id}`, g: 'chess-' + pg.id });
+    expect(await call(B.jar, 'POST', `/api/social/chess/${pg.id}/resign`, { json: {}, headers: W }), 200, 'B сдаётся');
+    m = await svc.wait('/a', na0 + 2);
+    assert.equal(openPush(m.body, dA).b, `Бобур ${RUN} сдаётся — победа твоя`);
+    ok('уведомления: приглашение в шахматы — Urgency high, TTL 10 мин; принял и сдался — зовущему, со ссылкой на партию; после 410 устройство больше не получает');
 
     // 6. Переключатели: без «Ответов» — не шлём; включил снова — шлём. Выход — личное больше не приходит.
     const p2 = await post(A, `Второй пост ${RUN}`);
@@ -1498,115 +1503,14 @@ async function runPush(guest) {
   }
 }
 
-// ═══════════════ Чат стола и стикеры, фишки от модератора (CONTRACT.md §I.11, §I.12) ═══════════════
+// ═══════════════ «Шахматы» с друзьями (CONTRACT.md §I) ═══════════════
 
-async function runChat(boss, guest) {
-  const X = await gamer('ca', `Чат А ${RUN}`);
-  const Y = await gamer('cb', `Чат Б ${RUN}`);
-  const say = (u, json) => gcall(u, 'POST', '/chat', { json });
-
-  // 1. Не за столом — 409; гость — 401; поля.
-  expect(await say(X, { text: 'Привет' }), 409, 'чат не за столом', 'conflict', 'Писать в чат могут те, кто за столом');
-  expect(await say(null, { text: 'Привет' }), 401, 'чат гостю', 'auth');
-  expect(await paced(() => gcall(X, 'POST', '/sit')), 200, 'X садится');
-  const stopX = keep(X);
-  X.auto = passive;
-  try {
-    bad(await say(X, { sticker: 'nope' }), 'чат: неизвестный стикер', undefined, 'sticker');
-    bad(await say(X, { text: '   ' }), 'чат: пусто', 'Напиши сообщение', 'text');
-    bad(await say(X, { text: 'смотри https://example.com' }), 'чат: ссылка', 'Ссылки в чате стола нельзя', 'text');
-    bad(await say(X, { text: 'я'.repeat(121) }), 'чат: длинно', 'Не длиннее 120 символов', 'text');
-    ok('чат стола: не за столом — 409, гостю — 401; стикер из списка, текст без ссылок, до 120 символов');
-
-    // 2. Сообщение и стикер: ответ — строка автору; гостю в поток — chat с тем же id; история — всем.
-    const g = await stream(null);
-    await g.wait('hello');
-    const m1 = expect(await say(X, { text: `  Привет,   стол ${RUN}  ` }), 200, 'чат: текст').item;
-    assert.equal(m1.text, `Привет, стол ${RUN}`);
-    assert.equal(m1.sticker, null);
-    assert.equal(m1.bot, false);
-    assert.equal(m1.user.id, X.me.id);
-    assert.ok(Number.isInteger(m1.seat) && Number.isInteger(m1.id) && Number.isInteger(m1.at));
-    const e1 = await g.wait('chat', (d) => d.item && d.item.id === m1.id);
-    assert.equal(e1.item.text, m1.text);
-    assert.equal(e1.item.user.uni, null, 'гостю — карточка без «мой вуз»');
-    const m2 = expect(await say(X, { sticker: 'fire' }), 200, 'чат: стикер').item;
-    assert.equal(m2.sticker, 'fire');
-    assert.equal(m2.text, null);
-    await g.wait('chat', (d) => d.item && d.item.id === m2.id);
-    g.close();
-    const hist = expect(await call(guest, 'GET', G + '/chat', { headers: { 'X-Para': '1' } }), 200, 'история чата гостю').items;
-    assert.ok(hist.some((x) => x.id === m1.id) && hist.some((x) => x.id === m2.id), 'в истории оба');
-    ok('чат стола: текст (очищен) и стикер — ответ автору, событие chat всем потокам (гостю — без «мой вуз»), история');
-
-    // 3. Блокировка: тот, кто заблокировал автора, его сообщений не видит (ни в истории, ни в потоке).
-    expect(await call(Y.jar, 'PUT', `/api/social/blocks/${X.me.id}`, { json: {}, headers: W }), 200, 'Y блокирует X');
-    const yHist = expect(await gcall(Y, 'GET', '/chat'), 200, 'история Y').items;
-    assert.ok(!yHist.some((x) => x.user && x.user.id === X.me.id), 'Y не видит X');
-    const sy = await stream(Y);
-    await sy.wait('hello');
-    const m3 = expect(await say(X, { text: 'Это Y не увидит' }), 200, 'чат: ещё').item;
-    await none(sy, 'chat', (d) => d.item && d.item.id === m3.id, 400, 'заблокированному');
-    sy.close();
-    expect(await call(Y.jar, 'DELETE', `/api/social/blocks/${X.me.id}`, { json: {}, headers: W }), 200, 'Y разблокирует X');
-    ok('чат стола: заблокировавший автора не видит его сообщений — ни в истории, ни в потоке');
-
-    // 4. Предел: 8 подряд, дальше — 429 с retryAfter.
-    let limited = null;
-    for (let i = 0; i < 10 && !limited; i++) {
-      const r = await say(X, { sticker: 'gg' });
-      if (r.status === 429) limited = r;
-      else expect(r, 200, 'чат: подряд');
-    }
-    assert.ok(limited, 'чат: предел частоты');
-    assert.ok(Number(limited.json.retryAfter) >= 1, 'retryAfter');
-    ok('чат стола: предел частоты — 429 с retryAfter');
-
-    // 5. Фишки от модератора: только модератору; сумма — целое ≠ 0 до 1 000 000; человеку — chips в поток живых
-    //    обновлений; меньше нуля не бывает; в списке пользователей — фишки.
-    const chipsOf = (u, amount) => call(u.jar, 'POST', '/api/social/admin/action',
-      { json: { action: 'chips', target: { type: 'user', id: Y.me.id }, amount }, headers: W });
-    expect(await chipsOf(X, 500), 403, 'фишки не модератором', 'forbidden');
-    bad(await chipsOf(boss, 0), 'фишки: 0', undefined, 'amount');
-    bad(await chipsOf(boss, 1.5), 'фишки: дробь', undefined, 'amount');
-    bad(await chipsOf(boss, 1_000_001), 'фишки: много', undefined, 'amount');
-    const [ly] = await lives(Y);
-    const c1 = expect(await chipsOf(boss, 1500), 200, 'фишки +1500').chips;
-    assert.equal(c1, 2500, 'стола не открывал: 1000 + 1500');
-    const ev = await ly.wait('chips');
-    assert.deepEqual(ev, { amount: 1500, chips: 2500 });
-    const c2 = expect(await chipsOf(boss, -1_000_000), 200, 'фишки −1 000 000').chips;
-    assert.equal(c2, 0, 'меньше нуля не бывает');
-    ly.close();
-    const row = expect(await call(boss.jar, 'GET', `/api/social/admin/users?q=${encodeURIComponent('@' + Y.me.username)}`), 200, 'админка').items[0];
-    assert.equal(row.chips, 0, 'в списке пользователей — фишки');
-    // За столом (X сидит): стек меняется — сразу или после раздачи.
-    const before = (await tableOf(X)).me.chips;
-    const cx = expect(await call(boss.jar, 'POST', '/api/social/admin/action',
-      { json: { action: 'chips', target: { type: 'user', id: X.me.id }, amount: 700 }, headers: W }), 200, 'фишки сидящему').chips;
-    assert.ok(cx >= 700, 'банкролл вырос: ' + cx);
-    await until(X, (v) => v.me && v.me.chips >= before + 700 - 200, { what: 'стек сидящего вырос' });
-    ok('фишки от модератора: 403 не модератору, сумма 1…1 000 000 (±), живое событие chips, пол — 0, в админке, сидящему — в стек');
-  } finally {
-    stopX();
-    await paced(() => gcall(X, 'POST', '/stand'));
-  }
+const G = '/api/social/chess';
+/** Запрос к /api/social/chess…: u — человек (null — гость); GET — без тела, изменяющим — X-Para и Origin. */
+function gcall(u, method, path = '', json) {
+  return call(u ? u.jar : new Map(), method, G + path, method === 'GET' ? {} : { json: json ?? {}, headers: W });
 }
-
-// ═══════════════ «Покер»: один стол Para (CONTRACT.md §I) ═══════════════
-
-const G = '/api/social/games';
-const CARD_RE = /^[AKQJT98765432][shdc]$/;
-/** Игрок покера: вход и профиль. Все игроки — с одного IP (127.0.0.1), как класс за одним Wi-Fi. */
-async function gamer(suffix, name, extra = {}) {
-  return user(suffix, name, extra);
-}
-/** Запрос к /api/social/games…: u — игрок (null — гость); GET — только X-Para, изменяющим — ещё Origin. */
-function gcall(u, method, path, { json, headers = {}, uni } = {}) {
-  const h = { ...(method === 'GET' ? { 'X-Para': '1' } : W), ...headers };
-  return call(u ? u.jar : new Map(), method, G + path, { json: method === 'GET' ? undefined : json ?? {}, headers: h, uni });
-}
-/** Повторить при 429 (ведёрки хода и чтения). */
+/** Повторить при 429 (ведёрки хода и действий). */
 async function paced(fn) {
   for (let i = 0; i < 15; i++) {
     const r = await fn();
@@ -1615,74 +1519,144 @@ async function paced(fn) {
   }
   throw new Error('429 не отпускает');
 }
-const tableOf = async (u) => expect(await paced(() => gcall(u, 'GET', '')), 200, 'стол');
-const seatOfUser = (v, id) => v.seats.find((s) => s && s.user && s.user.id === id) || null;
-const botOf = (v) => v.seats.find((s) => s && s.bot) || null;
-const act = (u, hand, action, amount) =>
-  paced(() => gcall(u, 'POST', '/act', { json: { hand, action, ...(amount !== undefined ? { amount } : {}) } }));
-/** Пассивный авто-ход: check, если можно, иначе fold — чтобы раздачи шли, пока проверяем другое. */
-const passive = (v) => ({ action: v.me.actions.check ? 'check' : 'fold' });
-/** Ва-банк против человека (есть что уравнять — call, иначе allin); с ботом — сразу fold. */
-const shove = (v) => (botOf(v) ? { action: 'fold' } : v.me.actions.call > 0 ? { action: 'call' } : { action: 'allin' });
+/** x и y — друзья (заявка и принятие). */
+async function befriend(x, y) {
+  expect(await call(x.jar, 'POST', `/api/social/friends/${y.me.id}`, { json: {}, headers: W }), 200, 'заявка');
+  expect(await call(y.jar, 'POST', `/api/social/friends/${x.me.id}/accept`, { json: {}, headers: W }), 200, 'принять заявку');
+}
+/** x зовёт y, y принимает → партия (view для y). */
+async function startGame(x, y) {
+  expect(await gcall(x, 'POST', '/invite', { to: y.me.id }), 200, 'позвать');
+  return expect(await paced(() => gcall(y, 'POST', '/accept', { from: x.me.id })), 200, 'принять приглашение').game;
+}
+/** Ход: { game } или ответ с ошибкой (raw). */
+const move = (u, id, mv, ply) => paced(() => gcall(u, 'POST', `/${id}/move`, { move: mv, ply }));
+const conflict = (r, what, error) => expect(r, 409, what, 'conflict', error);
 
-/**
- * me.bonus (§I.10): поля, как ждём, и resetAt — ближайшая полночь по Ташкенту (19:00 UTC) в пределах суток от now.
- */
-function checkBonus(b, want, now, what) {
-  const { resetAt, ...rest } = b || {};
-  assert.deepEqual(rest, want, what + ': ' + JSON.stringify(b));
-  assert.ok(Number.isInteger(resetAt) && resetAt > now && resetAt <= now + 86_400_000, what + ': resetAt ' + resetAt);
-  assert.equal((resetAt - 19 * 3_600_000) % 86_400_000, 0, what + ': resetAt — полночь по Ташкенту');
+async function runChess(st, guest) {
+  // 1. Настройки, гость, пустой счёт.
+  assert.equal(st.config.game, 'on', 'config.game (сервер с SOCIAL_GAME=on)');
+  expect(await gcall(null, 'GET'), 401, 'шахматы гостю', 'auth');
+  const P = await user('ca', `Парвина ${RUN}`);
+  const Q = await user('cb', `Кудрат ${RUN}`);
+  const R = await user('cc', `Рустам ${RUN}`);
+  const S = await user('cd', `Санжар ${RUN}`);
+  assert.deepEqual((await meOf(P.jar)).game, { invite: null, turn: 0 }, 'me.game — приглашения нет, ходов не ждут');
+  assert.deepEqual(expect(await gcall(P, 'GET'), 200, 'мои партии'), { games: [], stats: { wins: 0, losses: 0, draws: 0 }, turn: 0 });
+  await befriend(P, Q);
+  await befriend(P, R);
+  await befriend(R, Q);
+  await befriend(S, P);
+  ok('шахматы: гостю 401; me.game {invite: null, turn: 0}; пустой список и счёт');
+
+  // 2. Приглашение и принятие: чужое → 409; партия — обоим событие chess (каждому своё view), приглашение снято.
+  const [sP, sQ] = await lives(P, Q);
+  expect(await gcall(P, 'POST', '/invite', { to: Q.me.id }), 200, 'P зовёт Q');
+  assert.equal((await meOf(Q.jar)).game.invite.from.id, P.me.id, 'у Q — приглашение от P');
+  conflict(await gcall(Q, 'POST', '/accept', { from: R.me.id }), 'принять несуществующее', 'Приглашение уже не действует');
+  bad(await gcall(Q, 'POST', '/accept', { from: 'x' }), 'from не число', 'Неверный запрос', 'from');
+  const g1 = expect(await gcall(Q, 'POST', '/accept', { from: P.me.id }), 200, 'Q принимает').game;
+  assert.deepEqual(Object.keys(g1).sort(), ['black', 'createdAt', 'drawOffer', 'fen', 'id', 'me', 'moves', 'reason', 'result', 'status', 'turn', 'updatedAt', 'white']);
+  assert.deepEqual([g1.moves, g1.turn, g1.status, g1.result, g1.reason, g1.drawOffer], [[], 'w', 'active', null, null, null]);
+  assert.equal(g1.fen, 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
+  assert.ok(g1.me === 'w' || g1.me === 'b', 'цвет: ' + g1.me);
+  const qColor = g1.me;
+  assert.deepEqual([g1.white.id, g1.black.id].sort(), [P.me.id, Q.me.id].sort(), 'игроки — P и Q');
+  assert.equal(qColor === 'w' ? g1.white.id : g1.black.id, Q.me.id, 'me — цвет Q');
+  assert.equal((await meOf(Q.jar)).game.invite, null, 'принял — приглашение снято');
+  conflict(await gcall(Q, 'POST', '/accept', { from: P.me.id }), 'принять второй раз', 'Приглашение уже не действует');
+  const eP = await sP.wait('chess', (d) => d.game && d.game.id === g1.id, 3000);
+  const eQ = await sQ.wait('chess', (d) => d.game && d.game.id === g1.id, 3000);
+  assert.equal(eP.game.me, qColor === 'w' ? 'b' : 'w', 'P получает своё view');
+  assert.deepEqual(eQ.game, g1, 'Q в потоке — то же, что в ответе');
+  assert.deepEqual([eP.turn, eQ.turn], qColor === 'w' ? [0, 1] : [1, 0], 'turn — сколько партий ждут твоего хода');
+  ok(`шахматы: позвать → me.game.invite; чужое приглашение → 409; принять → партия (Q ${qColor === 'w' ? 'белыми' : 'чёрными'}), событие chess обоим, приглашение снято`);
+
+  // 3. Партия видна только игрокам.
+  assert.deepEqual(expect(await gcall(Q, 'GET', `/${g1.id}`), 200, 'партия').game, g1);
+  expect(await gcall(R, 'GET', `/${g1.id}`), 404, 'чужая партия', 'not_found', 'Партия не найдена');
+  expect(await gcall(P, 'GET', '/abc'), 404, 'партия abc', 'not_found');
+  expect(await gcall(null, 'GET', `/${g1.id}`), 401, 'партия гостю', 'auth');
+  ok('шахматы: партию видят только двое; чужая и неверный номер → 404; гостю 401');
+
+  // 4. Ходы: не свой ход, неверный ply, неверный ход; «детский мат» (1. f3 e5 2. g4 Фh4#) — победа чёрных.
+  const W1 = qColor === 'w' ? Q : P;
+  const B1 = qColor === 'w' ? P : Q;
+  conflict(await move(B1, g1.id, 'e7e5', 0), 'ход чёрных первым', 'Сейчас ход соперника');
+  conflict(await move(W1, g1.id, 'f2f3', 1), 'неверный ply', 'Позиция изменилась — обнови партию');
+  bad(await move(W1, g1.id, 'e2e5', 0), 'неверный ход', 'Так ходить нельзя', 'move');
+  bad(await move(W1, g1.id, 'e2-e4', 0), 'ход не в UCI', 'Так ходить нельзя', 'move');
+  bad(await move(W1, g1.id, 'f2f3', -1), 'ply < 0', 'Неверный запрос', 'ply');
+  expect(await call(W1.jar, 'POST', `${G}/${g1.id}/move`, { json: { move: 'f2f3', ply: 0 } }), 403, 'ход без X-Para', 'csrf');
+  let g = expect(await move(W1, g1.id, 'f2f3', 0), 200, '1. f3').game;
+  assert.deepEqual([g.moves, g.turn, g.status], [['f2f3'], 'b', 'active']);
+  assert.equal((await meOf(B1.jar)).game.turn, 1, 'чёрные ждут хода');
+  assert.equal((await meOf(W1.jar)).game.turn, 0, 'белые — нет');
+  expect(await move(B1, g1.id, 'e7e5', 1), 200, '1… e5');
+  expect(await move(W1, g1.id, 'g2g4', 2), 200, '2. g4');
+  const sideOf = (u) => (u === P ? sP : sQ);
+  g = expect(await move(B1, g1.id, 'd8h4', 3), 200, '2… Фh4#').game;
+  assert.deepEqual([g.status, g.result, g.reason, g.turn, g.moves.length], ['over', '0-1', 'mate', 'w', 4]);
+  const over = await sideOf(W1).wait('chess', (d) => d.game.id === g1.id && d.game.status === 'over', 3000);
+  assert.deepEqual([over.game.result, over.game.reason, over.turn], ['0-1', 'mate', 0], 'белым — мат в потоке');
+  conflict(await move(W1, g1.id, 'e2e4', 4), 'ход после мата', 'Партия уже закончена');
+  closeAll(sP, sQ);
+  ok('шахматы: ход не в свою очередь, неверный ply → 409; неверный ход → 400 move; без X-Para → 403; детский мат → 0-1 mate, событие обоим');
+
+  // 5. Ничья: предложить, повтор → 409; ход снимает предложение; отказаться; согласиться → 1/2 agreement.
+  const g2 = await startGame(P, R);
+  const pc = g2.me === 'w' ? 'b' : 'w';             // цвет P (g2 — view R)
+  const W2 = g2.me === 'w' ? R : P;
+  g = expect(await paced(() => gcall(P, 'POST', `/${g2.id}/draw`, { action: 'offer' })), 200, 'P предлагает ничью').game;
+  assert.equal(g.drawOffer, pc);
+  conflict(await paced(() => gcall(P, 'POST', `/${g2.id}/draw`, { action: 'offer' })), 'предложить снова', 'Ничья уже предложена');
+  conflict(await paced(() => gcall(P, 'POST', `/${g2.id}/draw`, { action: 'accept' })), 'принять своё', 'Ничью не предлагали');
+  bad(await gcall(P, 'POST', `/${g2.id}/draw`, { action: 'maybe' }), 'action неверный', 'Неверный запрос', 'action');
+  g = expect(await move(W2, g2.id, 'e2e4', 0), 200, 'ход снимает предложение').game;
+  assert.equal(g.drawOffer, null);
+  g = expect(await paced(() => gcall(R, 'POST', `/${g2.id}/draw`, { action: 'offer' })), 200, 'R предлагает').game;
+  g = expect(await paced(() => gcall(P, 'POST', `/${g2.id}/draw`, { action: 'decline' })), 200, 'P отказывается').game;
+  assert.deepEqual([g.drawOffer, g.status], [null, 'active']);
+  conflict(await paced(() => gcall(P, 'POST', `/${g2.id}/draw`, { action: 'decline' })), 'отказаться без предложения', 'Ничью не предлагали');
+  expect(await paced(() => gcall(R, 'POST', `/${g2.id}/draw`, { action: 'offer' })), 200, 'R предлагает снова');
+  g = expect(await paced(() => gcall(P, 'POST', `/${g2.id}/draw`, { action: 'offer' })), 200, 'встречное предложение = согласие').game;
+  assert.deepEqual([g.status, g.result, g.reason, g.drawOffer], ['over', '1/2-1/2', 'agreement', null]);
+  ok('шахматы: ничья — предложить (повтор 409), ход снимает предложение, отказ, встречное предложение → 1/2 agreement');
+
+  // 6. Сдаться: победа соперника; сдаться снова → 409.
+  const g3 = await startGame(R, Q);
+  g = expect(await paced(() => gcall(Q, 'POST', `/${g3.id}/resign`)), 200, 'Q сдаётся').game;
+  assert.deepEqual([g.status, g.result, g.reason], ['over', g3.me === 'w' ? '0-1' : '1-0', 'resign']);
+  conflict(await paced(() => gcall(Q, 'POST', `/${g3.id}/resign`)), 'сдаться снова', 'Партия уже закончена');
+  ok('шахматы: сдался → победа соперника (resign); повтор → 409');
+
+  // 7. Список и счёт: законченные — в списке; победы/поражения/ничьи по цвету.
+  const qWon1 = qColor === 'b';
+  const lq = expect(await gcall(Q, 'GET'), 200, 'партии Q');
+  assert.deepEqual(lq.games.map((x) => x.id).sort((a, b) => a - b), [g1.id, g3.id].sort((a, b) => a - b), 'у Q — две партии');
+  assert.deepEqual(lq.stats, { wins: qWon1 ? 1 : 0, losses: qWon1 ? 1 : 2, draws: 0 });
+  assert.deepEqual(expect(await gcall(P, 'GET'), 200, 'партии P').stats, { wins: qWon1 ? 0 : 1, losses: qWon1 ? 1 : 0, draws: 1 });
+  assert.deepEqual(expect(await gcall(R, 'GET'), 200, 'партии R').stats, { wins: 1, losses: 0, draws: 1 });
+  ok('шахматы: список — законченные партии; счёт побед, поражений и ничьих у каждого свой');
+
+  // 8. Удаление аккаунта: идущая партия — победа соперника (left), у соперника вместо удалённого — null.
+  const g4 = await startGame(P, S);
+  const turnP = (await meOf(P.jar)).game.turn;
+  assert.equal(turnP, g4.me === 'w' ? 0 : 1, 'me.game.turn у P');
+  expect(await call(S.jar, 'DELETE', '/api/social/me', { json: { confirm: true }, headers: W }), 200, 'S удаляет аккаунт');
+  g = expect(await gcall(P, 'GET', `/${g4.id}`), 200, 'партия после удаления').game;
+  assert.deepEqual([g.status, g.reason, g.result, g.me === 'w' ? g.black : g.white],
+    ['over', 'left', g.me === 'w' ? '1-0' : '0-1', null]);
+  assert.equal((await meOf(P.jar)).game.turn, 0, 'ходов больше не ждут');
+  ok('шахматы: удалил аккаунт → идущая партия — победа соперника (left), вместо удалённого — null');
 }
 
 /**
- * Ждать состояния стола (опрос раз в 100 мс, как опрос приложения): pred(view) → true. Возвращает view.
- */
-async function until(u, pred, { ms = 10_000, what = 'состояние стола' } = {}) {
-  const t0 = Date.now();
-  let last = null;
-  while (Date.now() - t0 < ms) {
-    const v = await tableOf(u);
-    last = v;
-    if (pred(v)) return v;
-    await sleep(100);
-  }
-  throw new Error(`${what}: не дождался за ${ms} мс; стол: ${JSON.stringify(last).slice(0, 700)}`);
-}
-
-/**
- * Присутствие игрока без потока: опрос стола раз в 300 мс (в тесте таймеры быстрые: away через 1,5 с).
- * u.auto(view) → { action, amount? } | null — авто-ход в свою очередь; me.kicked запоминается в u.kickedSeen.
- * Возвращает функцию остановки.
- */
-function keep(u) {
-  let stop = false;
-  u.kickedSeen = u.kickedSeen || null;
-  (async () => {
-    while (!stop) {
-      try {
-        const r = await gcall(u, 'GET', '');
-        const v = r.json && r.json.data;
-        if (v && v.me) {
-          if (v.me.kicked) u.kickedSeen = v.me.kicked;
-          if (u.auto && v.hand && v.me.actions) {
-            const d = u.auto(v);
-            if (d) await gcall(u, 'POST', '/act', { json: { hand: v.hand.id, action: d.action, ...(d.amount !== undefined ? { amount: d.amount } : {}) } });
-          }
-        }
-      } catch { /* сеть */ }
-      await sleep(300);
-    }
-  })();
-  return () => { stop = true; };
-}
-
-/**
- * Поток событий игры (SSE) на http.request: { status, headers, raw, events, json }, wait(event, pred, ms),
+ * Поток событий (SSE) на http.request: { status, headers, raw, events, json }, wait(event, pred, ms),
  * until(fn, ms, what), close(). json — тело отказа (не 200). u — игрок или null (гость).
- * path — другой поток того же вида (живые обновления: /api/social/live).
+ * path — адрес потока (живые обновления: /api/social/live).
  */
-function stream(u, { uni = UNI, c = '', headers = {}, path = `${G}/stream` } = {}) {
+function stream(u, { uni = UNI, c = '', headers = {}, path = '/api/social/live' } = {}) {
   return new Promise((resolve, reject) => {
     const h = { Host: HUB, Accept: 'text/event-stream', ...headers };
     if (u && u.jar.size) h.Cookie = [...u.jar].map(([k, v]) => `${k}=${v}`).join('; ');
@@ -1742,463 +1716,6 @@ function stream(u, { uni = UNI, c = '', headers = {}, path = `${G}/stream` } = {
     rq.on('error', (e) => { s.ended = true; poke(); if (!s.status) reject(e); });
     rq.end();
   });
-}
-
-async function runGame(st, boss, guest, limitsOn) {
-  let r;
-  const stops = [];
-  try {
-    // 1. Настройки, гость и пустой стол (остатки прошлого прогона встают сами: away → kick).
-    assert.equal(st.config.game, 'on', 'config.game (сервер с SOCIAL_GAME=on)');
-    let gv = await until(null, (v) => v.seats.every((s) => !s) && !v.hand, { ms: 20_000, what: 'пустой стол' });
-    assert.deepEqual([gv.me, gv.seats.length, gv.hand, gv.countdown, gv.blinds, gv.startStack], [null, 4, null, null, { small: 10, big: 20 }, 1000]);
-    assert.ok(Number.isInteger(gv.seq) && Number.isInteger(gv.now) && Number.isInteger(gv.watchers), 'seq, now, watchers');
-    const ga = await gamer('ga', `Гоша ${RUN}`);
-    assert.deepEqual((await meOf(ga.jar)).game, { players: 0, invite: null, bonus: false },
-      'me.game — сколько людей за столом, приглашения нет, бонус не ждёт (стол не находил)');
-    const gaView = await tableOf(ga);
-    const { bonus: gaBonus, ...gaMe } = gaView.me;
-    assert.deepEqual(gaMe, { seat: null, state: 'none', chips: 1000, cards: null, actions: null, stats: { hands: 0, wins: 0, bestPot: 0 }, kicked: null, broke: false });
-    checkBonus(gaBonus, { available: true, amount: 500, streak: 0, tomorrow: 600 }, gaView.now, 'me.bonus нового');
-    assert.equal((await meOf(ga.jar)).game.bonus, true, 'нашёл стол — me.game.bonus');
-    r = await call(ga.jar, 'POST', G + '/sit', { json: {} });
-    expect(r, 403, 'sit без X-Para', 'csrf');
-    ok('«Покер»: config.game on; гостю стол — 200 с me null и 4 пустыми местами; вошедшему me с банкроллом 1000 и бонусом 500 (серия 0); sit без X-Para → 403');
-
-    // 2. Сесть: бот напротив, отсчёт, раздача сама; свои карты — настоящие, чужие — «?».
-    ga.auto = null;
-    stops.push(keep(ga));
-    let tv = expect(await gcall(ga, 'POST', '/sit'), 200, 'сесть').table;
-    const mySeat = tv.me.seat;
-    assert.ok(Number.isInteger(mySeat) && mySeat >= 0 && mySeat < 4, 'место');
-    assert.deepEqual([tv.me.state, tv.me.chips, tv.seats[mySeat].user.id, tv.seats[mySeat].user.username], ['seated', 1000, ga.me.id, ga.me.username]);
-    let bot = botOf(tv);
-    assert.ok(bot && bot.seat === (mySeat + 2) % 4 && bot.user === null && bot.masked === false, 'бот сел напротив');
-    assert.ok(Number.isInteger(tv.countdown) && tv.countdown > tv.now, 'отсчёт до раздачи');
-    assert.deepEqual((await meOf(ga.jar)).game, { players: 1, invite: null, bonus: true });
-    assert.equal(expect(await gcall(ga, 'POST', '/sit'), 200, 'сесть ещё раз').table.me.seat, mySeat, 'повтор — то же место');
-    tv = await until(ga, (v) => v.hand && v.hand.phase === 'preflop', { what: 'раздача' });
-    assert.ok(tv.me.cards.length === 2 && tv.me.cards.every((c) => CARD_RE.test(c)), 'свои карты: ' + JSON.stringify(tv.me.cards));
-    assert.deepEqual(tv.seats[mySeat].cards, tv.me.cards, 'своё место — те же карты');
-    assert.deepEqual(botOf(tv).cards, ['?', '?'], 'карты бота закрыты');
-    assert.ok(['sb', 'bb'].includes(tv.seats[mySeat].last.a) && ['sb', 'bb'].includes(botOf(tv).last.a), 'блайнды поставлены');
-    assert.ok(tv.hand.turn && Number.isInteger(tv.hand.turn.deadline) && tv.hand.currentBet === 20 && tv.hand.minRaise === 20, 'ход и ставка');
-    gv = await tableOf(null);
-    assert.ok(gv.hand && gv.me === null, 'гость видит раздачу');
-    assert.deepEqual(gv.seats[mySeat].cards, ['?', '?'], 'гостю карты ga закрыты');
-    assert.deepEqual(botOf(gv).cards, ['?', '?']);
-    assert.equal(gv.seats[mySeat].user.uni, null, 'гостю — без «моего вуза»');
-    assert.equal(JSON.stringify(gv).includes(tv.me.cards[0]) && JSON.stringify(gv).includes(tv.me.cards[1]), false, 'карт ga в view гостя нет');
-    ok(`«Покер»: сел на место ${mySeat}, бот напротив, отсчёт, раздача началась сама; свои карты видны, чужие и гостю — «?»`);
-
-    // 3. Ход: чужая раздача → 409; check при ставке → 409; кривая сумма → 400; fold → банк боту, стек минус блайнд.
-    tv = await until(ga, (v) => v.hand && !v.hand.result && v.me.actions, { what: 'свой ход' });
-    const stackBefore = tv.seats[mySeat].chips + tv.seats[mySeat].bet;
-    const blind = tv.seats[mySeat].bet;
-    r = await act(ga, tv.hand.id + 1, 'call');
-    expect(r, 409, 'чужая раздача', 'conflict', 'Сейчас не твой ход');
-    assert.equal(r.json.field, 'status');
-    if (!tv.me.actions.check) expect(await act(ga, tv.hand.id, 'check'), 409, 'check при ставке', 'conflict', 'Нужно уравнять или сбросить');
-    bad(await act(ga, tv.hand.id, 'raise', 3.5), 'дробная сумма', 'Неверная сумма', 'amount');
-    bad(await act(ga, tv.hand.id, 'raise'), 'рейз без суммы', 'Неверная сумма', 'amount');
-    bad(await act(ga, tv.hand.id, 'raise', tv.me.actions.raise.max + 10), 'сумма больше стека', 'Неверная сумма', 'amount');
-    bad(await act(ga, tv.hand.id, 'dance'), 'неизвестный ход', undefined, 'action');
-    const folded = expect(await act(ga, tv.hand.id, 'fold'), 200, 'fold').table;
-    bot = botOf(folded);
-    assert.deepEqual([folded.hand.phase, folded.hand.result.showdown, folded.hand.result.winners.length, folded.hand.result.winners[0].seat, folded.hand.result.reveal],
-      ['done', false, 1, bot.seat, []]);
-    assert.equal(folded.hand.result.winners[0].amount, folded.seats[bot.seat].last.amount, 'банк — у бота (last win)');
-    assert.equal(folded.seats[bot.seat].last.a, 'win');
-    assert.equal(folded.seats[mySeat].chips, stackBefore - blind, 'ga потерял ровно блайнд');
-    assert.deepEqual([folded.seats[mySeat].folded, folded.hand.pot, folded.hand.pots, folded.hand.turn, folded.me.actions], [true, 0, [], null, null]);
-    const doneId = folded.hand.id;
-    tv = await until(ga, (v) => v.hand && v.hand.id !== doneId && v.hand.phase === 'preflop', { what: 'следующая раздача' });
-    assert.ok(tv.me.stats.hands >= 1, 'счёт раздач растёт: ' + tv.me.stats.hands);
-    ok(`«Покер»: чужая раздача → 409 «Сейчас не твой ход»; check при ставке → 409; сумма 3.5 / без суммы / больше стека → 400 amount; fold → банк боту без вскрытия, стек −${blind}; следующая раздача сама`);
-
-    // 4. Второй человек садится во время раздачи → «ждёт раздачи», со следующей — в игре, бот встаёт.
-    const gb = await gamer('gb', `Боря ${RUN}`);
-    // С ботом доигрывает сам — сбросом (один ход на раздачу: ведёрко хода [8, 2 с] нужно шагу 5, иначе 429 и paced
-    // проспит двухсекундный ход), с человеком — ходим вручную.
-    ga.auto = (v) => (botOf(v) ? { action: 'fold' } : null);
-    gb.auto = null;
-    stops.push(keep(gb));
-    tv = await until(ga, (v) => v.hand && !v.hand.result, { what: 'идущая раздача' });
-    const sitB = expect(await gcall(gb, 'POST', '/sit'), 200, 'gb сел во время раздачи').table;
-    const seatB = sitB.me.seat;
-    assert.deepEqual([sitB.me.state, sitB.seats[seatB].reserved, sitB.seats[seatB].inHand, sitB.seats[seatB].cards, sitB.me.cards, sitB.me.actions],
-      ['reserved', true, false, null, null, null]);
-    assert.deepEqual((await meOf(gb.jar)).game, { players: 2, invite: null, bonus: true });
-    tv = await until(gb, (v) => v.hand && v.hand.phase === 'preflop' && !v.hand.result && seatOfUser(v, gb.me.id) && seatOfUser(v, gb.me.id).inHand,
-      { what: 'раздача с gb' });
-    assert.equal(botOf(tv), null, 'бот встал, когда людей двое');
-    assert.deepEqual([tv.me.state, tv.seats[seatB].reserved, tv.me.cards.length], ['seated', false, 2]);
-    ok('«Покер»: сел во время раздачи → reserved («ждёт раздачи»), со следующей раздачи в игре; бот встал');
-
-    // 5. Двое людей: не свой ход → 409; SB не может check; рейз: min 40, кривая сумма → 400; рейз до 60; fold → банк.
-    const first = tv.hand.turn.seat === mySeat ? ga : gb;
-    const second = first === ga ? gb : ga;
-    const seatOf = (u) => (u === ga ? mySeat : seatB);
-    const stack = (u) => tv.seats[seatOf(u)].chips + tv.seats[seatOf(u)].bet;   // стеки до раздачи (ga уже играл с ботом)
-    const hand = tv.hand.id;
-    r = await act(second, hand, 'call');
-    expect(r, 409, 'ход не в свою очередь', 'conflict', 'Сейчас не твой ход');
-    expect(await act(first, hand, 'check'), 409, 'check малого блайнда', 'conflict', 'Нужно уравнять или сбросить');
-    const afterCall = expect(await act(first, hand, 'call'), 200, 'call').table;
-    assert.deepEqual([afterCall.seats[seatOf(first)].last, afterCall.hand.turn.seat, afterCall.hand.currentBet], [{ a: 'call', amount: 10 }, seatOf(second), 20]);
-    const sv = await tableOf(second);
-    assert.deepEqual([sv.me.actions.check, sv.me.actions.call, sv.me.actions.raise, sv.me.actions.allin],
-      [true, 0, { min: 40, max: stack(second) }, stack(second)]);
-    bad(await act(second, hand, 'raise', 39), 'рейз меньше минимума', 'Неверная сумма', 'amount');
-    const raised = expect(await act(second, hand, 'raise', 60), 200, 'рейз до 60').table;
-    assert.deepEqual([raised.hand.currentBet, raised.hand.minRaise, raised.seats[seatOf(second)].bet, raised.seats[seatOf(second)].last, raised.hand.turn.seat],
-      [60, 40, 60, { a: 'raise', amount: 60 }, seatOf(first)]);
-    const fv = await tableOf(first);
-    assert.deepEqual([fv.me.actions.check, fv.me.actions.call, fv.me.actions.raise.min, fv.me.actions.raise.max], [false, 40, 100, stack(first)]);
-    assert.deepEqual(fv.seats[seatOf(second)].cards, ['?', '?'], 'карты соперника закрыты');
-    const won = expect(await act(first, hand, 'fold'), 200, 'fold').table;
-    assert.deepEqual([won.hand.phase, won.hand.result.showdown, won.hand.result.winners[0].seat, won.hand.result.winners[0].amount], ['done', false, seatOf(second), 80]);
-    assert.equal(won.seats[seatOf(second)].chips, stack(second) - 60 + 80, 'победитель: стек − 60 + 80');
-    assert.equal(won.seats[seatOf(first)].chips, stack(first) - 20, 'сбросивший: стек − 20');
-    tv = await until(second, (v) => !v.hand || v.hand.id !== hand, { what: 'конец раздачи' });
-    assert.ok(tv.me.stats.wins >= 1 && tv.me.stats.bestPot >= 80, 'счёт побед и лучший банк: ' + JSON.stringify(tv.me.stats));
-    ga.auto = passive;
-    gb.auto = passive;
-    ok('«Покер»: двое — не свой ход → 409; check у SB → 409; рейз 39 → 400, рейз до 60 (min 40, max — стек); fold → 80 победителю; счёт побед');
-
-    // 6. gb встал → бот вернулся к ga.
-    const stood = expect(await gcall(gb, 'POST', '/stand'), 200, 'gb встал').table;
-    assert.ok(['leaving', 'none'].includes(stood.me.state), 'встал: ' + stood.me.state);
-    tv = await until(ga, (v) => botOf(v) && !seatOfUser(v, gb.me.id), { what: 'бот вернулся' });
-    assert.equal(expect(await gcall(gb, 'POST', '/stand'), 200, 'встать, не сидя').table.me.state, 'none');
-    assert.deepEqual((await meOf(ga.jar)).game, { players: 1, invite: null, bonus: true });
-    ok('«Покер»: gb встал — место освободилось, бот вернулся; «встать» не сидя — 200');
-
-    // 7. Блокировки: заблокировавший ga не сядет; блокировка за столом — другой показан «Игроком» (masked).
-    const gc = await gamer('gc', `Вика ${RUN}`);
-    expect(await call(gc.jar, 'PUT', `/api/social/blocks/${ga.me.id}`, { json: {}, headers: W }), 200, 'gc блокирует ga');
-    r = await gcall(gc, 'POST', '/sit');
-    expect(r, 409, 'сесть при блокировке', 'conflict', 'За этот стол сейчас не сесть — попробуй позже');
-    assert.equal(r.json.field, 'status');
-    expect(await call(gc.jar, 'DELETE', `/api/social/blocks/${ga.me.id}`, { json: {}, headers: W }), 200, 'gc разблокировал');
-    tv = expect(await gcall(gb, 'POST', '/sit'), 200, 'gb снова сел').table;
-    const seatB2 = tv.me.seat;
-    expect(await call(gb.jar, 'PUT', `/api/social/blocks/${ga.me.id}`, { json: {}, headers: W }), 200, 'gb блокирует ga за столом');
-    const bv = await tableOf(gb);
-    assert.deepEqual([bv.seats[mySeat].masked, bv.seats[mySeat].user, bv.seats[mySeat].bot, bv.seats[seatB2].masked], [true, null, false, false]);
-    const av = await tableOf(ga);
-    assert.deepEqual([av.seats[seatB2].masked, av.seats[seatB2].user, av.seats[mySeat].masked], [true, null, false]);
-    gv = await tableOf(null);
-    assert.ok(!gv.seats[mySeat].masked && gv.seats[mySeat].user && !gv.seats[seatB2].masked && gv.seats[seatB2].user, 'гостю видны оба');
-    expect(await call(gb.jar, 'DELETE', `/api/social/blocks/${ga.me.id}`, { json: {}, headers: W }), 200, 'gb разблокировал');
-    assert.equal((await tableOf(gb)).seats[mySeat].masked, false, 'маска снята');
-    ok('«Покер»: заблокировавший сидящего → 409 «За этот стол сейчас не сесть…»; блокировка за столом — masked у обоих, гостю видны');
-
-    // 8. Реакции: в потоки остальных (и гостю), себе — нет; чужая → 400 r; не за столом → 409; 6-я за 3 с → 429.
-    const sa = await stream(ga);
-    const sb = await stream(gb);
-    const sg = await stream(null, { headers: { 'X-Real-IP': '10.77.1.1' } });
-    for (const s of [sa, sb, sg]) await s.wait('hello');
-    expect(await gcall(ga, 'POST', '/react', { json: { r: 'fire' } }), 200, 'реакция');
-    await sb.wait('react', (d) => d.seat === mySeat && d.r === 'fire', 2000);
-    await sg.wait('react', (d) => d.seat === mySeat && d.r === 'fire', 2000);
-    await sleep(150);
-    assert.ok(!sa.events.some((e) => e.event === 'react'), 'себе реакция не приходит');
-    bad(await gcall(ga, 'POST', '/react', { json: { r: 'kiss' } }), 'чужая реакция', undefined, 'r');
-    expect(await gcall(gc, 'POST', '/react', { json: { r: 'wave' } }), 409, 'реакция не за столом', 'conflict', 'Ты не за столом');
-    if (limitsOn) {
-      const codes = [];
-      for (let i = 0; i < 5; i++) codes.push((await gcall(ga, 'POST', '/react', { json: { r: 'wave' } })).status);
-      assert.deepEqual(codes, [200, 200, 200, 200, 429], '5 подряд, 6-я за 3 с — 429: ' + codes);
-    }
-    // Поток: hello, сразу table со своим view, ping; seq в table растёт.
-    assert.equal(sa.status, 200, 'поток: ' + sa.raw.slice(0, 200));
-    assert.match(sa.headers['content-type'] || '', /^text\/event-stream/);
-    assert.match(sa.headers['cache-control'] || '', /no-store/);
-    assert.equal(sa.headers['x-accel-buffering'], 'no');
-    assert.equal(sa.headers['x-robots-tag'], 'noindex');
-    assert.ok(sa.raw.startsWith('retry: 3000\n\nevent: hello\ndata: {"now":'), 'retry: 3000, затем hello');
-    const firstTable = await sa.wait('table', (d) => d.view && d.view.me && d.view.me.seat === mySeat, 2000);
-    assert.ok(Number.isInteger(firstTable.view.seq) && firstTable.view.seats.length === 4, 'table со своим view');
-    const gTable = await sg.wait('table', null, 2000);
-    assert.equal(gTable.view.me, null, 'гостю table с me null');
-    await sa.wait('ping', null, 2500);
-    await sa.wait('table', (d) => d.view.seq > firstTable.view.seq, 5000);
-    const seqs = sa.events.filter((e) => e.event === 'table').map((e) => e.data.view.seq);
-    assert.ok(seqs.every((s, i) => i === 0 || s >= seqs[i - 1]), 'seq не убывает: ' + seqs.join(','));
-    assert.ok(!sa.events.filter((e) => e.event === 'table').some((e) => e.data.view.seats.some((s) => s && s.user && s.user.id !== ga.me.id && s.cards && s.cards.some((c) => c !== '?') && !e.data.view.hand.result && !(e.data.view.hand.phase !== 'preflop' && e.data.view.seats.filter((x) => x && x.inHand && !x.folded && !x.allIn).length <= 1))),
-      'чужие карты в потоке закрыты до вскрытия');
-    sa.close(); sb.close(); sg.close();
-    expect(await gcall(gb, 'POST', '/stand'), 200, 'gb встал');
-    ok('«Покер»: реакция — в потоки других и гостя, не себе; чужая → 400 r; не за столом → 409; 6-я за 3 с → 429; поток: retry, hello, table (своё view), ping, seq растёт');
-
-    // 9. Потоки: гостю — по IP (4-й с того же IP вытесняет первый); у человека 4-й → replaced, 5 с → max_age, выход → session.
-    const ip = `10.99.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250) + 1}`;
-    const gs4 = [];
-    for (let i = 0; i < 4; i++) { gs4.push(await stream(null, { headers: { 'X-Real-IP': ip } })); await gs4[i].wait('hello'); }
-    assert.equal((await gs4[0].wait('bye', null, 2000)).reason, 'replaced', 'гость: 4-й поток с того же IP вытесняет первый');
-    assert.ok(!gs4[1].events.some((e) => e.event === 'bye'), 'остальные гостевые живы');
-    for (const x of gs4) x.close();
-    const gsu = await gamer('gs', `Соня ${RUN}`);
-    const ss = [];
-    for (let i = 0; i < 4; i++) { ss.push(await stream(gsu)); await ss[i].wait('hello'); }
-    assert.equal((await ss[0].wait('bye', null, 2000)).reason, 'replaced');
-    await ss[0].until(() => ss[0].ended, 2000, 'вытесненный поток закрыт');
-    assert.ok(!ss[1].events.some((e) => e.event === 'bye'), 'остальные живы');
-    const t9 = Date.now();
-    assert.equal((await ss[1].wait('bye', null, 7000)).reason, 'max_age');
-    const age = Date.now() - t9;
-    const tab = 'smoke' + RUN + 'tabA';
-    const s5 = await stream(gsu, { c: tab });
-    await s5.wait('hello');
-    const s6 = await stream(gsu, { c: tab });
-    await s6.wait('hello');
-    await s5.until(() => s5.ended, 2000, 'старое соединение вкладки закрыто');
-    assert.ok(!s5.events.some((e) => e.event === 'bye'), 'та же вкладка (c=) — тихо, без bye');
-    expect(await call(gsu.jar, 'POST', '/api/auth/logout', { json: {}, headers: W }), 200, 'выход');
-    assert.equal((await s6.wait('bye', null, 2000)).reason, 'session');
-    for (const x of ss) x.close();
-    s5.close(); s6.close();
-    ok(`«Покер»: гостю поток по IP (4-й → bye replaced); человеку 4-й → replaced, через ${Math.round(age / 100) / 10} с — max_age, c= тихо заменяет, выход → session`);
-
-    // 10. Таймаут хода: не ходит — авто check/fold; два подряд — после раздачи из-за стола, me.kicked = 'idle' один раз.
-    const gt = await gamer('gt', `Тима ${RUN}`);
-    gt.auto = null;
-    stops.push(keep(gt));
-    tv = expect(await gcall(gt, 'POST', '/sit'), 200, 'gt сел').table;
-    const seatT = tv.me.seat;
-    tv = await until(gt, (v) => v.hand && v.hand.turn && v.hand.turn.seat === seatT && !v.hand.result, { ms: 15_000, what: 'ход gt' });
-    const deadline = tv.hand.turn.deadline;
-    tv = await until(gt, (v) => !v.hand || v.hand.id !== tv.hand.id || !v.hand.turn || v.hand.turn.seat !== seatT || v.hand.result, { ms: 6000, what: 'таймаут хода' });
-    const lastT = seatOfUser(tv, gt.me.id) && seatOfUser(tv, gt.me.id).last;
-    assert.ok(Date.now() >= deadline - 100, 'ход перешёл не раньше срока');
-    assert.ok(!lastT || ['check', 'fold', 'win', 'sb', 'bb'].includes(lastT.a), 'после таймаута — check или fold: ' + JSON.stringify(lastT));
-    // Отметка kicked приходит один раз — в первом же ответе после снятия (сюда или в опрос keep).
-    const kicked = await until(gt, (v) => !seatOfUser(v, gt.me.id), { ms: 25_000, what: 'gt выгнан за два пропуска' });
-    await sleep(700);
-    assert.ok(kicked.me.kicked === 'idle' || gt.kickedSeen === 'idle', 'me.kicked = idle пришёл: ' + JSON.stringify([kicked.me.kicked, gt.kickedSeen]));
-    assert.equal((await tableOf(gt)).me.kicked, null, 'второй раз kicked не приходит');
-    ok('«Покер»: таймаут хода → авто check/fold; два пропуска подряд → после раздачи из-за стола, me.kicked = idle (один раз)');
-
-    // 11. Бан сидящего: встал (в раздаче — по её окончании), поток — bye ban; забаненному сесть → 403 banned, стол — 200.
-    const gx = await gamer('gx', `Хасан ${RUN}`);
-    gx.auto = passive;
-    stops.push(keep(gx));
-    expect(await gcall(gx, 'POST', '/sit'), 200, 'gx сел');
-    const sx = await stream(gx);
-    await sx.wait('hello');
-    expect(await admin(boss, { action: 'ban', target: { type: 'user', id: gx.me.id }, days: 1, reason: 'Проверка стола' }), 200, 'бан gx');
-    assert.equal((await sx.wait('bye', null, 2000)).reason, 'ban');
-    await until(ga, (v) => !seatOfUser(v, gx.me.id), { what: 'gx встал после бана' });
-    expect(await gcall(gx, 'POST', '/sit'), 403, 'сесть при бане', 'banned');
-    expect(await gcall(gx, 'POST', '/react', { json: { r: 'wave' } }), 403, 'реакция при бане', 'banned');
-    expect(await gcall(gx, 'GET', ''), 200, 'стол при бане');
-    expect(await gcall(gx, 'POST', '/stand'), 200, 'встать при бане');
-    const sx2 = await stream(gx);
-    await sx2.until(() => sx2.ended, 2000, 'отказ потока');
-    assert.deepEqual([sx2.status, sx2.json && sx2.json.code], [403, 'banned']);
-    ok('«Покер»: бан — встал, поток bye { reason: ban }; забаненному стол 200, сесть и реакция — 403 banned, поток — 403');
-
-    // 12. Удаление аккаунта сидящего: место освобождается.
-    const gz = await gamer('gz', `Зоя ${RUN}`);
-    gz.auto = passive;
-    stops.push(keep(gz));
-    expect(await gcall(gz, 'POST', '/sit'), 200, 'gz сел');
-    assert.equal((await meOf(ga.jar)).game.players, 2);
-    expect(await call(gz.jar, 'DELETE', '/api/social/me', { json: { confirm: true }, headers: W }), 200, 'удаление gz');
-    await until(ga, (v) => !seatOfUser(v, gz.me.id) && v.seats.every((s) => !s || s.bot || s.user), { what: 'место gz освободилось' });
-    assert.equal((await meOf(ga.jar)).game.players, 1);
-    ok('«Покер»: удаление аккаунта сидящего — место освободилось, me.game.players уменьшился');
-
-    // 13. Стек и счёт — в базе: встал и сел снова — тот же стек. Встаём между раздачами (идёт отсчёт, до раздачи
-    //     ещё > 150 мс): раздача, в которую ga уже сдан, при уходе доигрывается сбросом и честно засчитывается (hands + 1).
-    const before = (await until(ga, (v) => !v.hand && (v.countdown === null || v.countdown - v.now > 150),
-      { what: 'стол между раздачами' })).me;
-    expect(await gcall(ga, 'POST', '/stand'), 200, 'ga встал');
-    tv = await until(ga, (v) => !seatOfUser(v, ga.me.id), { what: 'ga вне стола' });
-    assert.deepEqual([tv.me.state, tv.me.chips, tv.me.stats], ['none', before.chips, before.stats], 'банкролл и счёт сохранились');
-    assert.deepEqual((await meOf(ga.jar)).game, { players: 0, invite: null, bonus: true });
-    await until(null, (v) => v.seats.every((s) => !s), { what: 'стол пуст' });
-    ok('«Покер»: встал — стек и счёт остались в базе (me.chips, me.stats), стол пуст');
-
-    await runEconomy(stops);
-    await runTop();
-  } finally {
-    for (const stop of stops) stop();
-  }
-}
-
-/**
- * «Покер»: экономика фишек (CONTRACT.md §I.10). Стол пуст на входе и на выходе. Бесплатной подпитки нет:
- *  1) бонус «ждёт раздачи» (место есть, но в раздачу не сдан) — сразу в стек и в базу; второй раз — 409; me.game.bonus;
- *  2) бонус в раздаче — в стек только после неё (по потоку: стек после конца раздачи = стек на её итоге + 500);
- *  3) двое ва-банк друг против друга, пока у кого-то не останется меньше большого блайнда: в начале следующей раздачи
- *     он встаёт сам (me.kicked = 'broke' один раз), me.broke, сесть — 409; бонус — и снова можно сесть.
- */
-async function runEconomy(stops) {
-  let r;
-  let tv;
-  // 1. gp с ботом; ждём ход gp (сам он не ходит: на ход 2 с) — раздача точно идёт. gr садится в неё и забирает бонус.
-  const gp = await gamer('gp', `Паша ${RUN}`);
-  const gr = await gamer('gr', `Рома ${RUN}`);
-  gp.auto = null;
-  stops.push(keep(gp));
-  expect(await gcall(gp, 'POST', '/sit'), 200, 'gp сел');
-  const myTurn = (u) => (v) => {
-    const s = seatOfUser(v, u.me.id);
-    return !!(s && v.hand && !v.hand.result && v.hand.turn && v.hand.turn.seat === s.seat);
-  };
-  tv = await until(gp, myTurn(gp), { ms: 15_000, what: 'ход gp' });
-  const seatP = seatOfUser(tv, gp.me.id).seat;
-  const handP = tv.hand.id;
-  assert.equal((await meOf(gr.jar)).game.bonus, false, 'стол не находил — бонус не ждёт');
-  const sitR = expect(await gcall(gr, 'POST', '/sit'), 200, 'gr сел во время раздачи').table;
-  const seatR = sitR.me.seat;
-  assert.deepEqual([sitR.me.state, sitR.me.chips, sitR.me.broke], ['reserved', 1000, false]);
-  checkBonus(sitR.me.bonus, { available: true, amount: 500, streak: 0, tomorrow: 600 }, sitR.now, 'бонус gr до');
-  const br = expect(await gcall(gr, 'POST', '/bonus'), 200, 'бонус «ждёт раздачи»');
-  assert.equal(br.got, 500);
-  assert.deepEqual([br.table.me.state, br.table.me.chips, br.table.seats[seatR].chips, br.table.me.broke], ['reserved', 1500, 1500, false],
-    'не в раздаче — сразу в стек');
-  checkBonus(br.table.me.bonus, { available: false, amount: 500, streak: 1, tomorrow: 600 }, br.table.now, 'бонус gr после');
-  r = await gcall(gr, 'POST', '/bonus');
-  expect(r, 409, 'бонус второй раз', 'conflict', 'Бонус на сегодня уже получен');
-  assert.equal(r.json.field, 'status');
-  assert.equal((await meOf(gr.jar)).game.bonus, false, 'me.game.bonus после бонуса');
-  tv = expect(await gcall(gr, 'POST', '/stand'), 200, 'gr встал').table;
-  assert.deepEqual([tv.me.state, tv.me.chips], ['none', 1500], 'встал — бонус в банкролле (база)');
-  ok('«Покер»: бонус новому — 500 (серия 0); «ждёт раздачи» забрал — +500 сразу в стек и в базу, серия 1, завтра 600; второй раз — 409 «Бонус на сегодня уже получен»; me.game.bonus false');
-
-  // 2. Бонус gp в его раздаче (всё ещё его ход): стек не меняется, пока раздача не кончится; потом — +500.
-  const sp = await stream(gp);
-  await sp.wait('hello');
-  const bp = expect(await gcall(gp, 'POST', '/bonus'), 200, 'бонус в раздаче');
-  const mine = bp.table.seats[seatP];
-  assert.ok(bp.table.hand && bp.table.hand.id === handP && mine.inHand, 'бонус забран в раздаче: ' + JSON.stringify(bp.table.hand && bp.table.hand.phase));
-  assert.equal(bp.got, 500);
-  assert.equal(bp.table.me.chips, mine.chips);
-  assert.ok(mine.chips + mine.bet <= 1100, 'в раздаче стек ещё без бонуса: ' + (mine.chips + mine.bet));
-  checkBonus(bp.table.me.bonus, { available: false, amount: 500, streak: 1, tomorrow: 600 }, bp.table.now, 'бонус gp после');
-  gp.auto = passive;
-  const claimSeq = bp.table.seq;
-  const ends = await sp.until(() => {
-    const ev = sp.events.filter((e) => e.event === 'table' && e.data.view.seq >= claimSeq).map((e) => e.data.view);
-    const i = ev.findIndex((v) => !v.hand || v.hand.id !== handP);
-    return i > 0 ? { last: ev[i - 1], after: ev[i] } : null;
-  }, 4500, 'конец раздачи с бонусом');
-  sp.close();
-  assert.ok(ends.last.hand && ends.last.hand.result, 'перед концом раздачи — её итог');
-  assert.equal(ends.after.seats[seatP].chips, ends.last.seats[seatP].chips + 500, 'бонус — в стек по окончании раздачи');
-  expect(await gcall(gp, 'POST', '/stand'), 200, 'gp встал');
-  await until(null, (v) => v.seats.every((s) => !s), { ms: 15_000, what: 'стол пуст после gp' });
-  ok(`«Покер»: бонус в раздаче — стек не меняется до её конца, потом +500 (${ends.last.seats[seatP].chips} → ${ends.after.seats[seatP].chips})`);
-
-  // 3. Ва-банк: gu и gv, пока кто-то не проиграется (меньше 20 в начале раздачи — встаёт сам).
-  const gu = await gamer('gu', `Уля ${RUN}`);
-  const gv = await gamer('gv', `Вова ${RUN}`);
-  for (const u of [gu, gv]) {
-    u.auto = shove;
-    u.kickedSeen = null;
-    stops.push(keep(u));
-  }
-  expect(await gcall(gu, 'POST', '/sit'), 200, 'gu сел');
-  expect(await gcall(gv, 'POST', '/sit'), 200, 'gv сел');
-  let L = null;
-  let lv = null;
-  const t0 = Date.now();
-  while (!L) {
-    if (Date.now() - t0 > 60_000) throw new Error('ва-банк: за 60 с никто не проигрался');
-    for (const u of [gu, gv]) {
-      const v = await tableOf(u);
-      if (v.me.kicked) u.kickedSeen = v.me.kicked;
-      if (v.me.state === 'none') { L = u; lv = v; break; }
-    }
-    if (!L) await sleep(150);
-  }
-  const W = L === gu ? gv : gu;
-  L.auto = null;
-  W.auto = passive;
-  await sleep(700);   // me.kicked мог уйти в опрос keep — ждём его ответа
-  assert.ok(lv.me.kicked === 'broke' || L.kickedSeen === 'broke', 'me.kicked = broke пришёл: ' + JSON.stringify([lv.me.kicked, L.kickedSeen]));
-  tv = await tableOf(L);
-  assert.equal(tv.me.kicked, null, 'второй раз kicked не приходит');
-  assert.ok(tv.me.state === 'none' && tv.me.broke === true && tv.me.chips < 20, 'фишки кончились: ' + JSON.stringify(tv.me));
-  checkBonus(tv.me.bonus, { available: true, amount: 500, streak: 0, tomorrow: 600 }, tv.now, 'бонус проигравшегося');
-  r = await gcall(L, 'POST', '/sit');
-  expect(r, 409, 'сесть без фишек', 'conflict', 'Фишки кончились — новые завтра');
-  assert.equal(r.json.field, 'status');
-  assert.equal((await meOf(L.jar)).game.bonus, true, 'бонус ждёт');
-  const lb = expect(await gcall(L, 'POST', '/bonus'), 200, 'бонус проигравшегося');
-  assert.deepEqual([lb.got, lb.table.me.state, lb.table.me.chips, lb.table.me.broke], [500, 'none', tv.me.chips + 500, false], 'бонус — в банкролл');
-  const back = expect(await gcall(L, 'POST', '/sit'), 200, 'с бонусом — снова за стол').table;
-  assert.ok(['seated', 'reserved'].includes(back.me.state), 'сел: ' + back.me.state);
-  expect(await gcall(L, 'POST', '/stand'), 200, 'проигравшийся встал');
-  expect(await gcall(W, 'POST', '/stand'), 200, 'победитель встал');
-  await until(null, (v) => v.seats.every((s) => !s), { ms: 15_000, what: 'стол пуст' });
-  ok(`«Покер»: ва-банк до конца фишек — в начале раздачи встал сам, me.kicked = broke (один раз), me.broke, сесть → 409 «Фишки кончились — новые завтра»; бонус +500 — снова за стол (${Math.round((Date.now() - t0) / 1000)} с)`);
-}
-
-/**
- * «Покер»: рейтинг по фишкам (GET /api/social/games/top, §I.10). «Друзья» — друзья и я; «Все» — взрослые, которых можно
- * найти в поиске, друзья и я; 16–17 чужим не видны (даже с поиском), другу — видны; скрылся из поиска или блокировка —
- * не виден. База общая с прошлыми прогонами, поэтому «Все» проверяется по total: разница между зрителями — ровно наши люди.
- */
-async function runTop() {
-  const top = async (u, scope) => expect(await paced(() => gcall(u, 'GET', '/top?scope=' + scope)), 200, 'рейтинг ' + scope);
-  const total = async (u) => (await top(u, 'all')).total;
-  const S = await gamer('ts', `Стас ${RUN}`);
-  const F = await gamer('tf', `Фарид ${RUN}`);
-  const M = await gamer('tm', `Мадина ${RUN}`, { age: 'minor' });
-  const H = await gamer('th', `Хилола ${RUN}`);
-  expect(await gcall(null, 'GET', '/top?scope=all'), 401, 'рейтинг гостю', 'auth');
-  bad(await gcall(S, 'GET', '/top?scope=world'), 'кривой scope', 'Неверный запрос', 'scope');
-  bad(await gcall(S, 'GET', '/top'), 'без scope', 'Неверный запрос', 'scope');
-  let t = await top(S, 'friends');
-  assert.deepEqual([t.scope, t.items, t.me, t.total], ['friends', [], null, 0], 'стол не находил — своей строки нет');
-  for (const u of [S, F, M, H]) await tableOf(u);   // нашли стол — строки poker_players (по 1000)
-  // M (16–17) открывает себя поиску — во «Всех» её всё равно не видно чужим; бонус — 1500, выше F. F и M — друзья.
-  expect(await call(M.jar, 'PATCH', '/api/social/me', { json: { searchable: true }, headers: W }), 200, 'M в поиске');
-  expect(await gcall(M, 'POST', '/bonus'), 200, 'бонус M');
-  expect(await call(F.jar, 'POST', `/api/social/friends/${M.me.id}`, { json: {}, headers: W }), 200, 'F → M');
-  expect(await call(M.jar, 'POST', `/api/social/friends/${F.me.id}/accept`, { json: {}, headers: W }), 200, 'M принимает F');
-
-  // «Друзья»: у S — только он сам; у F и M — оба, M выше (1500 > 1000).
-  t = await top(S, 'friends');
-  assert.equal(t.scope, 'friends');
-  assert.deepEqual([t.total, t.me, t.items.length, t.items[0].place, t.items[0].user.id, t.items[0].chips, t.items[0].me],
-    [1, { place: 1, chips: 1000 }, 1, 1, S.me.id, 1000, true], 'друзья S: только своя строка');
-  assert.deepEqual(Object.keys(t.items[0].user).sort(), ['avatar', 'badge', 'id', 'name', 'team', 'uni', 'uniShort', 'username']);
-  t = await top(F, 'friends');
-  assert.deepEqual(t.items.map((x) => [x.place, x.user.id, x.chips, x.me]), [[1, M.me.id, 1500, false], [2, F.me.id, 1000, true]]);
-  assert.deepEqual([t.total, t.me], [2, { place: 2, chips: 1000 }]);
-  t = await top(M, 'friends');
-  assert.deepEqual([t.items.map((x) => [x.user.id, x.me]), t.me], [[[M.me.id, true], [F.me.id, false]], { place: 1, chips: 1500 }]);
-  ok('«Покер»: рейтинг — гостю 401, кривой или пустой scope → 400 scope; стол не находил — me null; «Друзья» — друзья и я, места по фишкам');
-
-  // «Все»: F видит M (друг), S — нет; M видит себя; места идут подряд, фишки не растут, своя строка — на своём месте.
-  const tS = await total(S);
-  const tF = await total(F);
-  assert.equal(tF, tS + 1, `F видит M-друга, S — нет (${tF} / ${tS})`);
-  assert.equal(await total(M), tS + 1, 'M (16–17) видит себя');
-  t = await top(S, 'all');
-  assert.equal(t.scope, 'all');
-  assert.ok(!t.items.some((x) => x.user.id === M.me.id), '16–17 чужим во «Всех» не видна');
-  assert.ok(t.items.every((x, i) => x.place === i + 1 && (i === 0 || t.items[i - 1].chips >= x.chips)), 'места подряд, по фишкам');
-  assert.ok(t.items.length <= 20 && t.items.filter((x) => x.me).every((x) => x.user.id === S.me.id), 'me — только своя строка');
-  const own = t.items.find((x) => x.me);
-  assert.ok(t.me && t.me.chips === 1000 && t.me.place >= 1 && t.me.place <= t.total && (!own || own.place === t.me.place),
-    'своё место совпадает со строкой в списке: ' + JSON.stringify(t.me));
-  // H скрылась из поиска — чужим не видна, себе — да; S блокирует F — не видят друг друга.
-  expect(await call(H.jar, 'PATCH', '/api/social/me', { json: { searchable: false }, headers: W }), 200, 'H скрылась из поиска');
-  const tS1 = await total(S);
-  assert.equal(tS1, tS - 1, 'скрылась из поиска — не во «Всех» у чужих');
-  assert.equal(await total(H), tS1 + 1, 'своя строка — всегда');
-  const tF1 = await total(F);
-  expect(await call(S.jar, 'PUT', `/api/social/blocks/${F.me.id}`, { json: {}, headers: W }), 200, 'S блокирует F');
-  assert.deepEqual([await total(S), await total(F)], [tS1 - 1, tF1 - 1], 'блокировка — не видят друг друга');
-  expect(await call(S.jar, 'DELETE', `/api/social/blocks/${F.me.id}`, { json: {}, headers: W }), 200, 'S разблокировал F');
-  assert.equal(await total(S), tS1);
-  ok(`«Покер»: рейтинг «Все» (${tS} чел.) — 16–17 чужим не видна, другу — да; скрытые из поиска и заблокированные — нет; своя строка всегда, места подряд`);
 }
 
 // ═══════════════ Живые обновления (CONTRACT.md §J) ═══════════════
@@ -2345,8 +1862,8 @@ async function runLive(boss, guest) {
   closeAll(sA, sB, sC);
   ok('живые обновления: момент другу → instants (и при удалении); заблокированному и автору — нет');
 
-  // 6. Приглашения в покер: не другу, себе, несуществующему → 403; to не число → 400; другу → invite и me.game.invite;
-  //    повтор за минуту → 429; «не сейчас» → null, снова позвать до конца минуты → 429; сел за стол → приглашение снято.
+  // 6. Приглашения в шахматы: не другу, себе, несуществующему → 403; to не число → 400; другу → invite и me.game.invite;
+  //    повтор за минуту → 429; «не сейчас» → null, снова позвать до конца минуты → 429; принял → приглашение снято.
   const inv = (u, to) => call(u.jar, 'POST', `${G}/invite`, { json: { to }, headers: W });
   bad(await inv(A, 'x'), 'to не число', 'Неверный запрос', 'to');
   bad(await inv(A, 1.5), 'to дробное', 'Неверный запрос', 'to');
@@ -2371,18 +1888,18 @@ async function runLive(boss, guest) {
   assert.equal((await meOf(B.jar)).game.invite, null, 'после «не сейчас» — null');
   expect(await inv(A, B.me.id), 429, 'снова до конца минуты', 'rate', 'Уже позвали — подожди минуту');
   assert.equal((await meOf(A.jar)).game.invite, null, 'у зовущего приглашения нет');
-  // Сел за стол — входящее приглашение снимается; players — живым, когда кто-то сел и встал.
-  const n0 = (await meOf(A.jar)).game.players;
+  // Принял — входящее приглашение снимается, партия — событие chess обоим (и своим потокам).
   expect(await inv(D, B.me.id), 200, 'D зовёт B');
   assert.equal((await meOf(B.jar)).game.invite.from.id, D.me.id, 'новое приглашение заменило прежнее');
-  expect(await gcall(B, 'POST', '/sit'), 200, 'B сел за стол');
+  const lg = expect(await call(B.jar, 'POST', `${G}/accept`, { json: { from: D.me.id }, headers: W }), 200, 'B принимает').game;
   bg = (await meOf(B.jar)).game;
-  assert.deepEqual([bg.invite, bg.players], [null, n0 + 1], 'сел — приглашение снято');
-  assert.deepEqual(keepOne('players', await sA.wait('players', (d) => d.n === n0 + 1, W8)), { n: n0 + 1 });
-  expect(await gcall(B, 'POST', '/stand'), 200, 'B встал');
-  await sA.wait('players', (d) => d.n === n0, 4500);
+  assert.equal(bg.invite, null, 'принял — приглашение снято');
+  const gotChess = keepOne('chess', await sB.wait('chess', (d) => d.game && d.game.id === lg.id, W8));
+  assert.deepEqual(gotChess.game, lg, 'chess — то же view, что в ответе');
+  assert.equal(gotChess.turn, bg.turn, 'turn — как в me.game');
+  expect(await call(B.jar, 'POST', `${G}/${lg.id}/resign`, { json: {}, headers: W }), 200, 'B сдаётся');
   closeAll(sA, sB);
-  ok(`живые обновления: позвать в покер — не другу/себе/несуществующему 403 «Нельзя позвать…», to 400; другу → invite + me.game.invite; повтор → 429 (retryAfter ${r.json.retryAfter} с); «не сейчас» → null; сел → снято; players ${n0 + 1} → ${n0}`);
+  ok(`живые обновления: позвать в шахматы — не другу/себе/несуществующему 403 «Нельзя позвать…», to 400; другу → invite + me.game.invite; повтор → 429 (retryAfter ${r.json.retryAfter} с); «не сейчас» → null; принял → снято, chess обоим`);
 
   // 7. Модерация: жалоба → модератору me; скрытие модератором → gone всем, кроме модератора и автора (им пост виден);
   //    бан и снятие → человеку me, поток ограниченного не закрывается (он читает).
@@ -2629,38 +2146,28 @@ async function runReadonly() {
   expect(await call(bob.jar, 'POST', '/api/auth/logout', { json: {}, headers: W }), 200, 'выход');
   ok('readonly: жалоба, блок, отказ/отмена, удаление фото и своего поста, правила, скрыть себя, удаление аккаунта, выход — работают');
 
-  // ── «Покер» в readonly: смотреть и поток — можно (и гостю); сесть, ход, реакция → 403 readonly; встать — можно ──
+  // ── «Шахматы» в readonly: список — можно; позвать, принять, ход, предложить ничью → 403 readonly ──
   const aliceGame = (await meOf(alice.jar)).game;
-  assert.ok(aliceGame && typeof aliceGame.players === 'number' && typeof aliceGame.bonus === 'boolean', 'me.game в readonly: ' + JSON.stringify(aliceGame));
-  const tv = expect(await gcall(alice, 'GET', ''), 200, 'стол в readonly');
-  assert.ok(tv.me && tv.me.state === 'none' && tv.seats.length === 4, 'стол читается');
-  assert.ok(tv.me.bonus && typeof tv.me.bonus.available === 'boolean' && typeof tv.me.broke === 'boolean', 'me.bonus и me.broke в readonly');
-  assert.equal(expect(await gcall(null, 'GET', ''), 200, 'стол гостю в readonly').me, null);
-  await ro(await gcall(alice, 'POST', '/sit'), 'сесть');
-  await ro(await gcall(alice, 'POST', '/act', { json: { hand: 1, action: 'fold' } }), 'ход');
-  await ro(await gcall(alice, 'POST', '/react', { json: { r: 'wave' } }), 'реакция');
-  await ro(await gcall(alice, 'POST', '/bonus'), 'бонус');
-  assert.equal(expect(await gcall(alice, 'POST', '/stand'), 200, 'встать в readonly').table.me.state, 'none');
-  const tt = expect(await gcall(alice, 'GET', '/top?scope=all'), 200, 'рейтинг в readonly');
-  assert.ok(tt.scope === 'all' && Array.isArray(tt.items) && tt.me && tt.me.chips === tv.me.chips, 'рейтинг в readonly: ' + JSON.stringify(tt.me));
-  const s = await stream(alice);
-  assert.equal(s.status, 200, 'поток в readonly: ' + s.raw.slice(0, 200));
-  await s.wait('hello');
-  await s.wait('table', (d) => d.view && d.view.me && d.view.me.state === 'none', 2000);
-  s.close();
-  ok('readonly: «Покер» — стол читается (и гостю), поток открывается (hello, table), рейтинг — 200; сесть, ход, реакция, бонус → 403 readonly; встать — 200');
+  assert.ok(aliceGame && typeof aliceGame.turn === 'number', 'me.game в readonly: ' + JSON.stringify(aliceGame));
+  const cl = expect(await gcall(alice, 'GET'), 200, 'партии в readonly');
+  assert.ok(Array.isArray(cl.games) && cl.stats && typeof cl.turn === 'number', 'список в readonly');
+  await ro(await gcall(alice, 'POST', '/accept', { from: bob.me.id }), 'принять');
+  await ro(await gcall(alice, 'POST', '/1/move', { move: 'e2e4', ply: 0 }), 'ход');
+  await ro(await gcall(alice, 'POST', '/1/draw', { action: 'offer' }), 'предложить ничью');
+  expect(await gcall(alice, 'POST', '/999999999/resign'), 404, 'сдаться в readonly — не 403', 'not_found');
+  ok('readonly: «Шахматы» — список 200; принять, ход, предложить ничью → 403 readonly; сдаться — не 403');
 
-  // ── Живые обновления в readonly: поток открывается (гостю — 401); позвать в покер → 403 readonly; «не сейчас» — 200 ──
+  // ── Живые обновления в readonly: поток открывается (гостю — 401); позвать в шахматы → 403 readonly; «не сейчас» — 200 ──
   expect(await call(guest, 'GET', LIVE), 401, 'живые обновления гостю в readonly', 'auth');
   const ls = await live(alice);
   assert.equal(ls.status, 200, 'живые обновления в readonly: ' + ls.raw.slice(0, 200));
   assert.ok(ls.raw.startsWith('retry: 3000\n\nevent: hello\ndata: {"now":'), 'retry, hello');
   await ls.wait('ping', null, 2500);
   ls.close();
-  await ro(await call(alice.jar, 'POST', `${G}/invite`, { json: { to: bob.me.id }, headers: W }), 'позвать в покер');
+  await ro(await call(alice.jar, 'POST', `${G}/invite`, { json: { to: bob.me.id }, headers: W }), 'позвать в шахматы');
   expect(await call(alice.jar, 'POST', `${G}/invite/dismiss`, { json: {}, headers: W }), 200, '«не сейчас» в readonly');
   assert.equal((await meOf(alice.jar)).game.invite, null, 'me.game.invite в readonly');
-  ok('readonly: живые обновления — поток открывается (retry, hello, ping); позвать в покер → 403 readonly; «не сейчас» — 200');
+  ok('readonly: живые обновления — поток открывается (retry, hello, ping); позвать в шахматы → 403 readonly; «не сейчас» — 200');
 }
 
 async function runOff() {
@@ -2671,18 +2178,16 @@ async function runOff() {
   assert.equal(signed.mode, 'off');
   assert.equal(signed.user.id, X.me.id);
   ok('off: /api/auth/me отвечает mode:"off", вход разработчика работает');
-  // «Покер» в off: маршрутов нет (общий 404), пасхалка в приложении молчит.
+  // «Шахматы» в off: маршрутов нет (общий 404); с ботом в приложении играть можно.
   assert.equal(signed.config.game, 'off', 'config.game в off');
   assert.equal(signed.user.game, null, 'me.game в off');
-  expect(await call(X.jar, 'GET', G), 404, 'стол в off', 'not_found', 'Нет такого адреса API');
-  expect(await call(guest, 'GET', G), 404, 'стол гостю в off', 'not_found');
-  expect(await call(X.jar, 'GET', G + '/stream'), 404, 'поток игры в off', 'not_found');
-  expect(await call(X.jar, 'POST', G + '/sit', { json: {}, headers: W }), 404, 'сесть в off', 'not_found');
+  expect(await call(X.jar, 'GET', G), 404, 'партии в off', 'not_found', 'Нет такого адреса API');
+  expect(await call(guest, 'GET', G), 404, 'партии гостю в off', 'not_found');
   expect(await call(X.jar, 'POST', G + '/invite', { json: { to: 1 }, headers: W }), 404, 'позвать в off', 'not_found');
   expect(await call(X.jar, 'POST', G + '/invite/dismiss', { json: {}, headers: W }), 404, '«не сейчас» в off', 'not_found');
-  expect(await call(X.jar, 'POST', G + '/bonus', { json: {}, headers: W }), 404, 'бонус в off', 'not_found');
-  expect(await call(X.jar, 'GET', G + '/top?scope=all'), 404, 'рейтинг в off', 'not_found');
-  ok('off: «Покер» — config.game off, me.game null, /api/social/games, поток, приглашения, бонус и рейтинг → 404 not_found');
+  expect(await call(X.jar, 'POST', G + '/accept', { json: { from: 1 }, headers: W }), 404, 'принять в off', 'not_found');
+  expect(await call(X.jar, 'POST', G + '/1/move', { json: { move: 'e2e4', ply: 0 }, headers: W }), 404, 'ход в off', 'not_found');
+  ok('off: «Шахматы» — config.game off, me.game null, /api/social/chess → 404 not_found');
   expect(await call(X.jar, 'GET', LIVE), 404, 'живые обновления в off', 'not_found', 'Нет такого адреса API');
   expect(await call(guest, 'GET', LIVE), 404, 'живые обновления гостю в off', 'not_found');
   ok('off: живые обновления — /api/social/live → 404 not_found');

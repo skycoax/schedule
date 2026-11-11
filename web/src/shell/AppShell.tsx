@@ -30,7 +30,7 @@ import { TabBar } from './TabBar';
 import { LargeTitle, NavBar } from './NavBar';
 import { readDeepLink, type DeepLink } from './deeplink';
 import { closeGame, openGame, registerGameHost, useGameRequest } from '../game/entry';
-import type { GameHostProps } from '../game/GameHost';
+import type { GameHostProps } from '../game/ChessHost';
 import { InviteBanner } from '../game/InviteBanner';
 import { useLive } from '../social/live';
 import './shell.css';
@@ -101,8 +101,8 @@ export function lazyWithReload<P>(importer: () => Promise<{ default: ComponentTy
 const chatPanel = lazyWithReload<ChatTabProps>(() => import('../social/chat/ChatTab'));
 const profilePanel = lazyWithReload<ProfileTabProps>(() => import('../social/profile/ProfileTab'));
 const authPanel = lazyWithReload<Record<string, never>>(() => import('../social/profile/AuthHost'));
-/** Покер (game/): открывается пятью нажатиями на часы героя, точкой на герое или ссылкой ?game=1. */
-const gamePanel = lazyWithReload<GameHostProps>(() => import('../game/GameHost'));
+/** Шахматы (game/): открываются пятью нажатиями на часы героя, точкой на герое или ссылкой ?game=1 (&chess=<id>). */
+const gamePanel = lazyWithReload<GameHostProps>(() => import('../game/ChessHost'));
 
 // ─── Оболочка ──────────────────────────────────────────────────────────────
 
@@ -221,7 +221,7 @@ function HubShell({ theme, role, setRole, renderSchedule, dl }: AppShellProps & 
   barHiddenRef.current = barHidden;
   useKeyboardWatcher();
   const game = useGameRequest();
-  // Живые обновления: чужие посты, ответы, заявки в друзья, моменты и приглашения в покер приходят сами (social/live.ts).
+  // Живые обновления: чужие посты, ответы, заявки в друзья, моменты, приглашения и ходы в шахматах приходят сами (social/live.ts).
   useLive();
   // До эффектов расписания: первый onContext (ссылка ?game=1) уже может открыть игру.
   useLayoutEffect(() => registerGameHost(), []);
@@ -390,8 +390,8 @@ function HubShell({ theme, role, setRole, renderSchedule, dl }: AppShellProps & 
         if (h.profile) setProfileLink(h.profile);
       });
     }
-    // «Открыть игру» по ссылке (?game=1): уже после согласия, группы и вуза.
-    if (dl.game) openGame({});
+    // «Открыть шахматы» по ссылке (?game=1, &chess=<id> — сразу партия): уже после согласия, группы и вуза.
+    if (dl.game) openGame({ gameId: dl.chess });
 
     if (navigator.onLine !== false) {
       idle(() => {
@@ -399,7 +399,7 @@ function HubShell({ theme, role, setRole, renderSchedule, dl }: AppShellProps & 
         if (mode !== 'off') void chatPanel.load();
         void profilePanel.load();
         void authPanel.load();
-        // Игру уже находили — пусть её файл будет в кеше: тренировка с ботом работает и без сети.
+        // Шахматы уже находили — пусть их файл будет в кеше: партия с ботом работает и без сети.
         if (store('game_found')) void gamePanel.load();
       }, 4000);
     }

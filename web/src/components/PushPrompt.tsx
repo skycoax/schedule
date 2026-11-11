@@ -18,7 +18,7 @@ export function PushPrompt({ open, onClose }: { open: boolean; onClose: () => vo
         <div className="modal__h" id="push-h">Узнавать об изменениях сразу</div>
         <div className="modal__sub">
           Если в расписании группы что-то поменяется, Para пришлёт уведомление — даже когда приложение закрыто.
-          Ещё — заявки в друзья, ответы и приглашения в покер. Что присылать, выбирается в «Профиле».
+          Ещё — заявки в друзья, ответы, приглашения и ходы в шахматах. Что присылать, выбирается в «Профиле».
         </div>
         <button className="modal__ok" disabled={busy} onClick={on}>Включить</button>
         <button className="modal__doc" onClick={later}>Не сейчас</button>
