@@ -1306,7 +1306,7 @@ async function runMain() {
   // Страницы Para (если POLICY их уже положил) и robots.txt.
   r = await call(guest, 'GET', '/robots.txt', { uni: '' });
   expect(r, 200, 'robots.txt');
-  assert.equal(r.buf.toString(), 'User-agent: *\nDisallow: /api/\nDisallow: /psy\n');
+  assert.equal(r.buf.toString(), 'User-agent: *\nDisallow: /api/\nDisallow: /psy\nDisallow: /analytics\n');
   const pages = [];
   for (const p of ['/policy', '/rules', '/delete-account']) pages.push(`${p} ${(await call(guest, 'GET', p, { uni: '' })).status}`);
   ok('robots.txt; страницы Para: ' + pages.join(', '));
