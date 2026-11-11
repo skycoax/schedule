@@ -8,6 +8,8 @@
 //   jpeg.js — очистка JPEG · text.js — очистка текста и мат · moderation.js — жалобы и модератор
 //   limits.js — пределы частоты · jobs.js — фоновые задачи
 //   chess-games.js — «Шахматы» с друзьями (партии, ходы, приглашения); бот — в приложении
+//   ref.js — «Позови друга»: ссылки, баллы за новые устройства, значки за баллы
+//   stats.js — расширенная статистика заходов для модератора
 //   psy.js — психологический паспорт студента (страница /psy, вопросы и подсчёт — ../psy/test.js)
 //   live.js — живые обновления приложения (поток SSE /api/social/live: чужие посты, ответы, заявки, приглашения)
 import { mkdirSync } from 'node:fs';
@@ -25,7 +27,10 @@ import { chessRoutes } from './chess-games.js';
 import { liveRoutes } from './live.js';
 import { initPush, pushRoutes, pushSchedule } from './push.js';
 import { psyRoutes } from './psy.js';
+import { statsRoutes } from './stats.js';
+import { refRoutes } from './ref.js';
 import { earlyRoutes } from './early.js';
+import { mygroupRoutes } from './mygroup.js';
 import { setChangesHook } from '../poller.js';
 
 export const SOCIAL_PATH = /^\/api\/(auth|social|media)(\/|$)/;
@@ -93,13 +98,16 @@ export async function registerSocial(app, { hub, tenants }) {
     accountRoutes(inst, ctx);                        // DELETE /api/social/me — во всех режимах
     pushRoutes(inst);                                // уведомления: изменения пар от обсуждений не зависят
     psyRoutes(inst, ctx);                            // психологический тест (/psy): от режима обсуждений не зависит
+    statsRoutes(inst, ctx);                          // расширенная статистика модератора — во всех режимах
     earlyRoutes(inst, ctx);                          // ранний доступ в Google Play — во всех режимах
+    mygroupRoutes(inst, ctx);                        // «Моя группа» и аудит аккаунтов для модератора — во всех режимах
     if (social.mode !== 'off') {
       postRoutes(inst, ctx);
       instantRoutes(inst, ctx);
       userRoutes(inst, ctx);
       mediaRoutes(inst, ctx);
       adminRoutes(inst, ctx);
+      refRoutes(inst, ctx);                          // «Позови друга»: ссылка, баллы, значки
       liveRoutes(inst, ctx);                         // GET /api/social/live — и в readonly (в off — общий 404)
       // «Шахматы»: SOCIAL_GAME=off (или SOCIAL_MODE=off) — маршрутов нет, общий 404; с ботом играть можно и так.
       if (social.game !== 'off') chessRoutes(inst, ctx);

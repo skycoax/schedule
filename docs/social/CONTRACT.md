@@ -2989,7 +2989,7 @@ Phase 4  lead integration gate (§G.7) → owner deploys (§F.6)
 
 ---
 
-## I. «Шахматы» (schema V13)
+## I. «Шахматы» (schema V15)
 
 A hidden easter egg: chess. Five taps on the `Hero` clock open it (web: `web/src/game/`). No stakes, chips, money or prizes —
 only games and a win/draw/loss count, so it is not simulated gambling (Google Play age rating). It replaced «Покер» (V8–V9):
@@ -3015,7 +3015,7 @@ social.db (people's data is never deleted by scripts) — nobody reads it, it go
 - Account deletion: active games end with `reason: 'left'`, games whose opponent is already gone are deleted; in the others
   the deleted side becomes `null` (ON DELETE SET NULL) — the opponent sees «Аккаунт удалён».
 
-### I.2 Schema V13 (`SCHEMA_V13` in `db.js`)
+### I.2 Schema V15 (`SCHEMA_V15` in `db.js`)
 ```sql
 CREATE TABLE IF NOT EXISTS chess_games (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

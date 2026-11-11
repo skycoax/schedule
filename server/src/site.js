@@ -17,6 +17,16 @@ function template() {
   return tpl.html;
 }
 
+// Хеллоуин (src/seasonal/halloween.js): в страницу — только в сезон, 15 октября — 1 ноября по Ташкенту.
+// ?v= — время правки файла: исправление доходит сразу, а пока файл тот же, браузер берёт его из кэша.
+const HALLOWEEN = new URL('./seasonal/halloween.js', import.meta.url).pathname;
+function seasonalScript() {
+  const d = new Date(Date.now() + 5 * 36e5);   // Ташкент: UTC+5 круглый год
+  const m = d.getUTCMonth() + 1, day = d.getUTCDate();
+  if (!((m === 10 && day >= 15) || (m === 11 && day <= 1))) return '';
+  return `<script src="/seasonal/halloween.js?v=${Math.round(statSync(HALLOWEEN).mtimeMs)}" defer></script>\n`;
+}
+
 const esc = (s) => String(s)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
@@ -24,6 +34,19 @@ const esc = (s) => String(s)
 // меняется после пересборки бренда, поэтому исправленная картинка подхватывается
 // сразу, а не остаётся прежней в карточке ссылки.
 const ogImage = (url, dir) => `${url}/brand/og.jpg?v=${Math.round(statSync(join(dir, 'og.jpg')).mtimeMs)}`;
+
+// Графики модератора к «Статистике» (src/stats/admin.js) — ?v= по той же причине.
+const STATS_ADMIN = new URL('./stats/admin.js', import.meta.url).pathname;
+const statsScript = () => `<script src="/stats/admin.js?v=${Math.round(statSync(STATS_ADMIN).mtimeMs)}" defer></script>\n`;
+// «Неделя целиком» (src/week/week.js): подписи предметов в ячейках, свой цвет каждому, подробности по нажатию.
+const WEEK = new URL('./week/week.js', import.meta.url).pathname;
+// «Позови друга» (src/ref/ref.js): своя ссылка, баллы за новые устройства, значки.
+const REF = new URL('./ref/ref.js', import.meta.url).pathname;
+// «Моя группа» (src/me/group.js): вопрос «Ты учишься в группе …?» и строка в своём профиле.
+const MYGROUP = new URL('./me/group.js', import.meta.url).pathname;
+const mygroupScript = () => `<script src="/me/group.js?v=${Math.round(statSync(MYGROUP).mtimeMs)}" defer></script>\n`;
+const refScript = () => `<script src="/ref/ref.js?v=${Math.round(statSync(REF).mtimeMs)}" defer></script>\n`;
+const weekScript = () => `<script src="/week/week.js?v=${Math.round(statSync(WEEK).mtimeMs)}" defer></script>\n`;
 
 function render(site, url, dir, brandObj) {
   const values = {
@@ -39,7 +62,8 @@ function render(site, url, dir, brandObj) {
     .replace(/\{\{BRAND_JSON\}\}/g, () => brandJson)
     .replace(/\{\{(URL|OG_IMAGE|SITE_NAME|TITLE|DESCRIPTION)\}\}/g, (_, k) => esc(values[k]))
     // Приглашение пройти психологический тест (src/psy/nudge.js): исходники приложения отдельно, поэтому — отсюда.
-    .replace('</body>', () => '<script src="/psy/nudge.js" defer></script>\n</body>');
+    // Сезонное оформление — так же.
+    .replace('</body>', () => '<script src="/psy/nudge.js" defer></script>\n' + statsScript() + weekScript() + mygroupScript() + refScript() + seasonalScript() + '</body>');
 }
 
 /**
