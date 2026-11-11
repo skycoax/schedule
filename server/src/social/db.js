@@ -417,8 +417,41 @@ CREATE TABLE IF NOT EXISTS early_access (
 );
 `;
 
+// «Позови друга» (ref.js): у аккаунта своя ссылка, по ней приходят новые устройства. Устройство (cid браузера)
+// засчитывается одному пригласившему и только когда пользуется расписанием два разных дня (confirmed_at).
+// cid здесь — не аккаунт пришедшего: по нему проверяем заходы в базе вуза и не считаем одно устройство дважды.
+// Баллы не тратятся: набранные открывают значки у имени (users.badge), выбрать можно любой открытый.
+export const SCHEMA_V13 = `
+CREATE TABLE IF NOT EXISTS ref_codes (
+  user_id     INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  code        TEXT    NOT NULL UNIQUE,
+  style       TEXT    NOT NULL DEFAULT 'cat' CHECK (style IN ('cat','bro')),   -- мем в приглашении: котик или «по-братски»
+  created_at  TEXT    NOT NULL
+);
+CREATE TABLE IF NOT EXISTS ref_visits (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  owner_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  uni           TEXT    NOT NULL,
+  cid           TEXT    NOT NULL UNIQUE,                    -- одно устройство — один пригласивший
+  ip_hash       TEXT    NOT NULL DEFAULT '',
+  created_at    TEXT    NOT NULL,
+  confirmed_at  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_ref_visits_owner ON ref_visits (owner_id, confirmed_at);
+`;
+
+// «Моя группа» (mygroup.js): человек сам отвечает на «Ты учишься в группе …?» или выбирает её в профиле.
+// Видят только разработчик и модераторы (аудит аккаунтов на /analytics) — сколько людей с каких факультетов
+// и курсов. Со статистикой заходов (cid) не связывается. grp_at — когда ответил: grp NULL при grp_at не NULL —
+// «не скажу» (больше не спрашиваем).
+export const SCHEMA_V14 = `
+ALTER TABLE users ADD COLUMN grp     TEXT;   -- название группы, как в расписании
+ALTER TABLE users ADD COLUMN grp_uni TEXT;   -- вуз этой группы (может отличаться от «моего вуза»)
+ALTER TABLE users ADD COLUMN grp_at  TEXT;
+`;
+
 const MIGRATIONS = [SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6, SCHEMA_V7, SCHEMA_V8, SCHEMA_V9, SCHEMA_V10,
-  SCHEMA_V11, SCHEMA_V12];
+  SCHEMA_V11, SCHEMA_V12, SCHEMA_V13, SCHEMA_V14];
 
 /** Открыть (и при необходимости создать) social.db и довести схему до последней версии. */
 export function openSocialDb(dir = config.dataDir) {

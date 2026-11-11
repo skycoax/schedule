@@ -1,0 +1,720 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Аналитика Para</title>
+<link rel="icon" href="/favicon.ico">
+<!-- Аналитика для модератора на весь экран: охват групп и курсов, постоянство, группы без Para, полные списки.
+     Данные — GET /api/social/stats/analytics (social/stats.js, только SOCIAL_ADMIN_EMAILS). Всё, что пришло
+     с сервера, выводится как текст (textContent), без innerHTML. -->
+<style>
+:root{
+  color-scheme:light;
+  --bg:#f2f2f7;--surface:#fff;--surface-2:#f2f2f7;--ink:#1c1c1e;--ink-2:rgba(60,60,67,.66);--ink-3:rgba(60,60,67,.38);
+  --sep:rgba(60,60,67,.14);--accent:#007aff;--accent-bg:rgba(0,122,255,.1);
+  --s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;--s4:#eda100;--s5:#e87ba4;--s6:#008300;--s7:#6250d6;
+  --st-steady:#1f9d55;--st-some:#2a78d6;--st-weak:#c98500;--st-lost:#d9480f;--st-none:#d70015;
+  --heat:42,120,214;
+  --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",system-ui,sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){
+  color-scheme:dark;
+  --bg:#000;--surface:#1c1c1e;--surface-2:#2c2c2e;--ink:#fff;--ink-2:rgba(235,235,245,.66);--ink-3:rgba(235,235,245,.36);
+  --sep:rgba(84,84,88,.55);--accent:#0a84ff;--accent-bg:rgba(10,132,255,.18);
+  --s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500;--s5:#d55181;--s6:#008300;--s7:#9085e9;
+  --st-steady:#30d158;--st-some:#3987e5;--st-weak:#ffd60a;--st-lost:#ff9f0a;--st-none:#ff453a;
+  --heat:57,135,229;
+}}
+:root[data-theme=dark]{
+  color-scheme:dark;
+  --bg:#000;--surface:#1c1c1e;--surface-2:#2c2c2e;--ink:#fff;--ink-2:rgba(235,235,245,.66);--ink-3:rgba(235,235,245,.36);
+  --sep:rgba(84,84,88,.55);--accent:#0a84ff;--accent-bg:rgba(10,132,255,.18);
+  --s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500;--s5:#d55181;--s6:#008300;--s7:#9085e9;
+  --st-steady:#30d158;--st-some:#3987e5;--st-weak:#ffd60a;--st-lost:#ff9f0a;--st-none:#ff453a;
+  --heat:57,135,229;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.4 var(--font);-webkit-font-smoothing:antialiased}
+button,input,select{font:inherit;color:inherit}
+.wrap{max-width:1680px;margin:0 auto;padding:20px 28px 60px}
+header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:18px}
+header h1{font-size:26px;letter-spacing:-.02em;margin:0;flex:1;min-width:220px}
+header h1 small{display:block;font-size:13px;font-weight:400;color:var(--ink-2);letter-spacing:0;margin-top:2px}
+.ctl{height:36px;border-radius:10px;border:1px solid var(--sep);background:var(--surface);padding:0 12px}
+.btn{height:36px;border-radius:10px;border:0;background:var(--accent-bg);color:var(--accent);font-weight:600;padding:0 14px;cursor:pointer}
+.btn:hover{filter:brightness(1.05)}
+a.back{color:var(--accent);text-decoration:none;font-weight:600}
+.grid{display:grid;gap:16px}
+.kpis{grid-template-columns:repeat(auto-fit,minmax(160px,1fr))}
+.kpi{background:var(--surface);border-radius:16px;padding:14px 16px}
+.kpi span{display:block;font-size:12px;color:var(--ink-2)}
+.kpi b{display:block;font-size:28px;letter-spacing:-.02em;margin-top:2px;font-variant-numeric:tabular-nums}
+.kpi small{display:block;font-size:12px;color:var(--ink-3);margin-top:2px}
+.kpi.warn b{color:var(--st-none)}
+.card{background:var(--surface);border-radius:18px;padding:18px 20px;min-width:0}
+.card h2{font-size:17px;margin:0 0 2px;letter-spacing:-.01em}
+.card .note{font-size:12.5px;color:var(--ink-2);margin:0 0 12px}
+.row2{grid-template-columns:minmax(0,1.6fr) minmax(0,1fr)}
+.row2b{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+@media (max-width:1100px){.row2,.row2b{grid-template-columns:1fr}.wrap{padding:16px}}
+section{margin-top:16px}
+.insights{margin:0;padding:0;list-style:none;display:grid;gap:8px}
+.insights li{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border-radius:12px;background:var(--surface-2)}
+.insights li i{flex:none;width:8px;height:8px;border-radius:50%;margin-top:6px}
+.insights b{font-weight:600}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+th,td{padding:8px 10px;text-align:right;border-bottom:1px solid var(--sep);white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+td.t{text-align:left;white-space:normal}
+th{font-size:12px;font-weight:600;color:var(--ink-2);position:sticky;top:0;background:var(--surface);z-index:1;cursor:pointer;user-select:none}
+th.sorted::after{content:" ↓";color:var(--accent)}
+th.sorted.asc::after{content:" ↑"}
+tbody tr:hover td{background:var(--surface-2)}
+tr.click{cursor:pointer}
+.cov{display:flex;align-items:center;gap:8px;justify-content:flex-end}
+.cov .bar{width:90px;height:6px;border-radius:99px;background:var(--surface-2);overflow:hidden}
+.cov .bar i{display:block;height:100%;border-radius:99px;background:var(--s1)}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;padding:2px 9px;border-radius:99px;background:var(--surface-2)}
+.pill::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--c)}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.tab{border:0;border-radius:99px;padding:6px 12px;background:var(--surface-2);cursor:pointer;font-weight:600;font-size:13px}
+.tab b{font-weight:600;color:var(--ink-2);margin-left:4px}
+.tab.on{background:var(--ink);color:var(--surface)}
+.tab.on b{color:inherit;opacity:.7}
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.filters input{flex:1;min-width:200px}
+.scroll{max-height:640px;overflow:auto;border-radius:10px}
+.muted{color:var(--ink-3)}
+.chart{position:relative}
+.chart svg{display:block;width:100%;height:auto;overflow:visible}
+.tip{position:absolute;pointer-events:none;background:var(--ink);color:var(--surface);font-size:12px;padding:6px 9px;border-radius:8px;white-space:nowrap;transform:translate(-50%,-110%);opacity:0;transition:opacity .1s}
+.leg{display:flex;gap:16px;font-size:12.5px;color:var(--ink-2);margin-bottom:6px}
+.leg span::before{content:"";display:inline-block;width:10px;height:3px;border-radius:2px;background:var(--c);vertical-align:middle;margin-right:6px}
+.heat{display:grid;grid-template-columns:28px repeat(24,minmax(0,1fr));gap:2px;font-size:10.5px;color:var(--ink-3)}
+.heat div{height:22px;border-radius:4px;display:flex;align-items:center;justify-content:center}
+.heat .h{height:auto}
+.tech{grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+.list .li{display:flex;gap:10px;align-items:center;padding:5px 0;border-bottom:1px solid var(--sep);font-size:13px}
+.list .li span:first-child{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.list .li .bar{width:70px;height:5px;border-radius:99px;background:var(--surface-2);overflow:hidden;flex:none}
+.list .li .bar i{display:block;height:100%;background:var(--s1);border-radius:99px}
+.list .li em{font-style:normal;width:64px;text-align:right;color:var(--ink-2);flex:none;font-variant-numeric:tabular-nums}
+.more{margin-top:8px;border:0;background:none;color:var(--accent);font-weight:600;cursor:pointer;padding:4px 0}
+.gate{max-width:440px;margin:18vh auto;text-align:center;background:var(--surface);border-radius:20px;padding:28px}
+.gate h1{font-size:22px;margin:0 0 8px}
+.gate p{color:var(--ink-2)}
+.views{margin:0 0 4px}
+.views .tab{font-size:14px;padding:8px 16px}
+td.who b{display:block;font-weight:600}
+td.who small{display:block;font-size:12px;color:var(--ink-3)}
+td.who span{display:block}
+.skel{height:120px;border-radius:16px;background:var(--surface);animation:p 1.2s ease-in-out infinite alternate}
+@keyframes p{to{opacity:.5}}
+</style>
+</head>
+<body>
+<div class="wrap" id="app"><div class="skel"></div></div>
+<script>
+(function () {
+  'use strict';
+  var params = new URLSearchParams(location.search);
+  var UNI = params.get('uni') || '';
+  var STATUS = {
+    none: { label: 'Не пользуются', c: 'var(--st-none)' },
+    lost: { label: 'Пропали', c: 'var(--st-lost)', hint: 'были, но 7 дней не заходили' },
+    weak: { label: 'Слабо', c: 'var(--st-weak)', hint: '1–3 дня из 14, постоянных нет' },
+    some: { label: 'Иногда', c: 'var(--st-some)' },
+    steady: { label: 'Постоянно', c: 'var(--st-steady)', hint: '8+ дней из 14 и 2+ постоянных человека' },
+  };
+  var ORDER = ['none', 'lost', 'weak', 'some', 'steady'];
+
+  function h(tag, attrs, kids) {
+    var n = document.createElement(tag);
+    for (var k in attrs || {}) {
+      var v = attrs[k];
+      if (v == null || v === false) continue;
+      if (k === 'text') n.textContent = v;
+      else if (k === 'style') n.style.cssText = v;
+      else if (k.slice(0, 2) === 'on') n.addEventListener(k.slice(2), v);
+      else n.setAttribute(k, v);
+    }
+    [].concat(kids || []).forEach(function (c) { if (c != null && c !== false) n.appendChild(typeof c === 'string' || typeof c === 'number' ? document.createTextNode(String(c)) : c); });
+    return n;
+  }
+  var S = 'http://www.w3.org/2000/svg';
+  function s(tag, attrs) { var n = document.createElementNS(S, tag); for (var k in attrs) n.setAttribute(k, attrs[k]); return n; }
+  var fmt = function (n) { return Number(n || 0).toLocaleString('ru-RU'); };
+  var pct = function (a, b) { return b ? Math.round(a / b * 100) : 0; };
+  var plural = function (n, a, b, c) { n = Math.abs(n) % 100; var m = n % 10; return n > 10 && n < 20 ? c : m > 1 && m < 5 ? b : m === 1 ? a : c; };
+  var dshort = function (iso) { return iso ? iso.slice(8, 10) + '.' + iso.slice(5, 7) : '—'; };
+
+  var app = document.getElementById('app');
+  function gate(title, text, link) {
+    app.replaceChildren(h('div', { class: 'gate' }, [
+      h('h1', { text: title }), h('p', { text: text }),
+      link ? h('a', { class: 'btn', style: 'display:inline-flex;align-items:center;text-decoration:none', href: link.href, text: link.label }) : null,
+    ]));
+  }
+
+  var url = '/api/social/stats/analytics' + (UNI ? '?uni=' + encodeURIComponent(UNI) : '');
+  fetch(url, { credentials: 'same-origin', headers: { 'X-Para': '1' } })
+    .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { return { r: r, j: j }; }); })
+    .then(function (x) {
+      if (x.r.status === 401) return gate('Нужно войти', 'Аналитика открыта только модератору. Войди в Para своим аккаунтом и вернись сюда.', { href: '/', label: 'Открыть Para' });
+      if (x.r.status === 403) return gate('Нет доступа', 'Эта страница только для модератора Para.', { href: '/', label: 'В приложение' });
+      if (x.j && x.j.code === 'uni') return gate('Выбери вуз', 'Открой Para, выбери вуз и вернись сюда.', { href: '/', label: 'Открыть Para' });
+      if (!x.j || !x.j.ok) return gate('Ошибка', (x.j && x.j.error) || 'Сервер не ответил', null);
+      render(x.j.data);
+    })
+    .catch(function () { gate('Нет связи', 'Проверь интернет и обнови страницу.', null); });
+
+  function render(d) {
+    document.title = 'Аналитика · ' + d.uni.label;
+    var uniSel = h('select', { class: 'ctl', 'aria-label': 'Вуз', onchange: function () { location.search = '?uni=' + encodeURIComponent(this.value); } },
+      d.unis.map(function (u) { var o = h('option', { value: u.id, text: u.label }); if (u.id === d.uni.id) o.selected = true; return o; }));
+
+    // Два вида: «Группы и заходы» (обезличенная статистика) и «Люди» (аккаунты и аудит, #people).
+    var view = location.hash === '#people' ? 'people' : 'groups';
+    var main = h('div');
+    var csvBtn = h('button', { class: 'btn' });
+    var views = h('div', { class: 'tabs views' });
+    var show = function (v) {
+      view = v;
+      history.replaceState(null, '', location.pathname + location.search + (v === 'people' ? '#people' : ''));
+      views.replaceChildren.apply(views, [['groups', 'Группы и заходы'], ['people', 'Люди (аккаунты)']].map(function (x) {
+        return h('button', { class: 'tab' + (view === x[0] ? ' on' : ''), onclick: function () { if (view !== x[0]) show(x[0]); } }, [x[1]]);
+      }));
+      csvBtn.textContent = v === 'people' ? 'Скачать людей (CSV)' : 'Скачать группы (CSV)';
+      csvBtn.onclick = function () { if (v === 'people') peopleCsv(d); else csv(d); };
+      main.replaceChildren.apply(main, v === 'people' ? [peopleView(d)] : groupsView(d));
+    };
+
+    app.replaceChildren(
+      h('header', {}, [
+        h('h1', {}, ['Аналитика · ' + d.uni.label, h('small', { text: d.uni.university + ' · обновлено ' + new Date(d.updated).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) + ' · только для модератора' })]),
+        uniSel,
+        csvBtn,
+        h('a', { class: 'back', href: '/' + (UNI ? '?uni=' + encodeURIComponent(UNI) : ''), text: '← В Para' }),
+      ]),
+      views,
+      main
+    );
+    show(view);
+  }
+
+  function groupsView(d) {
+    var T = d.totals;
+    return [
+      h('div', { class: 'grid kpis' }, [
+        kpi('Людей всего', fmt(T.people), fmt(T.unassigned) + ' без выбранной группы'),
+        kpi('Активны за 7 дней', fmt(T.active7), pct(T.active7, T.people) + '% от всех'),
+        kpi('Сегодня', fmt(T.activeToday), null),
+        kpi('Постоянные', fmt(T.regular), '3+ дня из последних 14'),
+        kpi('Группы с Para', T.groupsUsing + ' из ' + T.groups, pct(T.groupsUsing, T.groups) + '% охват'),
+        kpi('Постоянные группы', fmt(T.groupsSteady), pct(T.groupsSteady, T.groups) + '% групп'),
+        kpi('Не пользуются', fmt(T.groupsNone), 'групп из расписания', true),
+        kpi('Пропали', fmt(T.groupsLost), 'были, 7 дней тишина', T.groupsLost > 0),
+      ]),
+      h('section', { class: 'grid row2' }, [
+        h('div', { class: 'card' }, [h('h2', { text: 'Выводы' }), h('p', { class: 'note', text: 'Где искать новых людей — посчитано по группам из расписания' }), insights(d)]),
+        h('div', { class: 'card' }, [h('h2', { text: 'Люди по дням' }), h('p', { class: 'note', text: '60 дней: сколько разных людей открыли Para и сколько из них впервые' }), daily(d.daily)]),
+      ]),
+      h('section', { class: 'grid row2b' }, [
+        rollupCard('Курсы', 'Охват — доля групп курса, где есть хотя бы один человек. Нажми на строку — группы курса ниже.', d.byCourse, 'course'),
+        rollupCard('Факультеты', 'Как у курсов, по факультетам (или форме обучения)', d.byFaculty, 'faculty'),
+      ]),
+      h('section', {}, [groupsCard(d)]),
+      h('section', { class: 'card' }, [h('h2', { text: 'Когда открывают' }), h('p', { class: 'note', text: 'Заходы по дням недели и часам за всё время, время Ташкента' }), heat(d.dayHour)]),
+      h('section', {}, [h('div', { class: 'grid tech' }, [
+        listCard('Откуда приходят', d.tech.source), listCard('Устройства', d.tech.device), listCard('Марки', d.tech.brand),
+        listCard('Модели', d.tech.model), listCard('Системы', d.tech.os), listCard('Браузеры', d.tech.browser), listCard('Язык телефона', d.tech.lang),
+      ])]),
+    ];
+  }
+
+  function kpi(label, value, sub, warn) {
+    return h('div', { class: 'kpi' + (warn ? ' warn' : '') }, [h('span', { text: label }), h('b', { text: value }), sub ? h('small', { text: sub }) : null]);
+  }
+
+  // ─── Выводы: что сделал бы аналитик, глядя на эти числа ───
+  function insights(d) {
+    var T = d.totals, out = [];
+    var sched = d.groups.filter(function (g) { return g.inSchedule; });
+    var add = function (c, kids) { out.push(h('li', {}, [h('i', { style: 'background:' + c }), h('div', {}, kids)])); };
+
+    add('var(--st-none)', [h('b', { text: T.groupsNone + ' ' + plural(T.groupsNone, 'группа', 'группы', 'групп') + ' из ' + T.groups }), ' ещё ни разу не открывали Para — это ' + pct(T.groupsNone, T.groups) + '% расписания. Список — во вкладке «Не пользуются».']);
+
+    var real = d.byCourse.filter(function (c) { return c.groups >= 3 && /курс/.test(c.name); });
+    var worst = real.slice().sort(function (a, b) { return a.using / a.groups - b.using / b.groups; })[0];
+    var best = real.slice().sort(function (a, b) { return b.using / b.groups - a.using / a.groups; })[0];
+    if (worst && best && worst !== best) {
+      add('var(--st-weak)', ['Слабее всего охвачен ', h('b', { text: worst.name }), ': ' + worst.using + ' из ' + worst.groups + ' групп (' + pct(worst.using, worst.groups) + '%). Лучше всего — ' + best.name + ' (' + pct(best.using, best.groups) + '%). Начинать стоит со слабого курса.']);
+    }
+    var fac = d.byFaculty.filter(function (f) { return f.none > 0; }).sort(function (a, b) { return b.none - a.none; })[0];
+    if (fac && d.byFaculty.length > 1) add('var(--st-weak)', ['Больше всего групп без Para — ', h('b', { text: fac.name }), ': ' + fac.none + ' из ' + fac.groups + '.']);
+
+    var seeds = sched.filter(function (g) { return g.people > 0 && g.people <= 2; });
+    if (seeds.length) add('var(--st-some)', [h('b', { text: seeds.length + ' ' + plural(seeds.length, 'группа', 'группы', 'групп') }), ' с 1–2 людьми: в группе уже есть «свой» человек — попросить его кинуть ссылку в чат группы (метка ?from=chat покажет результат в «Откуда приходят»).']);
+
+    if (T.groupsLost) add('var(--st-lost)', [h('b', { text: T.groupsLost + ' ' + plural(T.groupsLost, 'группа пропала', 'группы пропали', 'групп пропали') }), ': заходили раньше, но 7 дней тишины. Проверить, верное ли у них расписание.']);
+
+    var steadyShare = pct(T.groupsSteady, T.groupsUsing);
+    add('var(--st-steady)', [h('b', { text: steadyShare + '%' }), ' групп, где Para уже есть, пользуются ей постоянно (' + T.groupsSteady + ' из ' + T.groupsUsing + '). Постоянные люди — ' + fmt(T.regular) + ' из ' + fmt(T.people) + '.']);
+
+    var top = sched.filter(function (g) { return g.status === 'steady'; }).sort(function (a, b) { return b.regular - a.regular; }).slice(0, 3);
+    if (top.length) add('var(--st-steady)', ['Самые преданные группы: ', h('b', { text: top.map(function (g) { return g.name; }).join(', ') }), '. Их опыт — пример для соседних групп того же курса.']);
+
+    var lastWeekNew = d.daily.slice(-7).reduce(function (a, x) { return a + x.fresh; }, 0);
+    var prevWeekNew = d.daily.slice(-14, -7).reduce(function (a, x) { return a + x.fresh; }, 0);
+    add('var(--s1)', ['Новых людей за неделю: ', h('b', { text: fmt(lastWeekNew) }), prevWeekNew ? ' (неделей раньше ' + fmt(prevWeekNew) + ', ' + (lastWeekNew >= prevWeekNew ? '+' : '') + pct(lastWeekNew - prevWeekNew, prevWeekNew) + '%).' : '.']);
+    return h('ul', { class: 'insights' }, out);
+  }
+
+  // ─── Люди по дням: линия активных и столбики новых, одна шкала (люди) ───
+  function daily(rows) {
+    var W = 720, H = 240, L = 36, R = 8, Tp = 10, B = 26;
+    var max = Math.max.apply(null, rows.map(function (r) { return r.users; }).concat([1]));
+    var step = Math.pow(10, Math.floor(Math.log10(max))); var nice = Math.ceil(max / step) * step;
+    var x = function (i) { return L + (i + 0.5) * (W - L - R) / rows.length; };
+    var y = function (v) { return Tp + (H - Tp - B) * (1 - v / nice); };
+    var svg = s('svg', { viewBox: '0 0 ' + W + ' ' + H, role: 'img', 'aria-label': 'Люди по дням' });
+    for (var k = 0; k <= 4; k++) {
+      var v = nice * k / 4, yy = y(v);
+      svg.appendChild(s('line', { x1: L, x2: W - R, y1: yy, y2: yy, stroke: 'var(--sep)', 'stroke-width': 1 }));
+      var t = s('text', { x: L - 6, y: yy + 3.5, 'text-anchor': 'end', 'font-size': 10, fill: 'var(--ink-3)' }); t.textContent = fmt(v); svg.appendChild(t);
+    }
+    var bw = Math.max(2, (W - L - R) / rows.length - 3);
+    rows.forEach(function (r, i) {
+      if (r.fresh) svg.appendChild(s('rect', { x: x(i) - bw / 2, y: y(r.fresh), width: bw, height: Math.max(1, y(0) - y(r.fresh)), rx: 2, fill: 'var(--s2)', opacity: .85 }));
+      if (i % 7 === (rows.length - 1) % 7) { var tt = s('text', { x: x(i), y: H - 8, 'text-anchor': 'middle', 'font-size': 10, fill: 'var(--ink-3)' }); tt.textContent = dshort(r.date); svg.appendChild(tt); }
+    });
+    svg.appendChild(s('polyline', { points: rows.map(function (r, i) { return x(i) + ',' + y(r.users); }).join(' '), fill: 'none', stroke: 'var(--s1)', 'stroke-width': 2, 'stroke-linejoin': 'round' }));
+    var cross = s('line', { y1: Tp, y2: H - B, stroke: 'var(--ink-3)', 'stroke-width': 1, opacity: 0 });
+    var dot = s('circle', { r: 4, fill: 'var(--s1)', stroke: 'var(--surface)', 'stroke-width': 2, opacity: 0 });
+    svg.appendChild(cross); svg.appendChild(dot);
+    var tip = h('div', { class: 'tip' });
+    var box = h('div', { class: 'chart' }, [h('div', { class: 'leg' }, [h('span', { style: '--c:var(--s1)', text: 'Люди за день' }), h('span', { style: '--c:var(--s2)', text: 'Новые' })]), svg, tip]);
+    svg.addEventListener('mousemove', function (e) {
+      var rc = svg.getBoundingClientRect(); var px = (e.clientX - rc.left) / rc.width * W;
+      var i = Math.max(0, Math.min(rows.length - 1, Math.round((px - L) / ((W - L - R) / rows.length) - 0.5)));
+      var r = rows[i];
+      cross.setAttribute('x1', x(i)); cross.setAttribute('x2', x(i)); cross.setAttribute('opacity', 1);
+      dot.setAttribute('cx', x(i)); dot.setAttribute('cy', y(r.users)); dot.setAttribute('opacity', 1);
+      tip.textContent = dshort(r.date) + ' · ' + fmt(r.users) + ' чел. · новых ' + fmt(r.fresh);
+      tip.style.left = (x(i) / W * rc.width) + 'px'; tip.style.top = (y(r.users) / H * rc.height + 20) + 'px'; tip.style.opacity = 1;
+    });
+    svg.addEventListener('mouseleave', function () { tip.style.opacity = 0; cross.setAttribute('opacity', 0); dot.setAttribute('opacity', 0); });
+    return box;
+  }
+
+  // ─── Курсы и факультеты ───
+  var groupFilter = null;   // { key, value } — клик по строке курса/факультета
+  var rerenderGroups = function () {};
+  function rollupCard(title, note, rows, key) {
+    var cols = [
+      ['name', key === 'course' ? 'Курс' : 'Факультет'], ['groups', 'Групп'], ['using', 'Охват'], ['steady', 'Постоянно'],
+      ['none', 'Без Para'], ['lost', 'Пропали'], ['people', 'Людей'], ['active7', 'Активны 7д'], ['regular', 'Постоянные'],
+    ];
+    var body = h('tbody');
+    var fill = function () {
+      body.replaceChildren.apply(body, rows.map(function (r) {
+        var p = pct(r.using, r.groups);
+        return h('tr', { class: 'click', title: 'Показать группы', onclick: function () { groupFilter = { key: key, value: r.name }; rerenderGroups(true); } }, [
+          h('td', { class: 't', text: r.name }), h('td', { text: r.groups }),
+          h('td', {}, [h('div', { class: 'cov' }, [h('span', { text: r.using + ' · ' + p + '%' }), h('span', { class: 'bar' }, [h('i', { style: 'width:' + p + '%' })])])]),
+          h('td', { text: r.steady }), h('td', { text: r.none, style: r.none ? 'color:var(--st-none);font-weight:600' : '' }),
+          h('td', { text: r.lost || '—' }), h('td', { text: fmt(r.people) }), h('td', { text: fmt(r.active7) }), h('td', { text: fmt(r.regular) }),
+        ]);
+      }));
+    };
+    var table = sortable(cols, rows, fill, key === 'course' ? 'name' : 'groups');
+    table.appendChild(body); fill();
+    return h('div', { class: 'card' }, [h('h2', { text: title }), h('p', { class: 'note', text: note }), h('div', { class: 'scroll', style: 'max-height:420px' }, [table])]);
+  }
+
+  function sortable(cols, rows, fill, initial) {
+    var state = { key: initial, asc: false };
+    var head = h('tr');
+    cols.forEach(function (c) {
+      var th = h('th', { text: c[1], class: c[0] === state.key ? 'sorted' : null, onclick: function () {
+        state.asc = state.key === c[0] ? !state.asc : c[0] === 'name' || c[0] === 'sort';
+        state.key = c[0];
+        head.querySelectorAll('th').forEach(function (x) { x.className = ''; });
+        th.className = 'sorted' + (state.asc ? ' asc' : '');
+        rows.sort(function (a, b) {
+          var A = a[c[0]], B = b[c[0]];
+          var r = typeof A === 'number' ? A - B : String(A).localeCompare(String(B), 'ru', { numeric: true });
+          return state.asc ? r : -r;
+        });
+        fill();
+      } });
+      head.appendChild(th);
+    });
+    rows.sort(function (a, b) {
+      var A = a[initial], B = b[initial];
+      if (initial === 'name') return String(A).localeCompare(String(B), 'ru', { numeric: true });
+      // Даты (ISO) — строки: новые сверху, пустые в конце.
+      return typeof A === 'string' || typeof B === 'string' ? String(B || '').localeCompare(String(A || '')) : (B || 0) - (A || 0);
+    });
+    if (initial === 'name') state.asc = true;
+    return h('table', {}, [h('thead', {}, [head])]);
+  }
+
+  // ─── Все группы: вкладки по статусу, поиск, фильтры, сортировка ───
+  function groupsCard(d) {
+    var all = d.groups.slice();
+    var tab = 'none';
+    var q = '';
+    var counts = {};
+    all.forEach(function (g) { if (g.inSchedule) counts[g.status] = (counts[g.status] || 0) + 1; });
+    var tabs = h('div', { class: 'tabs' });
+    var mkTabs = function () {
+      tabs.replaceChildren.apply(tabs, ['all'].concat(ORDER, ['gone']).map(function (k) {
+        var label = k === 'all' ? 'Все группы' : k === 'gone' ? 'Нет в расписании' : STATUS[k].label;
+        var n = k === 'all' ? all.filter(function (g) { return g.inSchedule; }).length : k === 'gone' ? all.filter(function (g) { return !g.inSchedule; }).length : (counts[k] || 0);
+        if (k === 'gone' && !n) return null;
+        return h('button', { class: 'tab' + (tab === k ? ' on' : ''), title: k !== 'all' && k !== 'gone' && STATUS[k].hint || null, onclick: function () { tab = k; mkTabs(); fill(); } }, [label, h('b', { text: n })]);
+      }).filter(Boolean));
+    };
+    var opts = function (key) {
+      var seen = {}; all.forEach(function (g) { if (g[key]) seen[g[key]] = 1; });
+      return Object.keys(seen).sort(function (a, b) { return a.localeCompare(b, 'ru', { numeric: true }); });
+    };
+    var courseSel = h('select', { class: 'ctl', onchange: function () { groupFilter = this.value ? { key: 'course', value: this.value } : null; facSel.value = ''; fill(); } },
+      [h('option', { value: '', text: 'Все курсы' })].concat(opts('course').map(function (c) { return h('option', { value: c, text: c }); })));
+    var facSel = h('select', { class: 'ctl', onchange: function () { groupFilter = this.value ? { key: 'faculty', value: this.value } : null; courseSel.value = ''; fill(); } },
+      [h('option', { value: '', text: 'Все факультеты' })].concat(opts('faculty').map(function (c) { return h('option', { value: c, text: c }); })));
+    var search = h('input', { class: 'ctl', type: 'search', placeholder: 'Поиск группы…', oninput: function () { q = this.value.toLowerCase().trim(); fill(); } });
+    var info = h('p', { class: 'note' });
+
+    var cols = [['name', 'Группа'], ['course', 'Курс'], ['faculty', 'Факультет'], ['status', 'Статус'], ['people', 'Людей'], ['new7', 'Новые 7д'],
+      ['active7', 'Активны 7д'], ['regular', 'Постоянные'], ['days14', 'Дней из 14'], ['hits30', 'Заходы 30д'], ['lastSeen', 'Последний заход']];
+    var view = [];
+    var body = h('tbody');
+    var fill = function () {
+      view = all.filter(function (g) {
+        if (tab === 'gone') { if (g.inSchedule) return false; }
+        else if (!g.inSchedule) return false;
+        else if (tab !== 'all' && g.status !== tab) return false;
+        if (groupFilter && g[groupFilter.key] !== groupFilter.value) return false;
+        return !q || (g.name + ' ' + g.course + ' ' + g.faculty).toLowerCase().indexOf(q) >= 0;
+      });
+      info.textContent = view.length + ' ' + plural(view.length, 'группа', 'группы', 'групп') + (groupFilter ? ' · ' + groupFilter.value : '') +
+        (tab === 'none' ? ' — ни одного человека в Para. С них начинать: найти старосту или кинуть ссылку в чат группы.' : '');
+      var shown = view.slice(0, limit);
+      body.replaceChildren.apply(body, shown.map(function (g) {
+        var st = STATUS[g.status];
+        return h('tr', {}, [
+          h('td', { class: 't', text: g.name }), h('td', { text: g.course || '—' }), h('td', { class: 't', text: g.faculty || '—' }),
+          h('td', {}, [h('span', { class: 'pill', style: '--c:' + st.c, text: st.label })]),
+          h('td', { text: g.people || '—' }), h('td', { text: g.new7 || '—' }), h('td', { text: g.active7 || '—' }), h('td', { text: g.regular || '—' }),
+          h('td', {}, [g.people ? h('div', { class: 'cov' }, [h('span', { text: g.days14 }), h('span', { class: 'bar', style: 'width:56px' }, [h('i', { style: 'width:' + (g.days14 / 14 * 100) + '%;background:' + st.c })])]) : '—']),
+          h('td', { text: g.hits30 ? fmt(g.hits30) : '—' }), h('td', { text: g.lastSeen ? dshort(g.lastSeen) : '—', class: g.lastSeen ? '' : 'muted' }),
+        ]);
+      }));
+      moreBtn.style.display = view.length > limit ? '' : 'none';
+      moreBtn.textContent = 'Показать ещё ' + Math.min(500, view.length - limit) + ' из ' + (view.length - limit);
+    };
+    var limit = 300;
+    var moreBtn = h('button', { class: 'more', onclick: function () { limit += 500; fill(); } });
+    var table = sortable(cols, all, fill, 'people');
+    table.appendChild(body);
+    rerenderGroups = function (scroll) {
+      courseSel.value = groupFilter && groupFilter.key === 'course' ? groupFilter.value : '';
+      facSel.value = groupFilter && groupFilter.key === 'faculty' ? groupFilter.value : '';
+      tab = 'all'; mkTabs(); fill();
+      if (scroll) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+    mkTabs(); fill();
+    var card = h('div', { class: 'card' }, [
+      h('h2', { text: 'Группы' }),
+      h('p', { class: 'note', text: 'Человек считается в группе, которую выбрал последней. Постоянные — заходили 3+ дня из последних 14.' }),
+      tabs, h('div', { class: 'filters' }, [search, courseSel, facSel]), info,
+      h('div', { class: 'scroll' }, [table]), moreBtn,
+    ]);
+    return card;
+  }
+
+  // ─── Люди: аккаунты и аудит (GET /api/social/stats/people, social/mygroup.js) ───
+  // Группа — только та, что человек указал сам (или вписал в психотест). Что он смотрит в расписании, обезличено:
+  // статистика заходов с аккаунтом не связана (политика), поэтому здесь её нет.
+  var SRC = {
+    self: { label: 'Указал сам', c: 'var(--st-steady)' },
+    test: { label: 'Из психотеста', c: 'var(--st-some)' },
+    declined: { label: 'Не сказал', c: 'var(--st-weak)' },
+    none: { label: 'Не отвечал', c: 'var(--ink-3)' },
+  };
+  var peopleCache = {};
+  var peopleKey = '';   // что сейчас на экране — для «Скачать людей»
+  var fold = function (v) { return String(v || '').toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ').trim(); };
+  var ago = function (iso) { return iso ? (Date.now() - Date.parse(iso)) / 864e5 : Infinity; };
+  var dfull = function (iso) { return iso ? iso.slice(8, 10) + '.' + iso.slice(5, 7) + '.' + iso.slice(2, 4) : '—'; };
+
+  function peopleView(d) {
+    var box = h('div', {}, [h('div', { class: 'skel' })]);
+    var all = false;
+    var load = function () {
+      var key = all ? '*' : d.uni.id;
+      peopleKey = key;
+      box.replaceChildren(h('div', { class: 'skel' }));
+      (peopleCache[key] ? Promise.resolve(peopleCache[key]) :
+        fetch('/api/social/stats/people?uni=' + encodeURIComponent(d.uni.id) + (all ? '&all=1' : ''), { credentials: 'same-origin', headers: { 'X-Para': '1' } })
+          .then(function (r) { return r.json(); })
+          .then(function (j) {
+            if (!j || !j.ok) throw new Error((j && j.error) || 'сервер не ответил');
+            peopleCache[key] = j.data.people.map(function (p) {
+              return Object.assign(p, { seen: p.seen || '', lastLogin: p.lastLogin || '', devicesText: p.devices.join(', '), sort: fold(p.name || p.googleName) });
+            });
+            return peopleCache[key];
+          }))
+        .then(function (list) {
+          box.replaceChildren.apply(box, peopleBody(d, list, all, function (v) { all = v; load(); }));
+        }, function (e) {
+          box.replaceChildren(h('div', { class: 'card' }, [h('h2', { text: 'Не получилось загрузить людей' }), h('p', { class: 'note', text: e.message })]));
+        });
+    };
+    load();
+    return box;
+  }
+
+  function peopleBody(d, list, all, setAll) {
+    var real = list.filter(function (p) { return !p.dev; });
+    var cnt = function (f) { return real.filter(f).length; };
+    var n = real.length;
+    var self = cnt(function (p) { return p.source === 'self'; }), test = cnt(function (p) { return p.source === 'test'; });
+    var declined = cnt(function (p) { return p.source === 'declined'; });
+    var act7 = cnt(function (p) { return ago(p.seen) <= 7; }), new7 = cnt(function (p) { return ago(p.created) <= 7; });
+    var minors = cnt(function (p) { return p.minor; });
+    var withCourse = cnt(function (p) { return p.course; });
+    var waiting = cnt(function (p) { return !p.answeredAt; });   // в том числе те, у кого группа только из психотеста
+    var here = function (p) { return all || p.grpUni === d.uni.label; };   // группа в этом вузе — для таблиц по курсам
+
+    var scope = h('div', { class: 'tabs' }, [
+      h('button', { class: 'tab' + (all ? '' : ' on'), onclick: function () { if (all) setAll(false); } }, [d.uni.label, all ? null : h('b', { text: n })]),
+      h('button', { class: 'tab' + (all ? ' on' : ''), onclick: function () { if (!all) setAll(true); } }, ['Все вузы', all ? h('b', { text: n }) : null]),
+    ]);
+    var out = [
+      scope,
+      h('div', { class: 'grid kpis' }, [
+        kpi('Аккаунтов Google', fmt(n), all ? 'во всех вузах' : '«мой вуз», группа или тест — ' + d.uni.label),
+        kpi('Знаем курс', fmt(withCourse) + ' · ' + pct(withCourse, n) + '%', self + ' ' + plural(self, 'указал', 'указали', 'указали') + ' группу сами' + (test ? ' · ' + test + ' только в психотесте' : '')),
+        kpi('Не сказали', fmt(declined), 'ответили «Не скажу»'),
+        kpi('Ещё не отвечали', fmt(waiting), 'спросим при следующем заходе', waiting > 0),
+        kpi('Заходили 7 дней', fmt(act7), pct(act7, n) + '% аккаунтов'),
+        kpi('Новые за 7 дней', fmt(new7), null),
+        kpi('До 18 лет', fmt(minors), null),
+      ]),
+    ];
+
+    // Аудит: что не так и на что смотреть
+    var items = [];
+    var add = function (c, kids) { items.push(h('li', {}, [h('i', { style: 'background:' + c }), h('div', {}, kids)])); };
+    var names = function (arr) { return arr.slice(0, 6).map(function (p) { return p.name || p.googleName || p.email; }).join(', ') + (arr.length > 6 ? ' и ещё ' + (arr.length - 6) : ''); };
+    if (waiting) add('var(--ink-3)', [h('b', { text: waiting + ' ' + plural(waiting, 'аккаунт', 'аккаунта', 'аккаунтов') }), ' ещё не ответили про группу — при следующем заходе Para спросит «Ты учишься в группе …?», если в приложении выбрана группа.']);
+    var stale = real.filter(function (p) { return p.source === 'self' && !p.inSchedule; });
+    if (stale.length) add('var(--st-lost)', [h('b', { text: stale.length }), ' указали группу, которой уже нет в расписании — курс и факультет неизвестны: ', names(stale) + '.']);
+    var raw = real.filter(function (p) { return p.source === 'test' && !p.inSchedule; });
+    if (raw.length) add('var(--st-weak)', [h('b', { text: raw.length }), ' вписали в психотесте только номер группы (например, «' + raw[0].grp + '») — в расписании групп с такими номерами нет, курс по нему не узнать. Их Para тоже спросит.']);
+    var diff = real.filter(function (p) { return p.source === 'self' && p.testGrp && fold(p.testGrp) !== fold(p.grp); });
+    if (diff.length) add('var(--st-weak)', [h('b', { text: diff.length }), ' — группа в профиле не та, что в психотесте: ', names(diff) + '.']);
+    var otherUni = real.filter(function (p) { return p.source === 'self' && p.grpUni && p.uniLabel && p.grpUni !== p.uniLabel; });
+    if (otherUni.length) add('var(--st-weak)', [h('b', { text: otherUni.length }), ' — «мой вуз» в профиле не тот, где указана группа: ', names(otherUni) + '.']);
+    var once = real.filter(function (p) { return p.logins <= 1 && ago(p.created) > 14 && ago(p.seen) > 14; });
+    if (once.length) add('var(--st-lost)', [h('b', { text: once.length + ' ' + plural(once.length, 'человек', 'человека', 'человек') }), ' вошли один раз и больше двух недель не возвращались.']);
+    var quiet = real.filter(function (p) { return ago(p.seen) > 30; });
+    if (quiet.length) add('var(--st-lost)', [h('b', { text: quiet.length }), ' не заходили в аккаунт больше 30 дней (' + pct(quiet.length, n) + '%).']);
+    var dup = {};
+    real.forEach(function (p) { var k = fold(p.googleName); if (k) (dup[k] = dup[k] || []).push(p); });
+    var dups = Object.keys(dup).filter(function (k) { return dup[k].length > 1; });
+    if (dups.length) add('var(--st-weak)', ['Возможные двойные аккаунты (одно имя в Google): ', h('b', { text: dups.slice(0, 8).map(function (k) { return dup[k][0].googleName + ' ×' + dup[k].length; }).join(', ') }), dups.length > 8 ? ' и ещё ' + (dups.length - 8) : '', '.']);
+    var ws = {};
+    real.forEach(function (p) { if (p.workspace) ws[p.workspace] = (ws[p.workspace] || 0) + 1; });
+    if (Object.keys(ws).length) add('var(--st-some)', ['Входят почтой организации: ', h('b', { text: Object.keys(ws).map(function (k) { return k + ' — ' + ws[k]; }).join(', ') }), '.']);
+    var unver = cnt(function (p) { return !p.verified; });
+    if (unver) add('var(--st-weak)', [h('b', { text: unver }), ' с неподтверждённой почтой Google.']);
+    var banned = cnt(function (p) { return p.status === 'banned'; });
+    if (banned) add('var(--st-none)', [h('b', { text: banned }), ' под запретом.']);
+    if (minors) add('var(--ink-3)', [h('b', { text: minors }), ' ' + plural(minors, 'аккаунт', 'аккаунта', 'аккаунтов') + ' до 18 лет: Telegram и Instagram у них видят только друзья.']);
+    if (!items.length) add('var(--st-steady)', ['Всё чисто: замечаний нет.']);
+
+    // Курсы и факультеты: аккаунты с группой против людей, которые открывают Para (обезличенно)
+    var rollup = function (key) {
+      var people = {};
+      if (!all) (key === 'course' ? d.byCourse : d.byFaculty).forEach(function (r) { people[r.name] = r.people; });
+      var rows = {};
+      real.forEach(function (p) {
+        if (!p[key] || !here(p)) return;
+        var r = rows[p[key]] = rows[p[key]] || { name: p[key], accounts: 0, self: 0, test: 0, active7: 0, people: people[p[key]] || 0 };
+        r.accounts++; r[p.source === 'test' ? 'test' : 'self']++; if (ago(p.seen) <= 7) r.active7++;
+      });
+      Object.keys(people).forEach(function (k) { if (!rows[k] && people[k]) rows[k] = { name: k, accounts: 0, self: 0, test: 0, active7: 0, people: people[k] }; });
+      return Object.keys(rows).map(function (k) { var r = rows[k]; r.share = r.people ? Math.round(r.accounts / r.people * 100) : 0; return r; });
+    };
+    var peopleFilter = null;
+    var rerender = function () {};
+    var rollCard = function (title, key) {
+      var rows = rollup(key);
+      var cols = [['name', key === 'course' ? 'Курс' : 'Факультет'], ['accounts', 'Аккаунтов'], ['self', 'Сами'], ['test', 'Тест'], ['active7', 'Заходили 7д']]
+        .concat(all ? [] : [['people', 'Людей в Para'], ['share', 'Аккаунтов на 100']]);
+      var body = h('tbody');
+      var fill = function () {
+        body.replaceChildren.apply(body, rows.map(function (r) {
+          return h('tr', { class: 'click', title: 'Показать людей', onclick: function () { peopleFilter = { key: key, value: r.name }; rerender(true); } }, [
+            h('td', { class: 't', text: r.name }), h('td', { text: r.accounts || '—', style: r.accounts ? 'font-weight:600' : 'color:var(--st-none)' }),
+            h('td', { text: r.self || '—' }), h('td', { text: r.test || '—' }), h('td', { text: r.active7 || '—' }),
+          ].concat(all ? [] : [h('td', { text: fmt(r.people) }), h('td', { text: r.people ? r.share : '—' })]));
+        }));
+      };
+      var table = sortable(cols, rows, fill, key === 'course' ? 'name' : 'accounts');
+      table.appendChild(body); fill();
+      return h('div', { class: 'card' }, [h('h2', { text: title }), h('p', { class: 'note', text: all ? 'Аккаунты с известной группой.' : 'Аккаунты с известной группой рядом с числом людей, которые открывают Para в этом курсе (обезличенно). Мало аккаунтов на 100 — курс читает расписание, но в «Обсуждения» не заходит.' }),
+        h('div', { class: 'scroll', style: 'max-height:420px' }, [rows.length ? table : h('p', { class: 'muted', text: 'Пока никто не указал группу.' })])]);
+    };
+
+    out.push(h('section', { class: 'grid row2' }, [
+      h('div', { class: 'card' }, [h('h2', { text: 'Аудит аккаунтов' }), h('p', { class: 'note', text: 'Что проверить. Что люди смотрят в расписании, с аккаунтом не связано — здесь только то, что человек указал сам.' }), h('ul', { class: 'insights' }, items)]),
+      rollCard('Курсы', 'course'),
+    ]));
+    out.push(h('section', {}, [rollCard('Факультеты', 'faculty')]));
+
+    // Таблица людей
+    var q = '';
+    var src = '', act = '';
+    var opts = function (key) {
+      var seen = {}; real.forEach(function (p) { if (p[key]) seen[p[key]] = 1; });
+      return Object.keys(seen).sort(function (a, b) { return a.localeCompare(b, 'ru', { numeric: true }); });
+    };
+    var courseSel = h('select', { class: 'ctl', onchange: function () { peopleFilter = this.value ? { key: 'course', value: this.value } : null; facSel.value = ''; fill(); } },
+      [h('option', { value: '', text: 'Все курсы' })].concat(opts('course').map(function (c) { return h('option', { value: c, text: c }); })));
+    var facSel = h('select', { class: 'ctl', onchange: function () { peopleFilter = this.value ? { key: 'faculty', value: this.value } : null; courseSel.value = ''; fill(); } },
+      [h('option', { value: '', text: 'Все факультеты' })].concat(opts('faculty').map(function (c) { return h('option', { value: c, text: c }); })));
+    var srcSel = h('select', { class: 'ctl', onchange: function () { src = this.value; fill(); } },
+      [h('option', { value: '', text: 'Группа: любая' })].concat(Object.keys(SRC).map(function (k) { return h('option', { value: k, text: SRC[k].label }); })));
+    var actSel = h('select', { class: 'ctl', onchange: function () { act = this.value; fill(); } }, [
+      h('option', { value: '', text: 'Активность: любая' }), h('option', { value: 'a7', text: 'Заходили 7 дней' }),
+      h('option', { value: 'q30', text: 'Не заходили 30+ дней' }), h('option', { value: 'n7', text: 'Новые за 7 дней' }), h('option', { value: 'minor', text: 'До 18 лет' }),
+    ]);
+    var search = h('input', { class: 'ctl', type: 'search', placeholder: 'Имя, @имя, почта или группа…', oninput: function () { q = fold(this.value); fill(); } });
+    var info = h('p', { class: 'note' });
+    var cols = [['sort', 'Человек'], ['email', 'Почта'], ['grp', 'Группа'], ['course', 'Курс'], ['faculty', 'Факультет'], ['source', 'Откуда группа'],
+      ['uniLabel', 'Мой вуз'], ['created', 'Аккаунт с'], ['seen', 'Заходил'], ['logins', 'Входов'], ['devicesText', 'Устройства'], ['posts', 'Постов'], ['friends', 'Друзей']];
+    var rows = real.slice();
+    var limit = 300;
+    var body = h('tbody');
+    var moreBtn = h('button', { class: 'more', onclick: function () { limit += 500; fill(); } });
+    var fill = function () {
+      var view = rows.filter(function (p) {
+        if (peopleFilter && p[peopleFilter.key] !== peopleFilter.value) return false;
+        if (src && p.source !== src) return false;
+        if (act === 'a7' && !(ago(p.seen) <= 7)) return false;
+        if (act === 'q30' && !(ago(p.seen) > 30)) return false;
+        if (act === 'n7' && !(ago(p.created) <= 7)) return false;
+        if (act === 'minor' && !p.minor) return false;
+        return !q || fold([p.name, p.username, p.googleName, p.email, p.grp].join(' ')).indexOf(q) >= 0;
+      });
+      info.textContent = view.length + ' ' + plural(view.length, 'аккаунт', 'аккаунта', 'аккаунтов') + (peopleFilter ? ' · ' + peopleFilter.value : '');
+      body.replaceChildren.apply(body, view.slice(0, limit).map(function (p) {
+        var st = SRC[p.source];
+        var tags = [p.minor ? 'до 18' : null, p.status === 'banned' ? 'запрет' : null, p.badge ? 'значок' : null].filter(Boolean);
+        return h('tr', {}, [
+          h('td', { class: 't who' }, [h('b', { text: p.name || p.googleName || '—' }),
+            h('small', { text: [p.username ? '@' + p.username : null, p.googleName && p.googleName !== p.name ? 'Google: ' + p.googleName : null].concat(tags).filter(Boolean).join(' · ') })]),
+          h('td', { class: 't who' }, [h('span', { text: p.email }), p.workspace || !p.verified ? h('small', { text: [p.workspace ? 'организация ' + p.workspace : null, p.verified ? null : 'почта не подтверждена'].filter(Boolean).join(' · ') }) : null]),
+          h('td', { class: 't', text: p.grp || '—', title: p.grp && !p.inSchedule ? 'Этой группы нет в текущем расписании' : null, style: p.grp && !p.inSchedule ? 'color:var(--st-lost)' : '' }),
+          h('td', { text: p.course || '—' }), h('td', { class: 't', text: p.faculty || '—' }),
+          h('td', {}, [h('span', { class: 'pill', style: '--c:' + st.c, text: st.label })]),
+          h('td', { class: 't', text: p.uniLabel || '—' }),
+          h('td', { text: dfull(p.created) }),
+          h('td', { text: p.seen ? dfull(p.seen) : '—', class: ago(p.seen) > 30 ? 'muted' : '' }),
+          h('td', { text: p.logins }), h('td', { class: 't', text: p.devicesText || p.signupDevice || '—' }),
+          h('td', { text: p.posts || '—' }), h('td', { text: p.friends || '—' }),
+        ]);
+      }));
+      moreBtn.style.display = view.length > limit ? '' : 'none';
+      moreBtn.textContent = 'Показать ещё ' + Math.min(500, view.length - limit) + ' из ' + (view.length - limit);
+    };
+    var table = sortable(cols, rows, fill, 'seen');
+    table.appendChild(body);
+    var card = h('div', { class: 'card' }, [
+      h('h2', { text: 'Все аккаунты' }),
+      h('p', { class: 'note', text: 'Почта и имя из Google видны только модераторам (политика Para). Группа — та, что человек указал сам; если не указал, но прошёл психотест, — оттуда.' }),
+      h('div', { class: 'filters' }, [search, courseSel, facSel, srcSel, actSel]), info,
+      h('div', { class: 'scroll' }, [table]), moreBtn,
+    ]);
+    rerender = function (scroll) {
+      courseSel.value = peopleFilter && peopleFilter.key === 'course' ? peopleFilter.value : '';
+      facSel.value = peopleFilter && peopleFilter.key === 'faculty' ? peopleFilter.value : '';
+      fill();
+      if (scroll) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+    fill();
+    out.push(h('section', {}, [card]));
+    return out;
+  }
+
+  function peopleCsv(d) {
+    var list = peopleCache[peopleKey];
+    if (!list) return;
+    var head = ['Имя', 'Имя пользователя', 'Имя в Google', 'Почта', 'Группа', 'Курс', 'Факультет', 'Откуда группа', 'Вуз группы', 'Мой вуз',
+      'До 18', 'Аккаунт с', 'Заходил', 'Входов', 'Устройства', 'Организация', 'Постов', 'Друзей'];
+    var q = function (v) { v = String(v == null ? '' : v); return /[";\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+    var lines = [head.join(';')].concat(list.filter(function (p) { return !p.dev; }).map(function (p) {
+      return [p.name, p.username, p.googleName, p.email, p.grp, p.course, p.faculty, SRC[p.source].label, p.grpUni, p.uniLabel,
+        p.minor ? 'да' : '', (p.created || '').slice(0, 10), p.seen, p.logins, p.devicesText, p.workspace, p.posts, p.friends].map(q).join(';');
+    }));
+    var blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+    var a = h('a', { href: URL.createObjectURL(blob), download: 'para-' + (peopleKey === '*' ? 'all' : peopleKey) + '-people.csv' });
+    document.body.appendChild(a); a.click(); a.remove();
+  }
+
+  // ─── Тепловая карта день × час ───
+  function heat(m) {
+    var max = 1; m.forEach(function (r) { r.forEach(function (v) { if (v > max) max = v; }); });
+    var days = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+    var cells = [h('div', { class: 'h' })];
+    for (var hh = 0; hh < 24; hh++) cells.push(h('div', { class: 'h', text: hh % 3 ? '' : String(hh).padStart(2, '0') }));
+    m.forEach(function (row, di) {
+      cells.push(h('div', { text: days[di] }));
+      row.forEach(function (v, hi) {
+        var a = v ? 0.08 + 0.92 * Math.sqrt(v / max) : 0;
+        cells.push(h('div', { title: days[di] + ' ' + String(hi).padStart(2, '0') + ':00 — ' + fmt(v) + ' заходов', style: 'background:' + (v ? 'rgba(var(--heat),' + a.toFixed(3) + ')' : 'var(--surface-2)') }));
+      });
+    });
+    return h('div', { class: 'heat' }, cells);
+  }
+
+  // ─── Полные списки: первые 10, по кнопке — все ───
+  function listCard(title, rows) {
+    rows = rows || [];
+    var total = rows.reduce(function (a, r) { return a + r.n; }, 0);
+    var max = rows.length ? rows[0].n : 1;
+    var open = false;
+    var box = h('div', { class: 'list' });
+    var btn = h('button', { class: 'more', onclick: function () { open = !open; fill(); } });
+    var fill = function () {
+      box.replaceChildren.apply(box, (open ? rows : rows.slice(0, 10)).map(function (r) {
+        return h('div', { class: 'li' }, [h('span', { text: r.name, title: r.name }), h('span', { class: 'bar' }, [h('i', { style: 'width:' + (r.n / max * 100) + '%' })]), h('em', { text: fmt(r.n) + ' · ' + pct(r.n, total) + '%' })]);
+      }));
+      btn.style.display = rows.length > 10 ? '' : 'none';
+      btn.textContent = open ? 'Свернуть' : 'Показать все ' + rows.length;
+    };
+    fill();
+    return h('div', { class: 'card' }, [h('h2', { text: title }), h('p', { class: 'note', text: rows.length + ' ' + plural(rows.length, 'вариант', 'варианта', 'вариантов') + ' · ' + fmt(total) + ' людей' }), box, btn]);
+  }
+
+  function csv(d) {
+    var head = ['Группа', 'Курс', 'Факультет', 'В расписании', 'Статус', 'Людей', 'Новые 7д', 'Активны 7д', 'Сегодня', 'Постоянные', 'Дней из 14', 'Заходы 30д', 'Последний заход'];
+    var q = function (v) { v = String(v == null ? '' : v); return /[";\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+    var lines = [head.join(';')].concat(d.groups.map(function (g) {
+      return [g.name, g.course, g.faculty, g.inSchedule ? 'да' : 'нет', STATUS[g.status].label, g.people, g.new7, g.active7, g.activeToday, g.regular, g.days14, g.hits30, g.lastSeen].map(q).join(';');
+    }));
+    var blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+    var a = h('a', { href: URL.createObjectURL(blob), download: 'para-' + d.uni.id + '-groups.csv' });
+    document.body.appendChild(a); a.click(); a.remove();
+  }
+})();
+</script>
+</body>
+</html>

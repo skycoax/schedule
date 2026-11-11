@@ -15,7 +15,7 @@ import { loadHub, isHubHost, isDevHub, devTenantOf, hubTenant } from './hub.js';
 import { pageHtml, hubPageHtml, manifest, hubManifest, redirectHtml, brandFile, assetFile, unknownHostHtml } from './site.js';
 import { scheduleResponse } from './schedule.js';
 import { teachersList, teacherSchedule } from './teachers.js';
-import { logHit, aggregate, summary, pulse, scrubCoarseIp } from './analytics.js';
+import { logHit, publicStats, summary, pulse, scrubCoarseIp } from './analytics.js';
 import { addReview, listReviews, ReviewError } from './reviews.js';
 import { startPoller, pollOnce } from './poller.js';
 import { registerSocial, corsOptions, logSerializers } from './social/index.js';
@@ -23,6 +23,19 @@ import { registerSocial, corsOptions, logSerializers } from './social/index.js';
 // Психологический паспорт студента: своя страница и картинки к пробам (API — social/psy.js).
 const PSY_DIR = new URL('./psy/', import.meta.url).pathname;
 const PSY_IMG = /^\/psy\/img\/([1-4])\.jpg$/;
+// Сезонное оформление (Хеллоуин): в страницу его добавляет site.js, адрес с ?v= — поэтому кэш надолго.
+const SEASONAL_DIR = new URL('./seasonal/', import.meta.url).pathname;
+// Расширенная статистика модератора (круговые и паутинные графики): в страницу её добавляет site.js.
+const STATS_DIR = new URL('./stats/', import.meta.url).pathname;
+// «Неделя целиком»: подписи в ячейках, цвета и подробности пары (src/week/week.js) — тоже из site.js.
+const WEEK_DIR = new URL('./week/', import.meta.url).pathname;
+// Аналитика модератора на весь экран (/analytics), данные — social/stats.js.
+const ANALYTICS_DIR = new URL('./analytics/', import.meta.url).pathname;
+// «Позови друга»: окно приглашения (src/ref/ref.js) с двумя видео-мемами, API — social/ref.js.
+const REF_DIR = new URL('./ref/', import.meta.url).pathname;
+const REF_VIDEO = /^\/ref\/(mad-angry|hug-bros)\.mp4$/;
+// «Моя группа»: вопрос о группе и строка в профиле (src/me/group.js), API — social/mygroup.js.
+const ME_DIR = new URL('./me/', import.meta.url).pathname;
 
 // Отдельные страницы Para (публичные ссылки для Google Play и правила «Обсуждений»): одни на все адреса.
 const HUB_PAGES = { '/policy': 'policy.html', '/rules': 'rules.html', '/delete-account': 'delete-account.html' };
@@ -114,9 +127,10 @@ function hitFrom(req) {
 app.post('/api/hit', api(async (t, req) => { logHit(t, hitFrom(req)); return { ok: true }; }));
 app.get('/api/hit', api(async (t, req) => { logHit(t, hitFrom(req)); return { ok: true }; }));
 
-// ─── Статистика — открыта всем, без пароля ───
-// Приложение ничего не скрывает: данные и так обезличены (см. analytics.js).
-app.get('/api/stats', api(async (t) => ({ ok: true, data: aggregate(t) })));
+// ─── Статистика — общая картина открыта всем, без пароля ───
+// Данные и так обезличены (см. analytics.js), но устройства и модели телефонов, браузеры, системы и язык —
+// только модератору: GET /api/social/stats/full (social/stats.js), его графики — src/stats/admin.js.
+app.get('/api/stats', api(async (t) => ({ ok: true, data: publicStats(t) })));
 // Короткая сводка для блока на главном экране (минуту кешируется).
 app.get('/api/stats/summary', api(async (t) => ({ ok: true, data: summary(t) })));
 
@@ -210,9 +224,51 @@ async function site(req, reply) {
     reply.header('cache-control', 'no-cache').header('x-robots-tag', 'noindex').type('text/html; charset=utf-8');
     return readFileSync(join(PSY_DIR, 'page.html'));
   }
+  // Аналитика на весь экран — только модератору: страница пустая, данные отдаёт /api/social/stats/analytics.
+  if (path.replace(/\/+$/, '') === '/analytics') {
+    reply.header('cache-control', 'no-cache').header('x-robots-tag', 'noindex').type('text/html; charset=utf-8');
+    return readFileSync(join(ANALYTICS_DIR, 'page.html'));
+  }
   if (path === '/psy/nudge.js') {
     reply.header('cache-control', 'no-cache').type('text/javascript; charset=utf-8');
     return readFileSync(join(PSY_DIR, 'nudge.js'));
+  }
+  if (path === '/ref/ref.js') {
+    reply.header('cache-control', 'public, max-age=604800').type('text/javascript; charset=utf-8');
+    return readFileSync(join(REF_DIR, 'ref.js'));
+  }
+  if (path === '/me/group.js') {
+    reply.header('cache-control', 'public, max-age=604800').type('text/javascript; charset=utf-8');
+    return readFileSync(join(ME_DIR, 'group.js'));
+  }
+  const refVideo = path.match(REF_VIDEO);
+  if (refVideo) {
+    const body = readFileSync(join(REF_DIR, `${refVideo[1]}.mp4`));
+    reply.header('cache-control', 'public, max-age=604800').header('accept-ranges', 'bytes').type('video/mp4');
+    // Safari на iPhone берёт видео только кусками (Range): без ответа 206 оно у него не запустится.
+    const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || '');
+    if (!range) return body;
+    const last = body.length - 1;
+    const start = range[1] === '' ? Math.max(0, body.length - Number(range[2])) : Number(range[1]);
+    const end = range[1] === '' || range[2] === '' ? last : Math.min(Number(range[2]), last);
+    if (start > end) {
+      reply.code(416).header('content-range', `bytes */${body.length}`);
+      return '';
+    }
+    reply.code(206).header('content-range', `bytes ${start}-${end}/${body.length}`);
+    return body.subarray(start, end + 1);
+  }
+  if (path === '/week/week.js') {
+    reply.header('cache-control', 'public, max-age=604800').type('text/javascript; charset=utf-8');
+    return readFileSync(join(WEEK_DIR, 'week.js'));
+  }
+  if (path === '/stats/admin.js') {
+    reply.header('cache-control', 'public, max-age=604800').type('text/javascript; charset=utf-8');
+    return readFileSync(join(STATS_DIR, 'admin.js'));
+  }
+  if (path === '/seasonal/halloween.js') {
+    reply.header('cache-control', 'public, max-age=604800').type('text/javascript; charset=utf-8');
+    return readFileSync(join(SEASONAL_DIR, 'halloween.js'));
   }
   const psyImg = path.match(PSY_IMG);
   if (psyImg) {
@@ -222,7 +278,7 @@ async function site(req, reply) {
 
   if (path === '/robots.txt') {
     reply.header('cache-control', 'public, max-age=86400').type('text/plain; charset=utf-8');
-    return 'User-agent: *\nDisallow: /api/\nDisallow: /psy\n';
+    return 'User-agent: *\nDisallow: /api/\nDisallow: /psy\nDisallow: /analytics\n';
   }
 
   // Связь сайта с Android-приложением (TWA): без неё сверху видна адресная строка.
